@@ -33,7 +33,7 @@
 
 使用独立临时目录与回环端口，实写输入文件、上传文件和下载输出，不使用稀疏文件，也不操作正式数据。上传中与校验中分别 SIGKILL，恢复后发布；下载读取一段后重启服务，复用原票据通过 Range 取得剩余内容，完整 SHA-256 一致且仅计 1 次。
 
-最终实测同时存在 **2 路上传、4 路下载、1 路校验**；Parcel 进程峰值 RSS 为 **50076 KiB（约 48.9 MiB）**，低于 256 MiB 门槛。上传含重启用时 162.249 秒，下载含重启与全量哈希用时 188.118 秒。重复完成、撤销清理及配额完全回收均通过。机器记录见 [acceptance-results.json](acceptance-results.json)。脚本采样的是 Parcel 进程 RSS，吞吐量来自同一 Pi 的 SSD 与回环网络，不能代表外部 Wi-Fi 客户端速度。
+最终实测同时存在 **2 路上传、4 路下载、1 路校验**；Parcel 进程峰值 RSS 为 **59272 KiB（约 57.9 MiB）**，低于 256 MiB 门槛。上传含重启用时 143.821 秒，下载含重启与全量哈希用时 156.878 秒。重复完成、撤销清理及配额完全回收均通过。机器记录见 [acceptance-results.json](acceptance-results.json)。脚本采样的是 Parcel 进程 RSS，吞吐量来自同一 Pi 的 SSD 与回环网络，不能代表外部 Wi-Fi 客户端速度。
 
 ## 浏览器验收
 
@@ -54,9 +54,9 @@ Chromium 153、Firefox 155、移动端 Chromium（Pixel 7 模拟）分别执行�
 47fc00eded18803386316a51fc20a97d95a8782515764c10aca30ec1ffdf336f
 ```
 
-8 GiB 验收脚本运行期间复制并固定了被测二进制，记录其工具链、依赖、二进制与源码摘要。该大文件测试构建与最终构建之间只整理了前端源码格式并加入开发用格式化依赖，后端传输、存储、数据库和恢复代码未改变。最终构建另行执行完整浏览器流程与实际磁盘故障验收，不把先前二进制摘要当作最终发布摘要。
+8 GiB 验收脚本复制并固定了最终发布二进制，记录工具链、依赖、二进制与源码摘要。大文件报告、磁盘故障报告、CI ARM64 产物和正式部署的程序摘要均一致；大文件报告的源码摘要也与当前 Go、SQL、前端源码及锁文件重新计算的结果一致。
 
-代码提交 `87c125702885d687265a7d476524bbe280f18183` 已推送到私有仓库的 `codex/v0.1` 分支。[GitHub Actions 验收](https://github.com/hyphy-void/Parcel/actions/runs/37591795328) 已通过前端构建、Go race、vet、三个架构的发布构建及 12 个浏览器场景（远端约 1.1 分钟），并上传 `parcel-linux` 产物。构建工具链日志确认 Go 1.26.8、Linux AMD64。CI ZIP 的服务端摘要与 CRC 校验通过；三个二进制逐一 SHA-256 校验，并与 Pi 上生成的发布文件逐字节摘要一致；已部署的 ARM64 程序也一致。机器记录见 [ci-acceptance-results.json](ci-acceptance-results.json)。
+代码提交 `87c125702885d687265a7d476524bbe280f18183` 已推送到私有仓库的 `codex/v0.1` 分支。[GitHub Actions 验收](https://github.com/hyphy-void/Parcel/actions/runs/37591795328) 已通过前端构建、Go race、vet、三个架构的发布构建及 12 个浏览器场景（远端约 1.1 分钟），并上传 `parcel-linux` 产物。构建工具链日志确认 Go 1.26.8、Linux AMD64。CI ZIP 的服务端摘要与 CRC 校验通过；三个二进制逐一 SHA-256 校验，并与 Pi 上生成的发布文件逐字节摘要一致；已部署的 ARM64 程序也一致。机器记录见 [ci-acceptance-results.json](ci-acceptance-results.json)。后续文档提交 `71ede8b` 的 [CI](https://github.com/hyphy-void/Parcel/actions/runs/37593506078) 也已通过。
 
 ## 尚未完成的外部验证
 
