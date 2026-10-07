@@ -27,7 +27,7 @@
 | 发布构建 | Linux ARM64、ARMv7、AMD64 三个二进制与 SHA256SUMS 已生成；ARM64 已在当前 Pi 实际运行 |
 | systemd 与上线检查 | unit 校验通过，服务启动/升级后正常；LAN IP 上首页和 readyz 正常；真实管理员凭证登录、状态查询、注销通过 |
 
-空间故障的机器记录见 [storage-acceptance-results.json](storage-acceptance-results.json)。ARMv7 与 AMD64 目前只有交叉编译验证，未在对应硬件运行。
+空间故障的机器记录见 [storage-acceptance-results.json](storage-acceptance-results.json)。ARM64 已在当前 Pi 实际运行；Linux AMD64 已在 GitHub Ubuntu 24 的 x64 runner 上完成 Go 与完整浏览器测试。ARMv7 目前只有交叉编译验证，未在对应硬件运行。
 
 ## 真实 8 GiB 与混合负载
 
@@ -56,9 +56,11 @@ Chromium 153、Firefox 155、移动端 Chromium（Pixel 7 模拟）分别执行�
 
 8 GiB 验收脚本运行期间复制并固定了被测二进制，记录其工具链、依赖、二进制与源码摘要。该大文件测试构建与最终构建之间只整理了前端源码格式并加入开发用格式化依赖，后端传输、存储、数据库和恢复代码未改变。最终构建另行执行完整浏览器流程与实际磁盘故障验收，不把先前二进制摘要当作最终发布摘要。
 
-GitHub Actions workflow 已提供。对应构建、race、vet、发布与浏览器命令已在本机执行；尚未向远端推送或触发 GitHub Actions，不声称远端 CI 已通过。
+代码提交 `87c125702885d687265a7d476524bbe280f18183` 已推送到私有仓库的 `codex/v0.1` 分支。[GitHub Actions 验收](https://github.com/hyphy-void/Parcel/actions/runs/37591795328) 已通过前端构建、Go race、vet、三个架构的发布构建及 12 个浏览器场景（远端约 1.1 分钟），并上传 `parcel-linux` 产物。构建工具链日志确认 Go 1.26.8、Linux AMD64。CI ZIP 的服务端摘要与 CRC 校验通过；三个二进制逐一 SHA-256 校验，并与 Pi 上生成的发布文件逐字节摘要一致；已部署的 ARM64 程序也一致。机器记录见 [ci-acceptance-results.json](ci-acceptance-results.json)。
 
 ## 尚未完成的外部验证
+
+实际操作步骤与反馈格式见 [真实局域网设备验收](lan-acceptance.md)。
 
 - 真实局域网手机和另一台电脑的连通性及完整上传/分享/下载/撤销流程，尚未收到用户反馈。
 - 真实手机 Safari/Chrome 的原生下载与浏览器续传行为，设备模拟不能证明；网页重试与服务端 Range 已单独验证。

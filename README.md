@@ -49,5 +49,6 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 - [设计与开发计划](docs/development-plan.md)
 - [安装、配置与运维](docs/operations.md)
 - [验收报告与未测项目](docs/acceptance.md)
+- [真实局域网设备验收步骤](docs/lan-acceptance.md)
 
 下载次数指首次准许传输消耗的下载资格；同一有效会话重试与续传不重复扣次，网络中断不退还资格。浏览器的实际保存进度由原生下载列表显示。

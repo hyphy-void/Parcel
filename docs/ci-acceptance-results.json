@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-07T16:23:58+08:00",
+  "repository": "hyphy-void/Parcel",
+  "code_commit": "87c125702885d687265a7d476524bbe280f18183",
+  "workflow_run_id": 37591795328,
+  "workflow_url": "https://github.com/hyphy-void/Parcel/actions/runs/37591795328",
+  "conclusion": "success",
+  "artifact_id": 11468573487,
+  "artifact_name": "parcel-linux",
+  "artifact_zip_sha256": "574e9295896cfe1a494a4042e66ced1193f81555a350aca9d5def87f2c9b62a7",
+  "binary_sha256": {
+    "parcel-linux-amd64": "38e126d2df3b77325737be83464283ffc1fc035b6a5d354b07fda94974287a9e",
+    "parcel-linux-arm": "147ce13c77ad8068199a4e5c06d9aba0829b94e09a3e100cd205a69b6e8eb774",
+    "parcel-linux-arm64": "47fc00eded18803386316a51fc20a97d95a8782515764c10aca30ec1ffdf336f"
+  },
+  "checks": {
+    "required_steps_completed_successfully": true,
+    "artifact_zip_digest_and_crc": true,
+    "all_binary_checksums_valid": true,
+    "all_ci_binaries_match_pi_release_builds": true,
+    "deployed_pi_binary_matches_ci_arm64": true
+  },
+  "passed": true
+}
