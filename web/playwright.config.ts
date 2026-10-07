@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = "http://127.0.0.1:18280";
+const baseURL = process.env.PARCEL_E2E_BASE_URL || "http://127.0.0.1:18280";
 export default defineConfig({
   testDir: "./tests",
   workers: 1,

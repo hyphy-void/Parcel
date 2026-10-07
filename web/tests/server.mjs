@@ -4,12 +4,15 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const base = new URL(
+  process.env.PARCEL_E2E_BASE_URL || "http://127.0.0.1:18280",
+);
 const data = mkdtempSync(join(root, ".parcel-e2e-"));
 const env = {
   ...process.env,
   PARCEL_DATA_DIR: data,
-  PARCEL_LISTEN_ADDR: "127.0.0.1:18280",
-  PARCEL_BASE_URL: "http://127.0.0.1:18280",
+  PARCEL_LISTEN_ADDR: base.host,
+  PARCEL_BASE_URL: base.origin,
   PARCEL_REQUIRED_MOUNT: "",
   PARCEL_CLEANUP_INTERVAL: "1s",
   PARCEL_MIN_FREE_BYTES: "0",

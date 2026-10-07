@@ -82,18 +82,18 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
   await recipient.close();
 });
 
-test("HTTP 剪贴板受限时显示可手动复制的链接", async ({ page }) => {
+test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复制", async ({
+  page,
+}) => {
   await page.goto("/login");
   await page.getByLabel("管理员密码").fill("e2e-admin-password");
   await page.getByRole("button", { name: "登录 Parcel" }).click();
   await page.getByRole("link", { name: "新建分享" }).click();
-  await page
-    .getByLabel("选择文件", { exact: true })
-    .setInputFiles({
-      name: "empty.txt",
-      mimeType: "text/plain",
-      buffer: Buffer.alloc(0),
-    });
+  await page.getByLabel("选择文件", { exact: true }).setInputFiles({
+    name: "empty.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.alloc(0),
+  });
   await page.getByRole("button", { name: "上传并创建分享" }).click();
   await expect(
     page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
@@ -104,8 +104,54 @@ test("HTTP 剪贴板受限时显示可手动复制的链接", async ({ page }) =
       configurable: true,
     }),
   );
+  const link = await page.getByLabel("分享链接", { exact: true }).inputValue();
+  await page.evaluate(() => {
+    const probe = document.createElement("input");
+    probe.id = "clipboard-paste-probe";
+    document.querySelector("main")!.appendChild(probe);
+  });
+  const probe = page.locator("#clipboard-paste-probe");
+  const copy = page.getByRole("button", { name: "复制分享链接" });
+  await copy.click();
+  await expect(copy).toContainText("已复制");
+  await probe.focus();
+  await page.keyboard.press("Control+V");
+  await expect(probe).toHaveValue(link);
+  await expect(page.getByRole("status")).toHaveCount(0);
+
+  // A denied modern API must also fall back to an actual clipboard write.
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: () =>
+          Promise.reject(new DOMException("Denied", "NotAllowedError")),
+      },
+      configurable: true,
+    }),
+  );
+  await probe.fill("");
+  await copy.click();
+  await expect(copy).toContainText("已复制");
+  await probe.focus();
+  await page.keyboard.press("Control+V");
+  await expect(probe).toHaveValue(link);
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+    document.execCommand = () => false;
+  });
   await page.getByRole("button", { name: "复制分享链接" }).click();
   await expect(page.getByRole("status")).toContainText("链接已选中");
+  await expect(copy).toHaveText("复制");
+  expect(
+    await page.getByLabel("分享链接", { exact: true }).evaluate((node) => {
+      const input = node as HTMLInputElement;
+      return [input.selectionStart, input.selectionEnd];
+    }),
+  ).toEqual([0, link.length]);
 });
 
 test("创建回复丢失后刷新可以找回原上传，不重复预留空间", async ({ page }) => {

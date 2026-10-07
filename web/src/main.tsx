@@ -114,14 +114,36 @@ function CopyField({
   const [copied, setCopied] = useState(false);
   const [fallback, setFallback] = useState(false);
   async function copy() {
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error();
-      await navigator.clipboard.writeText(value);
+    setCopied(false);
+    setFallback(false);
+    const copySelection = () => {
+      try {
+        const input = ref.current;
+        if (!input) return false;
+        input.focus({ preventScroll: true });
+        input.select();
+        input.setSelectionRange(0, value.length);
+        return document.execCommand("copy");
+      } catch {
+        return false;
+      }
+    };
+    let success = false;
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        success = true;
+      } catch {
+        success = copySelection();
+      }
+    } else {
+      // Keep the HTTP fallback synchronous so the click's user activation applies.
+      success = copySelection();
+    }
+    if (success) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      ref.current?.focus();
-      ref.current?.select();
+    } else {
       setFallback(true);
     }
   }
@@ -130,7 +152,7 @@ function CopyField({
       <label htmlFor="copy-link">{label}</label>
       <div className="copy-field">
         <input id="copy-link" ref={ref} readOnly value={value} />
-        <button onClick={copy} aria-label="复制分享链接">
+        <button type="button" onClick={copy} aria-label="复制分享链接">
           {copied ? <Check size={18} /> : <Copy size={18} />}
           {copied ? "已复制" : "复制"}
         </button>

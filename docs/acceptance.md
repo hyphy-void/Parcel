@@ -46,23 +46,38 @@ Chromium 153、Firefox 155、移动端 Chromium（Pixel 7 模拟）分别执行�
 
 最终发布构建的 12 个场景全部通过（约 3.7 分钟）。界面截图：[桌面接收页](previews/receive-desktop.png)、[手机分享页](previews/share-mobile.png)。网页不宣称原生下载已完成，保存进度由浏览器下载列表显示。
 
-## 构建追溯
+## 初次验收构建追溯
 
-最终发布和已部署的 ARM64 二进制 SHA-256：
+初次大文件与 CI 验收使用的 ARM64 二进制 SHA-256（对应复制修复之前的构建）：
 
 ```text
 47fc00eded18803386316a51fc20a97d95a8782515764c10aca30ec1ffdf336f
 ```
 
-8 GiB 验收脚本复制并固定了最终发布二进制，记录工具链、依赖、二进制与源码摘要。大文件报告、磁盘故障报告、CI ARM64 产物和正式部署的程序摘要均一致；大文件报告的源码摘要也与当前 Go、SQL、前端源码及锁文件重新计算的结果一致。
+8 GiB 验收脚本复制并固定了初次发布二进制，记录工具链、依赖、二进制与源码摘要。大文件报告、磁盘故障报告、初次 CI ARM64 产物与当时部署的程序摘要一致；源码摘要经初次验收重新计算验证。这些机器记录保留对应构建的历史结果。
 
-代码提交 `87c125702885d687265a7d476524bbe280f18183` 已推送到私有仓库的 `codex/v0.1` 分支。[GitHub Actions 验收](https://github.com/hyphy-void/Parcel/actions/runs/37591795328) 已通过前端构建、Go race、vet、三个架构的发布构建及 12 个浏览器场景（远端约 1.1 分钟），并上传 `parcel-linux` 产物。构建工具链日志确认 Go 1.26.8、Linux AMD64。CI ZIP 的服务端摘要与 CRC 校验通过；三个二进制逐一 SHA-256 校验，并与 Pi 上生成的发布文件逐字节摘要一致；已部署的 ARM64 程序也一致。机器记录见 [ci-acceptance-results.json](ci-acceptance-results.json)。后续文档提交 `71ede8b` 的 [CI](https://github.com/hyphy-void/Parcel/actions/runs/37593506078) 也已通过。
+代码提交 `87c125702885d687265a7d476524bbe280f18183` 已推送到私有仓库的 `codex/v0.1` 分支。[GitHub Actions 验收](https://github.com/hyphy-void/Parcel/actions/runs/37591795328) 已通过前端构建、Go race、vet、三个架构的发布构建及 12 个浏览器场景（远端约 1.1 分钟），并上传 `parcel-linux` 产物。构建工具链日志确认 Go 1.26.8、Linux AMD64。CI ZIP 的服务端摘要与 CRC 校验通过；三个二进制逐一 SHA-256 校验，并与 Pi 上生成的发布文件逐字节摘要一致；当时部署的 ARM64 程序也一致。机器记录见 [ci-acceptance-results.json](ci-acceptance-results.json)。后续文档提交 `71ede8b` 的 [CI](https://github.com/hyphy-void/Parcel/actions/runs/37593506078) 也已通过。
+
+## 2026-10-07 内网复制修复
+
+用户在第二台电脑访问 `/admin/new` 时反馈复制按钮失效。原实现依赖安全上下文的现代剪贴板 API，内网 HTTP 不可用时仅选中链接。修复增加用户点击时的兼容复制；现代 API 被拒绝时也尝试该路径；两种方式均失败时才提示手动复制，并保持全文选中。
+
+前端类型检查和构建通过。Chromium、Firefox、移动端 Chromium 分别在 `http://192.168.5.16:18280` 和回环测试地址执行，共 6 个场景通过。验证直接执行粘贴并比对完整链接，覆盖正常兼容复制、现代 API 拒绝，以及全部复制方式失败后的提示与选择范围。
+
+复现命令：
+
+```bash
+PARCEL_E2E_BASE_URL=http://192.168.5.16:18280 npm --prefix web run test:e2e -- --grep 'HTTP 兼容复制'
+npm --prefix web run test:e2e -- --grep 'HTTP 兼容复制'
+```
+
+修复构建已部署，ARM64 SHA-256 为 `308da7debed71763be0374abb36b659ea3f5dac71093fcaddeaaee45caab400a`。后端 Go、数据库和文件传输代码未修改；本次验证覆盖复制功能，以上大文件与磁盘报告保留原构建摘要。
 
 ## 尚未完成的外部验证
 
 实际操作步骤与反馈格式见 [真实局域网设备验收](lan-acceptance.md)。
 
-- 真实局域网手机和另一台电脑的连通性及完整上传/分享/下载/撤销流程，尚未收到用户反馈。
+- 用户已确认第二台电脑能够访问新建分享页；真实手机及两台设备的完整上传/分享/下载/撤销流程仍待反馈。
 - 真实手机 Safari/Chrome 的原生下载与浏览器续传行为，设备模拟不能证明；网页重试与服务端 Range 已单独验证。
 - 路由器 DHCP 保留、访客网络隔离尚未现场验证。
 - 已启用开机启动并验证服务重启，但未为验收而重启整台 Pi。
