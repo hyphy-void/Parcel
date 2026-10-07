@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Parcel update check
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 Asia/Shanghai
+RandomizedDelaySec=30m
+Persistent=true
+Unit=parcel-update.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check and install compatible Parcel patch releases
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/opt/parcel/parcel
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/parcel/update.py --auto
+UMask=0077
+# The updater needs root to replace the executable and manage parcel.service.

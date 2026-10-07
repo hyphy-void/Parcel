@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -140,13 +139,6 @@ func (a *App) frontend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.FileServer(http.FS(a.static)).ServeHTTP(w, r)
-}
-func clientIP(r *http.Request) string {
-	ip, _, e := net.SplitHostPort(r.RemoteAddr)
-	if e != nil {
-		return r.RemoteAddr
-	}
-	return ip
 }
 func (a *App) allow(key string, n int, period time.Duration) bool {
 	a.mu.Lock()

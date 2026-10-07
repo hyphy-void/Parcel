@@ -149,14 +149,18 @@ fieldset {
 }
 .app header {
   min-height: 88px;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   max-width: 1200px;
   width: 100%;
   margin: 0 auto;
   padding: 0 40px;
   gap: 24px;
+}
+.app header > nav,
+.app header > .text-button {
+  justify-self: end;
 }
 .brand {
   display: flex;
@@ -231,6 +235,28 @@ footer > span:last-child {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 3;
+  grid-row: 1;
+  width: 38px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px 12px 15px 15px;
+  color: var(--ink);
+}
+.github-link:hover {
+  color: var(--accent);
+  background: var(--soft);
+}
+.github-mark {
+  width: 23px;
+  height: 23px;
+  background: currentColor;
+  mask: url("./assets/github.svg") center / contain no-repeat;
 }
 .page-heading {
   display: flex;
@@ -1251,6 +1277,17 @@ footer > span:last-child {
     padding: 0 20px;
     gap: 16px;
   }
+  .admin-app header {
+    grid-template-rows: 76px auto;
+    row-gap: 0;
+  }
+  .admin-app header > nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    justify-content: center;
+    padding-bottom: 12px;
+  }
   main {
     padding: 24px 20px 40px;
   }
@@ -1402,7 +1439,8 @@ footer > span:last-child {
   .brand {
     gap: 8px;
   }
-  .brand-icon {
+  .brand-icon,
+  .github-link {
     width: 32px;
     height: 36px;
   }

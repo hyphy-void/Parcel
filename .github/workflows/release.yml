@@ -1,0 +1,72 @@
+name: Parcel release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate stable version tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          echo "PARCEL_BUILD_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: ./scripts/release.sh --skip-web
+      - name: Use AMD64 release binary for integration and browser tests
+        run: |
+          mkdir -p bin
+          install -m 0755 dist/parcel-linux-amd64 bin/parcel
+      - run: PARCEL_TEST_BINARY="$PWD/bin/parcel" python3 -m unittest discover -s scripts/tests -v
+      - run: npx playwright install --with-deps chromium firefox
+        working-directory: web
+      - run: npm run test:e2e
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parcel-release
+          path: dist/
+          if-no-files-found: error
+  publish:
+    needs: verify-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: parcel-release
+          path: dist
+      - name: Publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A draft remains invisible to the updater until every asset is uploaded.
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' > draft.txt; then
+            [[ "$(cat draft.txt)" == true ]] || { echo 'Release already published; refusing to replace assets.'; exit 1; }
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" dist/parcel-linux-arm64 dist/parcel-linux-arm dist/parcel-linux-amd64 dist/release.json dist/SHA256SUMS --clobber
+          gh release edit "$TAG" --draft=false

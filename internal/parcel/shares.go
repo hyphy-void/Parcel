@@ -79,7 +79,7 @@ func (a *App) getShare(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) unlock(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !a.rate(w, r, "unlock-ip:"+clientIP(r), 10, time.Minute) || !a.rate(w, r, "unlock-share:"+id, 20, time.Minute) {
+	if !a.rate(w, r, "unlock-ip:"+a.clientIP(r), 10, time.Minute) || !a.rate(w, r, "unlock-share:"+id, 20, time.Minute) {
 		return
 	}
 	var req struct {
@@ -227,7 +227,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) issueDownload(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if !a.rate(w, r, "ticket-ip:"+clientIP(r), 30, time.Minute) {
+	if !a.rate(w, r, "ticket-ip:"+a.clientIP(r), 30, time.Minute) {
 		return
 	}
 	a.mu.Lock()

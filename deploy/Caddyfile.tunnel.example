@@ -1,0 +1,31 @@
+# Public administration and sharing via Cloudflare Tunnel.
+# cloudflared published route: HTTP -> 127.0.0.1:8080
+# Parcel: LISTEN_ADDR=127.0.0.1:8081, BASE_URL=https://parcel.example.com
+# PARCEL_TRUSTED_PROXIES=127.0.0.1/32
+# Replace the example domain. Parcel password/CSRF authentication remains required.
+# CF-Connecting-IP is trusted only through the local Cloudflare connector.
+# No access logs: share/download URLs are credentials.
+{
+	auto_https off
+}
+
+http://:8080 {
+	bind 127.0.0.1
+	@application {
+		host parcel.example.com
+		path / /login /admin /admin/* /s/* /assets/* /api/v1/auth/* /api/v1/admin/* /api/v1/uploads /api/v1/uploads/* /api/v1/shares/* /api/v1/downloads/*
+	}
+	route {
+		header Cache-Control "private, no-store"
+		header Referrer-Policy no-referrer
+		header X-Content-Type-Options nosniff
+		handle @application {
+			reverse_proxy 127.0.0.1:8081 {
+				header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+			}
+		}
+		handle {
+			respond "Route not exposed." 403
+		}
+	}
+}

@@ -32,7 +32,7 @@ func (a *App) admin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
-	if !a.rate(w, r, "login:"+clientIP(r), 5, time.Minute) {
+	if !a.rate(w, r, "login:"+a.clientIP(r), 5, time.Minute) {
 		return
 	}
 	var req struct {
@@ -62,7 +62,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	_, e := a.db.Exec("INSERT INTO admin_sessions(token_hash,csrf,expires,version) VALUES(?,?,?,?)", tokenHash(t), csrf, a.now().Add(12*time.Hour).Unix(), version)
 	if e == nil {
-		delete(a.limits, "login:"+clientIP(r))
+		delete(a.limits, "login:"+a.clientIP(r))
 		a.audit("login", "admin", "ok")
 	}
 	a.mu.Unlock()

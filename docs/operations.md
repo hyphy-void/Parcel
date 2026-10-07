@@ -1,6 +1,6 @@
 # Parcel v0.1 安装与运维
 
-本服务面向可信局域网。当前部署示例是 Pi4B、64 位 Ubuntu、SSD 上的 ext4 根分区、IPv4 `192.168.5.16/24`。它不依赖公网 IPv6、Cloudflare Tunnel 或 DMIT。
+本服务支持可信局域网部署，以及通过 Caddy 提供公网 HTTPS 分享。下文局域网示例是 Pi4B、64 位 Ubuntu、SSD 上的 ext4 根分区、IPv4 `192.168.5.16/24`；公网部署见[公网部署说明](public-deployment.md)。
 
 ## 1. 构建与初始化
 
@@ -52,6 +52,7 @@ sudo ufw allow from 192.168.5.0/24 to 192.168.5.16 port 8080 proto tcp comment '
 | --- | --- | --- |
 | `PARCEL_LISTEN_ADDR` | `127.0.0.1:8080` | 明确绑定的内网或回环地址 |
 | `PARCEL_BASE_URL` | `http://127.0.0.1:8080` | 唯一页面/API origin，用于链接、Host/Origin 校验 |
+| `PARCEL_TRUSTED_PROXIES` | 空 | 逗号分隔的代理 CIDR；默认忽略代理头，仅受信任连接的 X-Forwarded-For 用于客户端 IP 限流 |
 | `PARCEL_DATA_DIR` | `./data` | DB、临时文件及最终文件目录 |
 | `PARCEL_REQUIRED_MOUNT` | 空 | 正式部署应指定真实挂载点 |
 | `PARCEL_MAX_FILE_BYTES` | 8 GiB | 单文件上限，大小/偏移采用 64 位 |
@@ -131,3 +132,75 @@ npm run test:e2e
 大文件脚本使用独立回环端口和临时目录，不操作线上数据；默认实写 8 GiB 输入、上传文件与下载输出，并用 SIGKILL 测试恢复。磁盘脚本只创建一个独立的临时 ext4 loop 文件系统，结束时卸载，验证实际 ENOSPC 与卸载后拒绝启动。两者会把结果记录到 `docs/*acceptance-results.json`。
 
 浏览器测试使用一次性管理员密码与独立数据目录。移动端 Chromium 项目是设备模拟，不能替代真实手机与外部 LAN 设备的验收，实测范围见 [验收报告](acceptance.md)。
+
+## 8. CI 发布与树莓派升级
+
+日常 push/PR 会运行 CI；正式发布使用 `vX.Y.Z` tag。发布工作流先执行前端构建、Go race/vet、升级工具测试和三项目浏览器测试，再交叉编译 ARM64、ARMv7、AMD64。所有资产上传至草稿 Release 后才公开，失败的测试不会发布。只接受正式版本，不发布 `-rc` 等预发行 tag。
+
+```bash
+# 在开发电脑上，先提交并推送经过审查的代码；版本号按实际发布修改。
+git tag -a v0.1.1 -m 'Parcel v0.1.1'
+git push origin v0.1.1
+```
+
+发布页包含 `parcel-linux-arm64`、`parcel-linux-arm`、`parcel-linux-amd64`、`release.json` 和 `SHA256SUMS`。schema 元数据必须与 `internal/parcel/app.go` 支持的数据库版本保持一致。现有 CI 仍提供 `parcel-linux` artifact；Release 则提供固定版本下载地址。CI 只构建一次前端，不再重复 npm 安装或为发布额外构建宿主程序。
+
+### 首次用预编译产物安装
+
+树莓派只需要 Python 3.9+、curl、systemd 和 util-linux 的 flock，不需要 Go/Node。下面以 64 位 Ubuntu 和 `v0.1.1` 为例；先确认该版本已经发布。32 位 ARMv7 系统将文件名改为 `parcel-linux-arm`，不支持 ARMv6。
+
+```bash
+# 在已有仓库目录中执行；这里只下载，不编译。
+mkdir -p bin dist
+curl -fL --proto '=https' --proto-redir '=https' \
+  https://github.com/hyphy-void/Parcel/releases/download/v0.1.1/parcel-linux-arm64 \
+  -o dist/parcel-linux-arm64
+curl -fL --proto '=https' --proto-redir '=https' \
+  https://github.com/hyphy-void/Parcel/releases/download/v0.1.1/SHA256SUMS \
+  -o dist/SHA256SUMS
+(cd dist && sha256sum --check --ignore-missing SHA256SUMS)
+install -m 0755 dist/parcel-linux-arm64 bin/parcel
+sudo ./scripts/install-systemd.sh
+```
+
+之后按第 2 节配置数据路径、初始化密码并启动服务。已有部署首次安装新版升级工具时，停止服务、执行安装脚本、再启动即可。安装脚本会保留已有 `parcel.env` 和 `update.env`，安装定时器但不会启用。
+
+### 一键升级
+
+```bash
+# 检查最新正式版本，不安装。
+sudo /usr/local/lib/parcel/update.py --check
+# 推荐指定版本，可重现升级结果。
+sudo /usr/local/lib/parcel/update.py --version v0.1.1
+# 或选择最新正式版。
+sudo /usr/local/lib/parcel/update.py
+```
+
+升级工具从固定的 GitHub 仓库读取版本，按用户空间位数选择架构，下载并校验二进制与 schema 元数据，还会检查二进制报告的版本。下载、校验和兼容性检查期间服务保持运行；全部通过后才停止服务、在同一文件系统原子替换程序并启动。确认 systemd 服务处于 active 且 `/readyz` 返回 `status=ready` 后才报告成功。
+
+上一程序保留为 `/opt/parcel/parcel.previous`。新程序启动失败或健康检查失败会恢复上一程序并再次验证；回滚失败返回非零退出状态，需查看日志。SIGINT/SIGTERM 会进入同一恢复流程；断电或 SIGKILL 无法执行恢复代码，可按第 6 节手动恢复。安装与升级共用文件锁，避免并发替换。
+
+升级期间会短暂中断传输，可通过项目已有的续传机制恢复。工具不修改配置、密码或分享文件，也不创建整盘数据快照。**schema 不同的发布会拒绝安装**，须停止服务、备份整个数据目录后手动迁移；二进制回滚不能替代数据恢复。当前 schema 为 1，发布者应保持同 schema 下的数据兼容性。
+
+默认健康检查使用 `PARCEL_BASE_URL/readyz`；有代理等情况可在 `/etc/parcel/update.env` 设置 `PARCEL_HEALTH_URL`，该地址应直达同一服务，并符合应用 Host 校验。配置按字面量 `KEY=value` 读取，不执行 shell；空格需引号，不支持变量展开。自动升级依赖公开 GitHub Release 下载；私有仓库资产下载不在本工具支持范围内。API 限流时可手动运行 `sudo --preserve-env=GH_TOKEN ...`，令牌仅发送到 GitHub API。
+
+### 可选定时更新
+
+```bash
+sudoedit /etc/parcel/update.env
+# 将 PARCEL_AUTO_UPDATE=false 改成 true，再启用定时器。
+sudo systemctl enable --now parcel-update.timer
+sudo systemctl list-timers parcel-update.timer
+# 可以立即触发一次检查。
+sudo systemctl start parcel-update.service
+sudo journalctl -u parcel-update.service -n 50 --no-pager
+```
+
+每天北京时间 04:00 起随机延迟最多 30 分钟检查；错过的检查会在开机后补做。只有明确开启 `PARCEL_AUTO_UPDATE=true` 才安装，并仅接受当前 `X.Y` 内更高的补丁版本。同版本不下载、不重启；新主/次版本、降级或开发版不会自动安装。若 GitHub latest 已跨次版本，则跳过，并在日志中提示手动处理，不再搜索旧分支的补丁版本。
+
+```bash
+# 关闭定时任务；也可把配置改回 false。
+sudo systemctl disable --now parcel-update.timer
+```
+
+检查和升级结果写入 systemd journal；网络、校验、启动或回滚失败使 oneshot 服务失败，后续定时检查可重试。这里没有接入外部消息通知。GitHub 云端只构建和发布，树莓派主动下载，因此无需让 GitHub runner 连接内网或在树莓派上运行构建 runner。

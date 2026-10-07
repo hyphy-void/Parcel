@@ -1,0 +1,28 @@
+# Replace the domain and the allowed LAN/VPN networks before installing.
+# Keep DNS A/AAAA records DNS-only (grey cloud) for direct connections.
+parcel.example.com {
+	# Match the actual TCP peer, never client-supplied forwarding headers.
+	@management remote_ip 127.0.0.1/32 ::1/128 192.168.5.0/24 100.64.0.0/10
+	@public path /s/* /assets/* /api/v1/shares/* /api/v1/downloads/*
+
+	route {
+		header Referrer-Policy no-referrer
+		header X-Content-Type-Options nosniff
+		handle @management {
+			reverse_proxy 127.0.0.1:8080 {
+				header_up X-Forwarded-For {http.request.remote.host}
+			}
+		}
+		handle @public {
+			reverse_proxy 127.0.0.1:8080 {
+				header_up X-Forwarded-For {http.request.remote.host}
+			}
+		}
+		# All other routes, including login/auth, uploads, health and future
+		# administrative endpoints, are private by default.
+		handle {
+			respond "Management access requires LAN or VPN." 403
+		}
+	}
+	# Access logging is intentionally disabled: download URLs are credentials.
+}

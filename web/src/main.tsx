@@ -143,6 +143,16 @@ function Shell({
             管理入口 <ArrowRight size={15} />
           </a>
         )}
+        <a
+          className="github-link"
+          href="https://github.com/hyphy-void/Parcel"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GitHub 仓库（在新标签页打开）"
+          title="GitHub 仓库"
+        >
+          <span className="github-mark" aria-hidden="true" />
+        </a>
       </header>
       <main id="main-content" tabIndex={-1}>
         <ErrorMessage message={error} />

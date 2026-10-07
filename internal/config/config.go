@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -16,6 +17,9 @@ type Config struct {
 	MaxFile, Quota, MinFree, Chunk                                               int64
 	UploadTTL, ShareTTL, MaxShareTTL, DownloadIdle, DownloadMax, CleanupInterval time.Duration
 	DownloadLimit                                                                int
+	// TrustedProxies is opt-in. Only these immediate peers may supply client IPs
+	// via X-Forwarded-For; it does not authorize administrative access.
+	TrustedProxies []netip.Prefix
 }
 
 func Load() (Config, error) {
@@ -55,10 +59,24 @@ func Load() (Config, error) {
 		return c, e
 	}
 	c.DataDir = d
+	if raw := os.Getenv("PARCEL_TRUSTED_PROXIES"); strings.TrimSpace(raw) != "" {
+		for _, entry := range strings.Split(raw, ",") {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
+			if err != nil {
+				return c, fmt.Errorf("PARCEL_TRUSTED_PROXIES: %w", err)
+			}
+			c.TrustedProxies = append(c.TrustedProxies, prefix.Masked())
+		}
+	}
 	return c, c.Validate()
 }
 
 func (c Config) Validate() error {
+	for _, prefix := range c.TrustedProxies {
+		if !prefix.IsValid() || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
+			return fmt.Errorf("TRUSTED_PROXIES 必须是有效的 IPv4/IPv6 CIDR，不能信任所有地址或使用映射 IPv4")
+		}
+	}
 	host, _, e := net.SplitHostPort(c.Listen)
 	if e != nil {
 		return fmt.Errorf("LISTEN_ADDR: %w", e)

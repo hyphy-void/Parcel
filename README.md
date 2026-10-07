@@ -4,7 +4,7 @@
 
 自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
 
-v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，运行时无需 Node、数据库服务或反向代理。文件存储在本机 SSD 上，通过局域网 IP 访问。当前不接入 Cloudflare Tunnel。
+v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。文件存储在本机 SSD 上；公网分享可由 Caddy 提供 HTTPS，管理入口仅限局域网或 VPN，详见[公网部署说明](docs/public-deployment.md)。
 
 管理员登录后上传单个文件，设置可选密码、有效期与下载次数，生成一个分享链接。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
 
@@ -42,7 +42,7 @@ cd web && npx playwright install chromium firefox && npm run test:e2e
 
 Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需先构建前端。开发代理仅支持默认的 `127.0.0.1:8080` 后端和 `127.0.0.1:5173` 前端地址。
 
-生成 Linux ARM64、ARMv7、AMD64 产物与校验和：`./scripts/release.sh`。独立的大文件验收：`python3 scripts/acceptance.py`，默认生成真实 8 GiB 文件，需约 35 GiB 可用空间。实际磁盘写满与挂载丢失验收：`python3 scripts/storage-acceptance.py`，需要可使用 sudo 的测试环境。
+生成 Linux ARM64、ARMv7、AMD64 产物与校验和：`./scripts/release.sh`。push/PR 自动运行 CI；推送正式 `vX.Y.Z` tag 会在测试通过后发布 GitHub Release。树莓派可直接安装预编译产物，无需 Go/Node。已安装升级工具后，使用 `sudo /usr/local/lib/parcel/update.py --version vX.Y.Z` 一键升级，支持校验、健康检查和失败回滚；可选启用每日补丁更新，详见[发布与升级说明](docs/operations.md#8-ci-发布与树莓派升级)。独立的大文件验收：`python3 scripts/acceptance.py`，默认生成真实 8 GiB 文件，需约 35 GiB 可用空间。实际磁盘写满与挂载丢失验收：`python3 scripts/storage-acceptance.py`，需要可使用 sudo 的测试环境。
 
 ## 文档
 

@@ -45,7 +45,7 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, 200, map[string]any{"used_bytes": used, "reserved_bytes": reserved, "pending_bytes": pending, "free_bytes": free, "quota_bytes": a.C.Quota, "min_free_bytes": a.C.MinFree, "max_file_bytes": a.C.MaxFile, "chunk_bytes": a.C.Chunk, "default_ttl_seconds": int64(a.C.ShareTTL.Seconds()), "max_ttl_seconds": int64(a.C.MaxShareTTL.Seconds()), "default_download_limit": a.C.DownloadLimit, "version": Version, "base_url": a.C.BaseURL, "active_downloads": activeDownloads, "active_uploads": activeUploads, "active_finalizations": activeFinalizations})
 }
 func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
-	if !a.rate(w, r, "upload:"+clientIP(r), 30, time.Minute) {
+	if !a.rate(w, r, "upload:"+a.clientIP(r), 30, time.Minute) {
 		return
 	}
 	var req struct {
