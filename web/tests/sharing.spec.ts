@@ -117,7 +117,7 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
   await probe.focus();
   await page.keyboard.press("Control+V");
   await expect(probe).toHaveValue(link);
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveText("分享链接已复制。");
 
   // A denied modern API must also fall back to an actual clipboard write.
   await page.evaluate(() =>

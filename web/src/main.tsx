@@ -37,8 +37,12 @@ import {
   type Upload,
 } from "./api";
 import "./style.css";
+import "./login.css";
 
 type Auth = { csrf: string };
+function desktopAutofocus() {
+  return matchMedia("(min-width: 768px) and (pointer: fine)").matches;
+}
 function ErrorMessage({ message }: { message: string }) {
   return message ? (
     <div className="alert" role="alert">
@@ -54,7 +58,36 @@ function Loading({ text = "正在加载…" }: { text?: string }) {
     </div>
   );
 }
-function Shell({ children, auth }: { children: React.ReactNode; auth?: Auth }) {
+function ParcelEnvelope({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`parcel-envelope ${compact ? "envelope-small" : ""}`}
+      aria-hidden="true"
+    >
+      <div className="envelope-sheet">
+        <File size={30} strokeWidth={1.5} />
+        <span className="sheet-line" />
+        <span className="sheet-line short" />
+      </div>
+      <div className="envelope-pocket">
+        <Package size={24} strokeWidth={1.5} />
+        <span>Parcel</span>
+      </div>
+      <span className="envelope-seal">
+        <Check size={18} />
+      </span>
+    </div>
+  );
+}
+function Shell({
+  children,
+  auth,
+  pageClass = "",
+}: {
+  children: React.ReactNode;
+  auth?: Auth;
+  pageClass?: string;
+}) {
   const [error, setError] = useState("");
   async function logout() {
     try {
@@ -65,7 +98,10 @@ function Shell({ children, auth }: { children: React.ReactNode; auth?: Auth }) {
     }
   }
   return (
-    <div className="app">
+    <div className={`app ${auth ? "admin-app" : "public-app"} ${pageClass}`}>
+      <a className="skip-link" href="#main-content">
+        跳到主要内容
+      </a>
       <header>
         <a href={auth ? "/admin" : "/"} className="brand">
           <span className="brand-icon">
@@ -76,7 +112,20 @@ function Shell({ children, auth }: { children: React.ReactNode; auth?: Auth }) {
         </a>
         {auth ? (
           <nav>
-            <a href="/admin">我的分享</a>
+            <a
+              href="/admin"
+              aria-current={location.pathname === "/admin" ? "page" : undefined}
+            >
+              我的分享
+            </a>
+            <a
+              href="/admin/new"
+              aria-current={
+                location.pathname === "/admin/new" ? "page" : undefined
+              }
+            >
+              上传文件
+            </a>
             <button
               className="text-button"
               onClick={logout}
@@ -92,13 +141,16 @@ function Shell({ children, auth }: { children: React.ReactNode; auth?: Auth }) {
           </a>
         )}
       </header>
-      <main>
+      <main id="main-content" tabIndex={-1}>
         <ErrorMessage message={error} />
         {children}
       </main>
       <footer>
-        <span>Parcel · Upload. Share. Disappear.</span>
-        <span>自托管 · 文件到期自动清理</span>
+        <span>Parcel，让文件轻装上路。</span>
+        <span>
+          <ShieldCheck size={16} aria-hidden="true" />
+          <span>自托管存储，到期自动清理</span>
+        </span>
       </footer>
     </div>
   );
@@ -157,16 +209,88 @@ function CopyField({
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      {fallback && (
-        <small role="status">链接已选中，请使用系统的复制操作。</small>
-      )}
+      <small
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className={fallback ? undefined : "sr-only"}
+      >
+        {fallback
+          ? "链接已选中，请使用系统的复制操作。"
+          : copied
+            ? "分享链接已复制。"
+            : ""}
+      </small>
     </div>
   );
 }
+type LoginVisualHandle = { pulse: () => void };
+const LoginVisual = React.memo(
+  React.forwardRef<
+    LoginVisualHandle,
+    { focused: boolean; busy: boolean }
+  >(function LoginVisual({ focused, busy }, ref) {
+    const envelope = useRef<HTMLDivElement>(null);
+    const pulseAnimation = useRef<Animation | undefined>(undefined);
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        pulse() {
+          if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+          pulseAnimation.current?.cancel();
+          pulseAnimation.current = envelope.current?.animate(
+            [
+              { transform: "translateY(0) rotate(0deg)" },
+              { transform: "translateY(-5px) rotate(-2deg)", offset: 0.3 },
+              { transform: "translateY(0) rotate(0deg)" },
+            ],
+            { duration: 360, easing: "cubic-bezier(.16, 1, .3, 1)" },
+          );
+        },
+      }),
+      [],
+    );
+    useEffect(() => () => pulseAnimation.current?.cancel(), []);
+    return (
+      <section className="login-story" data-focused={focused} data-busy={busy}>
+        <div className="story-copy">
+          <h2>
+            分享一份文件，
+            <br />
+            少一份牵挂。
+          </h2>
+          <p>
+            上传，发出链接。
+            <br />
+            到期之后，Parcel 帮你收好尾。
+          </p>
+        </div>
+        <div className="login-envelope-display">
+          <div ref={envelope} className="login-envelope-motion">
+            <ParcelEnvelope />
+          </div>
+        </div>
+        <div className="login-visual-status" aria-hidden="true">
+          <ShieldCheck size={16} />
+          <span>文件分享，从这里开始。</span>
+        </div>
+      </section>
+    );
+  }),
+);
 function Login() {
   const [password, setPassword] = useState(""),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [focused, setFocused] = useState(false);
+  const visual = useRef<LoginVisualHandle>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const errorAnimation = useRef<Animation | undefined>(undefined);
+  useEffect(() => () => errorAnimation.current?.cancel(), []);
+  useEffect(() => {
+    if (error && !busy) passwordInput.current?.focus({ preventScroll: true });
+  }, [error, busy]);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -179,44 +303,73 @@ function Login() {
       location.assign("/admin");
     } catch (e) {
       setError((e as Error).message);
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        errorAnimation.current?.cancel();
+        errorAnimation.current = form.current?.animate(
+          [
+            { transform: "translateX(0)" },
+            { transform: "translateX(-5px)" },
+            { transform: "translateX(4px)" },
+            { transform: "translateX(-2px)" },
+            { transform: "translateX(0)" },
+          ],
+          { duration: 320, easing: "ease-out" },
+        );
+      }
     } finally {
       setBusy(false);
     }
   }
   return (
-    <Shell>
-      <div className="auth-card">
-        <div className="symbol">
-          <KeyRound size={27} />
+    <Shell pageClass="login-app">
+      <div className="login-layout">
+        <LoginVisual ref={visual} focused={focused} busy={busy} />
+        <div className="auth-card">
+          <span className="auth-caption">
+            <KeyRound size={16} aria-hidden="true" />
+            <span>管理员登录</span>
+          </span>
+          <h1>让文件轻装上路。</h1>
+          <p className="muted">登录后上传文件，创建你的临时分享。</p>
+          <form ref={form} onSubmit={submit} aria-busy={busy}>
+            <label htmlFor="admin-password">管理员密码</label>
+            <input
+              ref={passwordInput}
+              id="admin-password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+                visual.current?.pulse();
+              }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              aria-invalid={!!error}
+              aria-describedby={error ? "login-error" : undefined}
+              disabled={busy}
+              autoComplete="current-password"
+              required
+              autoFocus={desktopAutofocus()}
+            />
+            <div id="login-error">
+              <ErrorMessage message={error} />
+            </div>
+            <button className="button primary full" disabled={busy}>
+              {busy ? (
+                <Loader2 size={18} className="spin" />
+              ) : (
+                <ArrowRight size={18} />
+              )}
+              {busy ? "正在登录" : "登录 Parcel"}
+            </button>
+          </form>
+          <p className="note">
+            <ShieldCheck size={16} aria-hidden="true" />
+            <span>密码由服务器管理员初始化。</span>
+          </p>
         </div>
-        <p className="eyebrow">管理员入口</p>
-        <h1>让文件轻装上路。</h1>
-        <p className="muted">登录后上传文件，创建你的临时分享。</p>
-        <form onSubmit={submit}>
-          <label htmlFor="admin-password">管理员密码</label>
-          <input
-            id="admin-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-            autoFocus
-          />
-          <ErrorMessage message={error} />
-          <button className="button primary full" disabled={busy}>
-            {busy ? (
-              <Loader2 size={18} className="spin" />
-            ) : (
-              <ArrowRight size={18} />
-            )}
-            {busy ? "正在登录" : "登录 Parcel"}
-          </button>
-        </form>
-        <p className="note">
-          <ShieldCheck size={15} />
-          密码由服务器管理员初始化。
-        </p>
       </div>
     </Shell>
   );
@@ -253,9 +406,8 @@ function Dashboard({ auth }: { auth: Auth }) {
     <Shell auth={auth}>
       <section className="page-heading">
         <div>
-          <p className="eyebrow">你的文件中转站</p>
-          <h1>分享之后，自动收尾。</h1>
-          <p className="muted">一条链接，按你设定的时间与次数交付。</p>
+          <h1>我的分享</h1>
+          <p className="muted">把文件交给对方，把收尾交给 Parcel。</p>
         </div>
         <a className="button primary" href="/admin/new">
           <Plus size={19} />
@@ -311,7 +463,10 @@ function Dashboard({ auth }: { auth: Auth }) {
       )}
       <section className="panel">
         <div className="panel-title">
-          <h2>我的分享</h2>
+          <div className="list-heading">
+            <h2>分享记录</h2>
+            <span>{total} 个文件</span>
+          </div>
           <button className="text-button" onClick={load}>
             <RefreshCw size={15} />
             刷新
@@ -321,28 +476,36 @@ function Dashboard({ auth }: { auth: Auth }) {
           <Loading />
         ) : items.length ? (
           <div className="share-list">
+            <div className="list-columns" aria-hidden="true">
+              <span>文件</span>
+              <span>已用下载资格</span>
+              <span>状态</span>
+            </div>
             {items.map((s) => (
               <a
                 className="share-row"
                 href={`/admin/shares/${s.id}`}
                 key={s.id}
               >
-                <div className="file-icon">
-                  <File size={23} />
+                <div className="file-icon" aria-hidden="true">
+                  <File size={23} strokeWidth={1.5} />
                 </div>
                 <div className="file-info">
                   <strong>{s.name}</strong>
                   <span>
-                    {bytes(s.size)} ·{" "}
-                    {s.password_required ? "密码保护" : "无密码"} ·{" "}
-                    {date(s.created)}
+                    <span>{bytes(s.size)}</span>
+                    <span>
+                      {s.password_required && <LockKeyhole size={12} />}
+                      {s.password_required ? "密码保护" : "无密码"}
+                    </span>
+                    <span>{date(s.created)}</span>
                   </span>
                 </div>
                 <div className="row-count">
                   <strong>
                     {s.download_count} / {s.max_downloads}
                   </strong>
-                  <span>下载资格</span>
+                  <span className="mobile-count-label">下载资格</span>
                 </div>
                 <span
                   className={`badge ${s.availability === "available" ? "green" : ""}`}
@@ -355,10 +518,8 @@ function Dashboard({ auth }: { auth: Auth }) {
           </div>
         ) : (
           <div className="empty">
-            <div className="symbol">
-              <UploadCloud size={30} />
-            </div>
-            <h3>从第一次分享开始</h3>
+            <ParcelEnvelope compact />
+            <h3>这里，留给你要分享的文件。</h3>
             <p>上传文件，设置规则，把链接交给需要的人。</p>
             <a className="button secondary" href="/admin/new">
               <Plus size={17} />
@@ -665,7 +826,6 @@ function NewShare({ auth }: { auth: Auth }) {
           <div className="symbol success">
             <CheckCircle2 size={35} />
           </div>
-          <p className="eyebrow">已经准备好</p>
           <h1>文件已装好，交给对方吧。</h1>
           <p className="muted">
             {result.name} · {bytes(result.size)}
@@ -710,28 +870,31 @@ function NewShare({ auth }: { auth: Auth }) {
       </a>
       <section className="page-heading compact">
         <div>
-          <p className="eyebrow">新建分享</p>
-          <h1>把文件送到需要的人手中。</h1>
-          <p className="muted">设置有效期与下载次数，其余交给 Parcel。</p>
+          <h1>新建分享</h1>
+          <p className="muted">选一份文件，设好规则，就可以发送链接了。</p>
         </div>
       </section>
       <ErrorMessage message={error} />
       <div className="new-grid">
         <section className="panel upload-panel">
           <div className="panel-title">
-            <h2>01 · 选择文件</h2>
+            <h2>
+              <span className="step-number">1</span>选择文件
+            </h2>
             <span className="muted">单文件分享</span>
           </div>
           <input
             ref={input}
             type="file"
             className="sr-only"
+            tabIndex={-1}
             aria-label="选择文件"
             onChange={(e) => choose(e.target.files?.[0])}
             disabled={busy}
           />
           <button
             type="button"
+            aria-label="选择要分享的文件"
             className={`dropzone ${drag ? "drag" : ""}`}
             disabled={busy}
             onClick={() => input.current?.click()}
@@ -746,22 +909,24 @@ function NewShare({ auth }: { auth: Auth }) {
               if (!busy) choose(e.dataTransfer.files[0]);
             }}
           >
-            <div className="symbol">
-              <UploadCloud size={33} />
-            </div>
+            <ParcelEnvelope compact />
             <strong>
               {file
                 ? file.name
                 : saved
                   ? `重新选择 ${saved.name}`
-                  : "拖入文件，或点击选择"}
+                  : "把文件放在这里"}
             </strong>
             <span>
               {file
                 ? bytes(file.size)
                 : settings
-                  ? `最大 ${bytes(settings.max_file_bytes)} · 文件暂存在你的服务器`
+                  ? `支持单个文件，最大 ${bytes(settings.max_file_bytes)}`
                   : "正在读取服务器配置"}
+            </span>
+            <span className="choose-file-label">
+              <Plus size={16} />
+              {file ? "重新选择文件" : "点击选择，或拖入文件"}
             </span>
           </button>
           {saved && !file && (
@@ -805,7 +970,9 @@ function NewShare({ auth }: { auth: Auth }) {
         </section>
         <section className="panel rules-panel">
           <div className="panel-title">
-            <h2>02 · 分享规则</h2>
+            <h2>
+              <span className="step-number">2</span>分享规则
+            </h2>
           </div>
           <fieldset disabled={busy || !!upload}>
             <label htmlFor="share-ttl">有效期</label>
@@ -1242,12 +1409,13 @@ function Receive({ id }: { id: string }) {
               <label htmlFor="receive-password">分享密码</label>
               <input
                 id="receive-password"
+                name="share-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="off"
                 required
-                autoFocus
+                autoFocus={desktopAutofocus()}
               />
               <button className="button primary full" disabled={busy}>
                 {busy ? (
