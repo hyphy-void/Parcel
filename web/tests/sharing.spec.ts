@@ -21,13 +21,31 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
     .getByLabel("选择文件", { exact: true })
     .setInputFiles({ name: filename, mimeType: "text/plain", buffer: payload });
   await page.getByLabel("密码保护", { exact: true }).check();
-  await page.getByLabel("分享密码", { exact: true }).fill("recipient-password");
+  const codeInput = page.getByLabel("分享密码", { exact: true });
+  await expect(codeInput).toHaveValue(/^[a-z2-9]{4}$/);
+  await page.getByRole("button", { name: "换一个", exact: true }).click();
+  await expect(codeInput).toHaveValue(/^[a-z2-9]{4}$/);
+  const code = await codeInput.inputValue();
   await page.getByLabel("下载次数", { exact: true }).fill("1");
   await page.getByRole("button", { name: "上传并创建分享" }).click();
   await expect(
     page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
   ).toBeVisible();
   const url = await page.getByLabel("分享链接", { exact: true }).inputValue();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: undefined,
+      configurable: true,
+    });
+    const probe = document.createElement("textarea");
+    probe.id = "protected-copy-probe";
+    document.querySelector("main")!.appendChild(probe);
+  });
+  await page.getByRole("button", { name: "复制分享链接" }).click();
+  const copyProbe = page.locator("#protected-copy-probe");
+  await copyProbe.focus();
+  await page.keyboard.press("Control+V");
+  await expect(copyProbe).toHaveValue(`链接：${url}\n提取码：${code}`);
   await page.screenshot({
     path: testInfo.outputPath("published.png"),
     fullPage: true,
@@ -48,7 +66,7 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
   await receive.getByLabel("分享密码").fill("wrong-password");
   await receive.getByRole("button", { name: "解锁文件" }).click();
   await expect(receive.getByRole("alert")).toContainText("分享密码不正确");
-  await receive.getByLabel("分享密码").fill("recipient-password");
+  await receive.getByLabel("分享密码").fill(code);
   await receive.getByRole("button", { name: "解锁文件" }).click();
   await expect(receive.getByRole("heading", { name: filename })).toBeVisible();
   const [download] = await Promise.all([
@@ -116,7 +134,7 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
   await expect(copy).toContainText("已复制");
   await probe.focus();
   await page.keyboard.press("Control+V");
-  await expect(probe).toHaveValue(link);
+  await expect(probe).toHaveValue(`链接：${link}`);
   await expect(page.getByRole("status")).toHaveText("分享链接已复制。");
 
   // A denied modern API must also fall back to an actual clipboard write.
@@ -134,7 +152,7 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
   await expect(copy).toContainText("已复制");
   await probe.focus();
   await page.keyboard.press("Control+V");
-  await expect(probe).toHaveValue(link);
+  await expect(probe).toHaveValue(`链接：${link}`);
 
   await page.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", {
@@ -144,14 +162,14 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
     document.execCommand = () => false;
   });
   await page.getByRole("button", { name: "复制分享链接" }).click();
-  await expect(page.getByRole("status")).toContainText("链接已选中");
+  await expect(page.getByRole("status")).toContainText("分享内容已选中");
   await expect(copy).toHaveText("复制");
   expect(
-    await page.getByLabel("分享链接", { exact: true }).evaluate((node) => {
-      const input = node as HTMLInputElement;
+    await page.getByLabel("分享内容", { exact: true }).evaluate((node) => {
+      const input = node as HTMLTextAreaElement;
       return [input.selectionStart, input.selectionEnd];
     }),
-  ).toEqual([0, link.length]);
+  ).toEqual([0, `链接：${link}`.length]);
 });
 
 test("创建回复丢失后刷新可以找回原上传，不重复预留空间", async ({ page }) => {

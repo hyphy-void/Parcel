@@ -180,7 +180,7 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {
 			a.problem(w, r, 503, "busy", "密码处理繁忙")
 			return
 		}
-		hash, e = HashPassword(req.Password)
+		hash, e = hashSharePassword(req.Password)
 		<-a.hashSlots
 		if e != nil {
 			a.problem(w, r, 400, "invalid_password", e.Error())

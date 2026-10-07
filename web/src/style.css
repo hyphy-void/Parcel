@@ -167,6 +167,17 @@ fieldset {
   font-size: 28px;
   letter-spacing: -1.3px;
 }
+.brand-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+.brand-wordmark > strong {
+  line-height: 32px;
+}
+.brand-wordmark > .brand-tag {
+  line-height: 20px;
+}
 .brand-icon {
   background: var(--accent);
   color: var(--on-accent);
@@ -179,7 +190,6 @@ fieldset {
 .brand-tag {
   color: var(--muted);
   font-size: 13px;
-  margin-left: 12px;
 }
 nav {
   display: flex;
@@ -844,12 +854,31 @@ footer > span:last-child {
   margin: 0 !important;
 }
 .password-field {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
   margin-top: 14px;
 }
 .password-field input {
+  min-width: 0;
   font-size: 13px;
+}
+.password-field > button {
+  white-space: nowrap;
+  padding: 10px 12px;
+}
+.copy-content {
+  width: 100%;
+  min-height: 80px;
+  margin-top: 10px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  padding: 12px;
+  resize: vertical;
 }
 .actions {
   padding: 0 26px 25px;
@@ -1552,4 +1581,16 @@ footer > span:last-child {
 .button > svg {
   width: 18px;
   height: 18px;
+}
+
+/* Horizontal arrow shafts already sit on the text's visual center.
+   The optical lift used for taller outline icons makes these arrows too high. */
+:is(.button, .text-button, .back-link)
+  > :is(.lucide-arrow-left, .lucide-arrow-right) {
+  translate: none;
+}
+.back-link > .lucide-arrow-left {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
 }

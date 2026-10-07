@@ -21,8 +21,14 @@ func randomToken() string {
 }
 func tokenHash(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
 func HashPassword(s string) (string, error) {
-	if len(s) < 8 || len(s) > 256 {
-		return "", fmt.Errorf("密码长度应为 8–256 字节")
+	return hashPassword(s, 8)
+}
+func hashSharePassword(s string) (string, error) {
+	return hashPassword(s, 4)
+}
+func hashPassword(s string, minimum int) (string, error) {
+	if len(s) < minimum || len(s) > 256 {
+		return "", fmt.Errorf("密码长度应为 %d-256 字节", minimum)
 	}
 	salt := make([]byte, 16)
 	if _, e := rand.Read(salt); e != nil {

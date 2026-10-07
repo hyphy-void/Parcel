@@ -31,6 +31,7 @@ import {
   bytes,
   date,
   randomPassword,
+  randomShareCode,
   sleep,
   type Share,
   type Status,
@@ -107,8 +108,10 @@ function Shell({
           <span className="brand-icon">
             <Package size={23} />
           </span>
-          <strong>Parcel</strong>
-          <span className="brand-tag">临时文件分享</span>
+          <span className="brand-wordmark">
+            <strong>Parcel</strong>
+            <span className="brand-tag">临时文件分享</span>
+          </span>
         </a>
         {auth ? (
           <nav>
@@ -157,12 +160,17 @@ function Shell({
 }
 function CopyField({
   value,
+  password,
+  passwordRequired = false,
   label = "分享链接",
 }: {
   value: string;
+  password?: string;
+  passwordRequired?: boolean;
   label?: string;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const content = `链接：${value}${password ? `\n提取码：${password}` : ""}`;
   const [copied, setCopied] = useState(false);
   const [fallback, setFallback] = useState(false);
   async function copy() {
@@ -172,10 +180,14 @@ function CopyField({
       try {
         const input = ref.current;
         if (!input) return false;
+        const active = document.activeElement;
         input.focus({ preventScroll: true });
         input.select();
-        input.setSelectionRange(0, value.length);
-        return document.execCommand("copy");
+        input.setSelectionRange(0, content.length);
+        const success = document.execCommand("copy");
+        if (success && active instanceof HTMLElement)
+          active.focus({ preventScroll: true });
+        return success;
       } catch {
         return false;
       }
@@ -183,7 +195,7 @@ function CopyField({
     let success = false;
     if (window.isSecureContext && navigator.clipboard?.writeText) {
       try {
-        await navigator.clipboard.writeText(value);
+        await navigator.clipboard.writeText(content);
         success = true;
       } catch {
         success = copySelection();
@@ -203,12 +215,24 @@ function CopyField({
     <div className="copy-wrapper">
       <label htmlFor="copy-link">{label}</label>
       <div className="copy-field">
-        <input id="copy-link" ref={ref} readOnly value={value} />
+        <input id="copy-link" readOnly value={value} />
         <button type="button" onClick={copy} aria-label="复制分享链接">
           {copied ? <Check size={18} /> : <Copy size={18} />}
           {copied ? "已复制" : "复制"}
         </button>
       </div>
+      {passwordRequired && !password && (
+        <small>无法读取原提取码，复制内容仅含链接。</small>
+      )}
+      <textarea
+        ref={ref}
+        readOnly
+        value={content}
+        aria-label="分享内容"
+        aria-hidden={!fallback}
+        tabIndex={fallback ? 0 : -1}
+        className={fallback ? "copy-content" : "sr-only"}
+      />
       <small
         role="status"
         aria-live="polite"
@@ -216,7 +240,7 @@ function CopyField({
         className={fallback ? undefined : "sr-only"}
       >
         {fallback
-          ? "链接已选中，请使用系统的复制操作。"
+          ? "分享内容已选中，请使用系统的复制操作。"
           : copied
             ? "分享链接已复制。"
             : ""}
@@ -226,57 +250,60 @@ function CopyField({
 }
 type LoginVisualHandle = { pulse: () => void };
 const LoginVisual = React.memo(
-  React.forwardRef<
-    LoginVisualHandle,
-    { focused: boolean; busy: boolean }
-  >(function LoginVisual({ focused, busy }, ref) {
-    const envelope = useRef<HTMLDivElement>(null);
-    const pulseAnimation = useRef<Animation | undefined>(undefined);
-    React.useImperativeHandle(
-      ref,
-      () => ({
-        pulse() {
-          if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-          pulseAnimation.current?.cancel();
-          pulseAnimation.current = envelope.current?.animate(
-            [
-              { transform: "translateY(0) rotate(0deg)" },
-              { transform: "translateY(-5px) rotate(-2deg)", offset: 0.3 },
-              { transform: "translateY(0) rotate(0deg)" },
-            ],
-            { duration: 360, easing: "cubic-bezier(.16, 1, .3, 1)" },
-          );
-        },
-      }),
-      [],
-    );
-    useEffect(() => () => pulseAnimation.current?.cancel(), []);
-    return (
-      <section className="login-story" data-focused={focused} data-busy={busy}>
-        <div className="story-copy">
-          <h2>
-            分享一份文件，
-            <br />
-            少一份牵挂。
-          </h2>
-          <p>
-            上传，发出链接。
-            <br />
-            到期之后，Parcel 帮你收好尾。
-          </p>
-        </div>
-        <div className="login-envelope-display">
-          <div ref={envelope} className="login-envelope-motion">
-            <ParcelEnvelope />
+  React.forwardRef<LoginVisualHandle, { focused: boolean; busy: boolean }>(
+    function LoginVisual({ focused, busy }, ref) {
+      const envelope = useRef<HTMLDivElement>(null);
+      const pulseAnimation = useRef<Animation | undefined>(undefined);
+      React.useImperativeHandle(
+        ref,
+        () => ({
+          pulse() {
+            if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+            pulseAnimation.current?.cancel();
+            pulseAnimation.current = envelope.current?.animate(
+              [
+                { transform: "translateY(0) rotate(0deg)" },
+                { transform: "translateY(-5px) rotate(-2deg)", offset: 0.3 },
+                { transform: "translateY(0) rotate(0deg)" },
+              ],
+              { duration: 360, easing: "cubic-bezier(.16, 1, .3, 1)" },
+            );
+          },
+        }),
+        [],
+      );
+      useEffect(() => () => pulseAnimation.current?.cancel(), []);
+      return (
+        <section
+          className="login-story"
+          data-focused={focused}
+          data-busy={busy}
+        >
+          <div className="story-copy">
+            <h2>
+              分享一份文件，
+              <br />
+              少一份牵挂。
+            </h2>
+            <p>
+              上传，发出链接。
+              <br />
+              到期之后，Parcel 帮你收好尾。
+            </p>
           </div>
-        </div>
-        <div className="login-visual-status" aria-hidden="true">
-          <ShieldCheck size={16} />
-          <span>文件分享，从这里开始。</span>
-        </div>
-      </section>
-    );
-  }),
+          <div className="login-envelope-display">
+            <div ref={envelope} className="login-envelope-motion">
+              <ParcelEnvelope />
+            </div>
+          </div>
+          <div className="login-visual-status" aria-hidden="true">
+            <ShieldCheck size={16} />
+            <span>文件分享，从这里开始。</span>
+          </div>
+        </section>
+      );
+    },
+  ),
 );
 function Login() {
   const [password, setPassword] = useState(""),
@@ -830,7 +857,11 @@ function NewShare({ auth }: { auth: Auth }) {
           <p className="muted">
             {result.name} · {bytes(result.size)}
           </p>
-          <CopyField value={result.url} />
+          <CopyField
+            value={result.url}
+            password={protect ? password : undefined}
+            passwordRequired={result.password_required}
+          />
           {protect && password && (
             <div className="password-display">
               <LockKeyhole size={17} />
@@ -1019,7 +1050,11 @@ function NewShare({ auth }: { auth: Auth }) {
                 id="protect"
                 type="checkbox"
                 checked={protect}
-                onChange={(e) => setProtect(e.target.checked)}
+                onChange={(e) => {
+                  setProtect(e.target.checked);
+                  if (e.target.checked && !password)
+                    setPassword(randomShareCode());
+                }}
               />
             </div>
             {protect && (
@@ -1029,15 +1064,15 @@ function NewShare({ auth }: { auth: Auth }) {
                   type="text"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="至少 8 字节"
+                  placeholder="至少 4 位"
                   autoComplete="off"
                 />
                 <button
                   className="text-button"
-                  onClick={() => setPassword(randomPassword())}
+                  onClick={() => setPassword(randomShareCode())}
                   type="button"
                 >
-                  生成
+                  换一个
                 </button>
               </div>
             )}
@@ -1066,7 +1101,7 @@ function NewShare({ auth }: { auth: Auth }) {
                     (limit < 1 ||
                       limit > 100 ||
                       (protect &&
-                        new TextEncoder().encode(password).length < 8)))
+                        new TextEncoder().encode(password).length < 4)))
                 }
               >
                 {phase === "checking" ? (
@@ -1098,6 +1133,7 @@ function NewShare({ auth }: { auth: Auth }) {
 }
 function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
   const [share, setShare] = useState<Share>(),
+    [copyPassword, setCopyPassword] = useState<string>(),
     [error, setError] = useState(""),
     [password, setPassword] = useState(""),
     [message, setMessage] = useState(""),
@@ -1139,9 +1175,10 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
       );
       setMessage(
         password
-          ? "密码已更新，旧授权已失效。请单独把新密码告知接收者。"
+          ? "密码已更新，旧授权已失效。复制分享时会附上新提取码。"
           : "密码保护已关闭，旧授权已失效。",
       );
+      setCopyPassword(password || undefined);
       setPassword("");
       await load();
     } catch (e) {
@@ -1175,7 +1212,11 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
           </section>
           <div className="detail-grid">
             <section className="panel detail-main">
-              <CopyField value={share.url} />
+              <CopyField
+                value={share.url}
+                password={share.password_required ? copyPassword : undefined}
+                passwordRequired={share.password_required}
+              />
               <div className="rule-grid">
                 <div>
                   <Clock3 size={20} />
@@ -1231,7 +1272,7 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
                       disabled={
                         busy ||
                         (!!password &&
-                          new TextEncoder().encode(password).length < 8)
+                          new TextEncoder().encode(password).length < 4)
                       }
                     >
                       保存密码设置

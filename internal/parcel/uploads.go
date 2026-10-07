@@ -94,7 +94,7 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var e error
-		hash, e = HashPassword(req.Password)
+		hash, e = hashSharePassword(req.Password)
 		<-a.hashSlots
 		if e != nil {
 			a.problem(w, r, 400, "invalid_password", e.Error())

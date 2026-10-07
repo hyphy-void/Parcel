@@ -97,6 +97,18 @@ export function randomPassword(): string {
   const b = crypto.getRandomValues(new Uint8Array(16));
   return Array.from(b, (n) => alphabet[n % alphabet.length]).join("");
 }
+export function randomShareCode(): string {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const cutoff = 256 - (256 % alphabet.length);
+  let code = "";
+  while (code.length < 4) {
+    for (const n of crypto.getRandomValues(new Uint8Array(8))) {
+      if (n < cutoff) code += alphabet[n % alphabet.length];
+      if (code.length === 4) break;
+    }
+  }
+  return code;
+}
 export const availability: Record<string, string> = {
   available: "可下载",
   expired: "已过期",
