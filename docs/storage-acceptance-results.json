@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-07T15:58:36+0800",
+  "checks": {
+    "real_enospc_no_offset_advance_no_partial_publication": true,
+    "same_upload_resumes_after_space_recovered": true,
+    "missing_mount_refused_without_fallback_write": true
+  },
+  "binary_sha256": "47fc00eded18803386316a51fc20a97d95a8782515764c10aca30ec1ffdf336f",
+  "version": "0.1.0",
+  "passed": true
+}

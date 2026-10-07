@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY);
+CREATE TABLE admin_credentials(id INTEGER PRIMARY KEY CHECK(id=1), password_hash TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE admin_sessions(token_hash TEXT PRIMARY KEY, csrf TEXT NOT NULL, expires INTEGER NOT NULL, version INTEGER NOT NULL);
+CREATE TABLE uploads(id TEXT PRIMARY KEY, name TEXT NOT NULL, size INTEGER NOT NULL CHECK(size>=0), offset INTEGER NOT NULL DEFAULT 0 CHECK(offset>=0 AND offset<=size), ttl INTEGER NOT NULL, max_downloads INTEGER NOT NULL, password_hash TEXT NOT NULL DEFAULT '', state TEXT NOT NULL, storage_key TEXT NOT NULL UNIQUE, share_id TEXT NOT NULL UNIQUE, created INTEGER NOT NULL, updated INTEGER NOT NULL, idem TEXT UNIQUE, error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE shares(id TEXT PRIMARY KEY, upload_id TEXT NOT NULL UNIQUE REFERENCES uploads(id), storage_key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, password_hash TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL, expires INTEGER NOT NULL, max_downloads INTEGER NOT NULL CHECK(max_downloads BETWEEN 1 AND 100), download_count INTEGER NOT NULL DEFAULT 0 CHECK(download_count>=0 AND download_count<=max_downloads), version INTEGER NOT NULL DEFAULT 1, state TEXT NOT NULL DEFAULT 'active', error TEXT NOT NULL DEFAULT '', delete_attempts INTEGER NOT NULL DEFAULT 0, retry_at INTEGER NOT NULL DEFAULT 0, deleted_at INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE share_grants(token_hash TEXT PRIMARY KEY, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE, version INTEGER NOT NULL, expires INTEGER NOT NULL);
+CREATE TABLE download_sessions(token_hash TEXT PRIMARY KEY, share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE, version INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'issued', created INTEGER NOT NULL, activated INTEGER NOT NULL DEFAULT 0, last_activity INTEGER NOT NULL, expires INTEGER NOT NULL);
+CREATE INDEX download_share ON download_sessions(share_id,state,expires);
+CREATE INDEX grant_share ON share_grants(share_id);
+CREATE INDEX share_expiry ON shares(state,expires);
+CREATE TABLE audit_events(id INTEGER PRIMARY KEY, action TEXT NOT NULL, target TEXT NOT NULL, result TEXT NOT NULL, created INTEGER NOT NULL);
+INSERT INTO schema_migrations VALUES(1);

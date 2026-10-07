@@ -1,0 +1,25 @@
+[Unit]
+Description=Parcel temporary file sharing
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/srv/parcel
+
+[Service]
+Type=simple
+User=parcel
+Group=parcel
+EnvironmentFile=/etc/parcel/parcel.env
+ExecStart=/opt/parcel/parcel serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/parcel
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

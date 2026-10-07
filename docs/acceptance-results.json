@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-07T15:45:39+0800",
+  "host": "Pi4b",
+  "architecture": "aarch64",
+  "bytes": 8589934592,
+  "checks": {
+    "upload_restart_and_tail_recovery": true,
+    "verification_restart_and_sha256": true,
+    "complete_idempotent": true,
+    "range_restart_full_sha256_and_single_count": true,
+    "two_uploads_four_downloads_one_verification": true,
+    "revocation_cleanup_and_quota_released": true,
+    "rss_under_256_mib": true
+  },
+  "rss_peak_kib": 50076,
+  "timings_seconds": {
+    "source": 122.631,
+    "upload_including_restart": 162.249,
+    "download_including_restart_and_hash": 188.118
+  },
+  "binary_sha256": "5a093b8d380844d6975a9c5a2711c7e78e6f1446fd73b97d08925578c03b8cc7",
+  "version": "0.1.0",
+  "go_build": "/home/hyphy/gitcode/Parcel/.parcel-acceptance-1s1zvatk/parcel-under-test: go1.26.8\n\tpath\tgithub.com/hyphy-void/Parcel/cmd/parcel\n\tmod\tgithub.com/hyphy-void/Parcel\t(devel)\t\n\tdep\tgithub.com/dustin/go-humanize\tv1.0.1\th1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=\n\tdep\tgithub.com/google/uuid\tv1.6.0\th1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=\n\tdep\tgithub.com/remyoudompheng/bigfft\tv0.0.0-20230129092748-24d4a6f8daec\th1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=\n\tdep\tgolang.org/x/crypto\tv0.57.0\th1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=\n\tdep\tgolang.org/x/sys\tv0.48.0\th1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=\n\tdep\tgolang.org/x/term\tv0.46.0\th1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=\n\tdep\tmodernc.org/libc\tv1.77.1\th1:Ct8j47QtiZ1Enj2DtFXQtUqrPCAjdCmPjtCuvrYQ0Hs=\n\tdep\tmodernc.org/mathutil\tv1.7.1\th1:GCZVGXdaN8gTqB1Mf/usp1Y/hSqgI2vAGGP4jZMCxOU=\n\tdep\tmodernc.org/memory\tv1.12.1\th1:nFMiWrpStgZczNl6XI9GnIk/rWhYIyHGUaR04pGbp9g=\n\tdep\tmodernc.org/sqlite\tv1.60.1\th1:/blz53O951KWFOso4QQvEs/Fq6cDBKLtMVrYNSeJVKw=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=arm64\n\tbuild\tGOOS=linux\n\tbuild\tGOARM64=v8.0",
+  "source_tree_sha256": "603a1226f48d7893296082df22b450118de8c7dd7347112980d627d6c6307d18",
+  "sha256": "73ce5d97029dbd1784eba6e3027ff0a1f080a3872a057b07decee9234107fb47",
+  "concurrency_overlap": {
+    "active_uploads": 2,
+    "active_downloads": 4,
+    "active_finalizations": 1
+  },
+  "passed": true
+}

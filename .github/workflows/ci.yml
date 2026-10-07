@@ -1,0 +1,31 @@
+name: Parcel checks
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: npm --prefix web ci
+      - run: npm --prefix web run build
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: ./scripts/release.sh
+      - run: npx playwright install --with-deps chromium firefox
+        working-directory: web
+      - run: npm run test:e2e
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parcel-linux
+          path: dist/

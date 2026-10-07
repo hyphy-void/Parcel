@@ -1,0 +1,14 @@
+/bin/
+/dist/
+/data/
+/.parcel-*/
+/web/node_modules/
+/web/dist/
+/web/playwright-report/
+/web/test-results/
+*.log
+.env
+*.db*
+
+__pycache__/
+*.pyc

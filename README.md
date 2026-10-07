@@ -1,0 +1,53 @@
+# Parcel
+
+**Upload. Share. Disappear.**
+
+自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
+
+v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，运行时无需 Node、数据库服务或反向代理。文件存储在本机 SSD 上，通过局域网 IP 访问。当前不接入 Cloudflare Tunnel。
+
+管理员登录后上传单个文件，设置可选密码、有效期与下载次数，生成一个分享链接。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
+
+## 本地启动
+
+构建需要 Go 1.26 或更新的兼容版本、Node 24 和 npm。Go 的自动工具链下载可以从已安装的旧版 Go 启动构建。
+
+```bash
+./scripts/build.sh
+./bin/parcel admin-password
+./bin/parcel serve
+```
+
+默认访问 `http://127.0.0.1:8080`。管理员密码交互输入，数据默认保存到 `./data`；无内置默认密码。
+
+局域网运行示例：
+
+```bash
+export PARCEL_LISTEN_ADDR=192.168.5.16:8080
+export PARCEL_BASE_URL=http://192.168.5.16:8080
+./bin/parcel serve
+```
+
+只允许绑定明确的内网或回环 IP，不允许 `0.0.0.0` 或公网 IP。HTTP 模式适用于可信局域网；链接只对能到达该内网地址的接收者有效。
+
+## 开发与验证
+
+```bash
+npm --prefix web run dev            # 另一个终端运行 Go 服务
+npm --prefix web run build
+go test -race ./...
+go vet ./...
+cd web && npx playwright install chromium firefox && npm run test:e2e
+```
+
+Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需先构建前端。开发代理仅支持默认的 `127.0.0.1:8080` 后端和 `127.0.0.1:5173` 前端地址。
+
+生成 Linux ARM64、ARMv7、AMD64 产物与校验和：`./scripts/release.sh`。独立的大文件验收：`python3 scripts/acceptance.py`，默认生成真实 8 GiB 文件，需约 35 GiB 可用空间。实际磁盘写满与挂载丢失验收：`python3 scripts/storage-acceptance.py`，需要可使用 sudo 的测试环境。
+
+## 文档
+
+- [设计与开发计划](docs/development-plan.md)
+- [安装、配置与运维](docs/operations.md)
+- [验收报告与未测项目](docs/acceptance.md)
+
+下载次数指首次准许传输消耗的下载资格；同一有效会话重试与续传不重复扣次，网络中断不退还资格。浏览器的实际保存进度由原生下载列表显示。
