@@ -1,0 +1,3 @@
+ALTER TABLE uploads ADD COLUMN put_expires INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE uploads ADD COLUMN staging_cleaned INTEGER NOT NULL DEFAULT 0;
+INSERT INTO schema_migrations VALUES(3);

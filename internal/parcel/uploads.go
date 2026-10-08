@@ -13,7 +13,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/hyphy-void/Parcel/internal/r2"
 )
+
+const uploadConfirmationBytes int64 = 100_000_000 // 100 decimal MB, not MiB.
 
 func (a *App) usage() (used, reserved, pending int64, e error) {
 	e = a.db.QueryRow("SELECT COALESCE(sum(size),0),COALESCE(sum(CASE WHEN state='deleting' THEN size ELSE 0 END),0) FROM shares WHERE state!='deleted'").Scan(&used, &pending)
@@ -23,9 +27,24 @@ func (a *App) usage() (used, reserved, pending int64, e error) {
 	e = a.db.QueryRow("SELECT COALESCE(sum(size),0) FROM uploads WHERE state NOT IN ('completed','cleaned')").Scan(&reserved)
 	return
 }
+
+// Budget includes incomplete files and the second copy of single-PUT uploads.
+// It is Parcel's storage guard, not Cloudflare's account-wide monthly bill.
+func (a *App) r2Usage() (used, reserved int64, err error) {
+	err = a.db.QueryRow("SELECT COALESCE(sum(size),0) FROM shares WHERE backend='r2' AND state!='deleted'").Scan(&used)
+	if err != nil {
+		return
+	}
+	err = a.db.QueryRow("SELECT COALESCE(sum(CASE WHEN state='completed' THEN size WHEN part_bytes=0 THEN size*2 ELSE size END),0) FROM uploads WHERE backend='r2' AND ((state NOT IN ('completed','cleaned')) OR (state='completed' AND part_bytes=0 AND staging_cleaned=0))").Scan(&reserved)
+	return
+}
 func (a *App) status(w http.ResponseWriter, r *http.Request) {
 	a.mu.Lock()
 	used, reserved, pending, e := a.usage()
+	r2Used, r2Reserved, r2Err := a.r2Usage()
+	if e == nil {
+		e = r2Err
+	}
 	activeDownloads := 0
 	for _, v := range a.streams {
 		activeDownloads += len(v)
@@ -42,7 +61,7 @@ func (a *App) status(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, e)
 		return
 	}
-	jsonOK(w, 200, map[string]any{"used_bytes": used, "reserved_bytes": reserved, "pending_bytes": pending, "free_bytes": free, "quota_bytes": a.C.Quota, "min_free_bytes": a.C.MinFree, "max_file_bytes": a.C.MaxFile, "chunk_bytes": a.C.Chunk, "default_ttl_seconds": int64(a.C.ShareTTL.Seconds()), "max_ttl_seconds": int64(a.C.MaxShareTTL.Seconds()), "default_download_limit": a.C.DownloadLimit, "version": Version, "base_url": a.C.BaseURL, "active_downloads": activeDownloads, "active_uploads": activeUploads, "active_finalizations": activeFinalizations})
+	jsonOK(w, 200, map[string]any{"r2_used_bytes": r2Used, "r2_reserved_bytes": r2Reserved, "r2_quota_bytes": a.C.R2Quota, "r2_available_bytes": max(0, a.C.R2Quota-r2Used-r2Reserved), "storage_backend": a.C.StorageBackend, "upload_confirmation_bytes": uploadConfirmationBytes, "used_bytes": used, "reserved_bytes": reserved, "pending_bytes": pending, "free_bytes": free, "quota_bytes": a.C.Quota, "min_free_bytes": a.C.MinFree, "max_file_bytes": a.C.MaxFile, "chunk_bytes": a.C.Chunk, "default_ttl_seconds": int64(a.C.ShareTTL.Seconds()), "max_ttl_seconds": int64(a.C.MaxShareTTL.Seconds()), "default_download_limit": a.C.DownloadLimit, "version": Version, "base_url": a.C.BaseURL, "active_downloads": activeDownloads, "active_uploads": activeUploads, "active_finalizations": activeFinalizations})
 }
 func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 	if !a.rate(w, r, "upload:"+a.clientIP(r), 30, time.Minute) {
@@ -54,6 +73,7 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 		TTL          int64  `json:"ttl_seconds"`
 		MaxDownloads int    `json:"max_downloads"`
 		Password     string `json:"password"`
+		ConfirmLarge bool   `json:"confirm_large"`
 	}
 	if !a.decode(w, r, &req) {
 		return
@@ -64,6 +84,10 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Size < 0 || req.Size > a.C.MaxFile {
 		a.problem(w, r, 413, "file_too_large", "文件超过大小限制")
+		return
+	}
+	if req.Size > uploadConfirmationBytes && !req.ConfirmLarge {
+		a.problem(w, r, 400, "confirmation_required", "超过 100 MB（100,000,000 字节）需要确认后上传")
 		return
 	}
 	if req.TTL == 0 {
@@ -127,17 +151,32 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, e)
 		return
 	}
+	if a.r2 != nil {
+		r2Used, r2Reserved, err := a.r2Usage()
+		if err != nil {
+			a.internal(w, r, err)
+			return
+		}
+		needed := req.Size
+		if req.Size <= uploadConfirmationBytes {
+			needed *= 2
+		}
+		if needed > a.C.R2Quota-r2Used-r2Reserved {
+			a.problem(w, r, 507, "r2_quota_exceeded", "R2 存储保护额度不足，已停止新上传。请等待文件清理释放空间。")
+			return
+		}
+	}
 	free, e := a.freeBytes()
 	if e != nil {
 		a.internal(w, r, e)
 		return
 	}
 	var remaining int64
-	if e = a.db.QueryRow("SELECT COALESCE(sum(size-offset),0) FROM uploads WHERE state IN ('created','uploading','finalizing')").Scan(&remaining); e != nil {
+	if e = a.db.QueryRow("SELECT COALESCE(sum(size-offset),0) FROM uploads WHERE backend='local' AND state IN ('created','uploading','finalizing')").Scan(&remaining); e != nil {
 		a.internal(w, r, e)
 		return
 	}
-	if req.Size > a.C.Quota-used-reserved || free-a.C.MinFree-remaining < req.Size {
+	if req.Size > a.C.Quota-used-reserved || (a.r2 == nil && free-a.C.MinFree-remaining < req.Size) || (a.r2 != nil && free < a.C.MinFree) {
 		a.problem(w, r, 507, "insufficient_storage", "存储空间或配额不足")
 		return
 	}
@@ -148,26 +187,36 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, key, shareID := randomToken(), randomToken(), randomToken()
-	f, e := a.root.OpenFile("tmp/"+id+".part", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if e != nil {
-		a.internal(w, r, e)
-		return
-	}
-	e = f.Sync()
-	f.Close()
-	if e == nil {
-		e = a.syncDir("tmp")
-	}
-	if e != nil {
-		a.root.Remove("tmp/" + id + ".part")
-		a.internal(w, r, e)
-		return
+	if a.r2 == nil {
+		f, e := a.root.OpenFile("tmp/"+id+".part", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if e != nil {
+			a.internal(w, r, e)
+			return
+		}
+		e = f.Sync()
+		f.Close()
+		if e == nil {
+			e = a.syncDir("tmp")
+		}
+		if e != nil {
+			a.root.Remove("tmp/" + id + ".part")
+			a.internal(w, r, e)
+			return
+		}
 	}
 	var idemValue any
 	if idem != "" {
 		idemValue = tokenHash(idem)
 	}
-	_, e = a.db.Exec("INSERT INTO uploads(id,name,size,ttl,max_downloads,password_hash,state,storage_key,share_id,created,updated,idem) VALUES(?,?,?,?,?,?,'created',?,?,?,?,?)", id, req.Name, req.Size, req.TTL, req.MaxDownloads, hash, key, shareID, a.now().Unix(), a.now().Unix(), idemValue)
+	backend, partBytes := "local", int64(0)
+	if a.r2 != nil {
+		backend = "r2"
+		if req.Size > uploadConfirmationBytes {
+			partBytes = r2.PartSize
+		}
+		key = "parcel/v2/" + key
+	}
+	_, e = a.db.Exec("INSERT INTO uploads(id,name,size,ttl,max_downloads,password_hash,state,storage_key,share_id,created,updated,idem,backend,part_bytes) VALUES(?,?,?,?,?,?,'created',?,?,?,?,?,?,?)", id, req.Name, req.Size, req.TTL, req.MaxDownloads, hash, key, shareID, a.now().Unix(), a.now().Unix(), idemValue, backend, partBytes)
 	if e != nil {
 		a.root.Remove("tmp/" + id + ".part")
 		a.internal(w, r, e)
@@ -182,6 +231,8 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, 201, u)
 }
 func (a *App) getUpload(w http.ResponseWriter, r *http.Request) {
+	release := a.getUploadLock(r.PathValue("id"))
+	defer release()
 	u, e := a.upload(r.PathValue("id"))
 	if e != nil {
 		if missing(e) {
@@ -190,6 +241,15 @@ func (a *App) getUpload(w http.ResponseWriter, r *http.Request) {
 			a.internal(w, r, e)
 		}
 		return
+	}
+	if u.Backend == "r2" && (u.State == "created" || u.State == "uploading") {
+		if e = a.refreshR2(r.Context(), &u); e != nil {
+			a.internal(w, r, e)
+			return
+		}
+	}
+	if u.Backend == "r2" && u.State == "finalizing" && a.now().Unix()-u.Updated >= 30 {
+		a.startFinalize(u.ID)
 	}
 	jsonOK(w, 200, u)
 }
@@ -236,6 +296,11 @@ func (a *App) patchUpload(w http.ResponseWriter, r *http.Request) {
 	if e != nil {
 		a.mu.Unlock()
 		a.problem(w, r, 404, "not_found", "上传不存在")
+		return
+	}
+	if u.Backend == "r2" {
+		a.mu.Unlock()
+		a.problem(w, r, 409, "direct_upload_required", "请使用 R2 直传分块地址")
 		return
 	}
 	if u.State != "created" && u.State != "uploading" {
@@ -357,6 +422,11 @@ func (a *App) completeUpload(w http.ResponseWriter, r *http.Request) {
 		a.problem(w, r, 409, "upload_not_writable", "上传已失效")
 		return
 	}
+	if u.Backend == "r2" {
+		a.mu.Unlock()
+		a.completeR2(w, r, u)
+		return
+	}
 	if u.Offset != u.Size {
 		a.mu.Unlock()
 		a.problem(w, r, 409, "upload_incomplete", "文件尚未全部上传")
@@ -374,6 +444,13 @@ func (a *App) completeUpload(w http.ResponseWriter, r *http.Request) {
 }
 func (a *App) cancelUpload(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// Local hashing is interruptible and must not delay cancellation. R2 control
+	// operations need serialization to prevent a completion/cancel race.
+	initial, _ := a.upload(id)
+	if initial.Backend == "r2" {
+		release := a.getUploadLock(id)
+		defer release()
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	u, e := a.upload(id)
@@ -435,7 +512,8 @@ func (a *App) startFinalize(id string) {
 			}
 			a.log.Error("finalization failed", "upload_id", id, "error", e)
 			a.mu.Lock()
-			_, _ = a.db.Exec("UPDATE uploads SET state='failed',error='文件校验或发布失败',updated=? WHERE id=? AND state='finalizing'", a.now().Unix(), id)
+			retryable := !errors.Is(e, errR2Mismatch) && !errors.Is(e, r2.ErrNotFound)
+			_, _ = a.db.Exec("UPDATE uploads SET state=CASE WHEN backend='r2' AND ? THEN 'finalizing' ELSE 'failed' END,error='文件校验或发布失败',updated=? WHERE id=? AND state='finalizing'", retryable, a.now().Unix(), id)
 			a.mu.Unlock()
 		}
 	}()
@@ -449,6 +527,9 @@ func (a *App) finalize(ctx context.Context, id string) error {
 	}
 	if u.State != "finalizing" {
 		return nil
+	}
+	if u.Backend == "r2" {
+		return a.finalizeR2(ctx, u)
 	}
 	if e = a.diskReady(); e != nil {
 		return e

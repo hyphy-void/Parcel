@@ -43,8 +43,29 @@ func (a *App) listShares(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, e)
 		return
 	}
-	jsonOK(w, 200, map[string]any{"items": shares, "total": total, "page": page})
+	var cleaned int
+	if e = a.db.QueryRow("SELECT count(*) FROM shares WHERE state='deleted'").Scan(&cleaned); e != nil {
+		a.internal(w, r, e)
+		return
+	}
+	jsonOK(w, 200, map[string]any{"items": shares, "total": total, "page": page, "cleaned_count": cleaned})
 }
+
+// File cleanup is authoritative: expired/revoked objects still retained or
+// awaiting deletion must keep their metadata and quota accounting.
+func (a *App) clearCleanedShares(w http.ResponseWriter, r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	result, err := a.db.Exec("DELETE FROM shares WHERE state='deleted'")
+	if err != nil {
+		a.internal(w, r, err)
+		return
+	}
+	n, _ := result.RowsAffected()
+	a.audit("cleaned_history_cleared", "shares", "ok")
+	jsonOK(w, 200, map[string]any{"removed": n})
+}
+
 func (a *App) getAdminShare(w http.ResponseWriter, r *http.Request) {
 	s, e := a.share(r.PathValue("id"))
 	if e != nil {
@@ -243,6 +264,10 @@ func (a *App) issueDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.availability(s) != "available" {
 		a.problem(w, r, 410, "share_unavailable", "分享已失效或下载次数已用完")
+		return
+	}
+	if s.Backend == "r2" {
+		a.issueR2(w, r, s)
 		return
 	}
 	var n int

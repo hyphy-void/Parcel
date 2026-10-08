@@ -53,6 +53,11 @@ sudo ufw allow from 192.168.5.0/24 to 192.168.5.16 port 8080 proto tcp comment '
 | `PARCEL_LISTEN_ADDR` | `127.0.0.1:8080` | 明确绑定的内网或回环地址 |
 | `PARCEL_BASE_URL` | `http://127.0.0.1:8080` | 唯一页面/API origin，用于链接、Host/Origin 校验 |
 | `PARCEL_TRUSTED_PROXIES` | 空 | 逗号分隔的代理 CIDR；默认忽略代理头，仅受信任连接的 X-Forwarded-For 用于客户端 IP 限流 |
+| `PARCEL_STORAGE_BACKEND` | `local` | 新上传存储后端；可设为 `r2`，已有本地记录保留 |
+| `PARCEL_R2_ENDPOINT` | 空 | R2 S3 HTTPS origin，不包含桶名 |
+| `PARCEL_R2_BUCKET` | 空 | 私有桶名 |
+| `PARCEL_R2_CREDENTIALS_FILE` | 空 | 0600 的服务用户凭据文件 |
+| `PARCEL_R2_STORAGE_QUOTA_BYTES` | 9 GB（9,000,000,000 字节） | R2 对象、上传与临时预留的独立保护上限；不足时拒绝新上传 |
 | `PARCEL_DATA_DIR` | `./data` | DB、临时文件及最终文件目录 |
 | `PARCEL_REQUIRED_MOUNT` | 空 | 正式部署应指定真实挂载点 |
 | `PARCEL_MAX_FILE_BYTES` | 8 GiB | 单文件上限，大小/偏移采用 64 位 |
@@ -64,14 +69,16 @@ sudo ufw allow from 192.168.5.0/24 to 192.168.5.16 port 8080 proto tcp comment '
 | `PARCEL_MAX_SHARE_TTL` | `168h` | 最长分享时长 |
 | `PARCEL_DEFAULT_DOWNLOAD_LIMIT` | 3 | 下载资格上限，允许 1–100 |
 | `PARCEL_DOWNLOAD_IDLE_TTL` | `30m` | 已启用会话的空闲失效时长 |
-| `PARCEL_DOWNLOAD_MAX_TTL` | `8h` | 会话绝对上限，包括仍在传输的请求 |
+| `PARCEL_DOWNLOAD_MAX_TTL` | `8h` | 会话绝对上限；本地流也受其限制，R2 地址另为 5 分钟 |
 | `PARCEL_CLEANUP_INTERVAL` | `60s` | 清理与 WAL checkpoint 周期 |
 | `PARCEL_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `GOMEMLIMIT` | Go 默认 | systemd 样例设 `192MiB`，是 GC 软目标 |
 
-单实例固定限制为 2 个上传分块请求、4 个文件下载流、1 个文件哈希校验任务、2 个密码哈希任务；未完成上传最多 100 个。修改配置后重启服务。HTTPS BASE_URL 会启用 Secure Cookie，v0.1 程序本身提供 HTTP，HTTPS 部署须另行提供同源 TLS 终止并保持 Host/Origin。
+本地传输的单实例固定限制为 2 个上传分块请求、4 个文件下载流、1 个文件哈希校验任务、2 个密码哈希任务；未完成上传最多 100 个。修改配置后重启服务。HTTPS BASE_URL 会启用 Secure Cookie，v0.1 程序本身提供 HTTP，HTTPS 部署须另行提供同源 TLS 终止并保持 Host/Origin。
 
 ## 4. 文件生命周期与下载
+
+以下描述本地存储路径；R2 的单次 PUT / Multipart 核验、5 分钟地址和授权时计数见 [R2 存储说明](r2-storage.md)。
 
 文件经过完整字节数验证与流式 SHA-256 校验后才发布。发布前的请求不会生成可用分享。上传回复丢失时应查询 upload offset，再发下一块；刷新页面可重新选择原文件继续。重新选择文件的名称、大小和修改时间只作辅助检查，内容是否一致由上传者保证。
 
@@ -180,7 +187,7 @@ sudo /usr/local/lib/parcel/update.py
 
 上一程序保留为 `/opt/parcel/parcel.previous`。新程序启动失败或健康检查失败会恢复上一程序并再次验证；回滚失败返回非零退出状态，需查看日志。SIGINT/SIGTERM 会进入同一恢复流程；断电或 SIGKILL 无法执行恢复代码，可按第 6 节手动恢复。安装与升级共用文件锁，避免并发替换。
 
-升级期间会短暂中断传输，可通过项目已有的续传机制恢复。工具不修改配置、密码或分享文件，也不创建整盘数据快照。**schema 不同的发布会拒绝安装**，须停止服务、备份整个数据目录后手动迁移；二进制回滚不能替代数据恢复。当前 schema 为 1，发布者应保持同 schema 下的数据兼容性。
+升级期间会短暂中断传输，可通过项目已有的续传机制恢复。工具不修改配置、密码或分享文件，也不创建整盘数据快照。**schema 不同的发布会拒绝安装**，须停止服务、备份整个数据目录后手动迁移；二进制回滚不能替代数据恢复。当前本地 schema 为 3，生产仍为 2；从 schema 1 或 2 升级需按 [R2 迁移流程](r2-storage.md) 停机备份并手动安装，发布者应保持同 schema 下的数据兼容性。
 
 默认健康检查使用 `PARCEL_BASE_URL/readyz`；有代理等情况可在 `/etc/parcel/update.env` 设置 `PARCEL_HEALTH_URL`，该地址应直达同一服务，并符合应用 Host 校验。配置按字面量 `KEY=value` 读取，不执行 shell；空格需引号，不支持变量展开。自动升级依赖公开 GitHub Release 下载；私有仓库资产下载不在本工具支持范围内。API 限流时可手动运行 `sudo --preserve-env=GH_TOKEN ...`，令牌仅发送到 GitHub API。
 
@@ -204,3 +211,7 @@ sudo systemctl disable --now parcel-update.timer
 ```
 
 检查和升级结果写入 systemd journal；网络、校验、启动或回滚失败使 oneshot 服务失败，后续定时检查可重试。这里没有接入外部消息通知。GitHub 云端只构建和发布，树莓派主动下载，因此无需让 GitHub runner 连接内网或在树莓派上运行构建 runner。
+
+## R2 存储
+
+新增私有 R2 配置、CORS、单次 PUT、Multipart 恢复、9 GB 存储保护、下载会话与跨 schema 回滚流程见 [r2-storage.md](r2-storage.md)。本地存储为默认值，历史文件继续使用本地下载。

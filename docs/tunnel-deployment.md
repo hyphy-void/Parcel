@@ -25,7 +25,7 @@ Caddy permits the frontend, authentication, administration, uploads, shares, and
 
 The temporary private management listener on 8082 and Tailscale Serve configuration were removed. Existing host-level Tailscale SSH remains a maintenance facility, not part of the Parcel request path.
 
-`parcel`, `caddy`, and `cloudflared` are enabled at boot. No router inbound ports or DDNS are needed. The old UFW exceptions for 80/443 and LAN 8080 were removed; SSH rules were preserved. Files and Parcel password were not changed. Cloudflare terminates public HTTPS; storage remains on the Pi.
+`parcel`, `caddy`, and `cloudflared` are enabled at boot. No router inbound ports or DDNS are needed. The old UFW exceptions for 80/443 and LAN 8080 were removed; SSH rules were preserved. Files and Parcel password were not changed. Cloudflare terminates public HTTPS. Existing files remain on the Pi; enabling [private R2 storage](r2-storage.md) sends new file content directly between browsers and R2 while retaining this Tunnel for the frontend and permission APIs.
 
 ## Verification
 

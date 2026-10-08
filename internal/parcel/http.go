@@ -22,10 +22,14 @@ func (a *App) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/uploads", a.admin(a.createUpload))
 	m.HandleFunc("GET /api/v1/uploads/lookup", a.admin(a.lookupUpload))
 	m.HandleFunc("GET /api/v1/uploads/{id}", a.admin(a.getUpload))
+	m.HandleFunc("POST /api/v1/uploads/{id}/object", a.admin(a.signUploadObject))
+	m.HandleFunc("POST /api/v1/uploads/{id}/parts/{part}", a.admin(a.signUploadPart))
+	m.HandleFunc("POST /api/v1/shares/{id}/download-sessions/refresh", a.refreshDownload)
 	m.HandleFunc("PATCH /api/v1/uploads/{id}", a.admin(a.patchUpload))
 	m.HandleFunc("POST /api/v1/uploads/{id}/complete", a.admin(a.completeUpload))
 	m.HandleFunc("DELETE /api/v1/uploads/{id}", a.admin(a.cancelUpload))
 	m.HandleFunc("GET /api/v1/admin/shares", a.admin(a.listShares))
+	m.HandleFunc("DELETE /api/v1/admin/shares/cleaned", a.admin(a.clearCleanedShares))
 	m.HandleFunc("GET /api/v1/admin/shares/{id}", a.admin(a.getAdminShare))
 	m.HandleFunc("PATCH /api/v1/admin/shares/{id}/password", a.admin(a.changePassword))
 	m.HandleFunc("DELETE /api/v1/admin/shares/{id}", a.admin(a.revoke))
@@ -49,7 +53,11 @@ func (a *App) Handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		connect := ""
+		if a.r2 != nil {
+			connect = " " + a.C.R2Endpoint
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'"+connect+"; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "private, no-store")
 		}

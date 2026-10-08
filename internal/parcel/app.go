@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/hyphy-void/Parcel/internal/config"
+	"github.com/hyphy-void/Parcel/internal/r2"
 	"golang.org/x/sys/unix"
 	_ "modernc.org/sqlite"
 )
@@ -36,11 +37,13 @@ type limitEntry struct {
 }
 type App struct {
 	C             config.Config
+	r2            r2.Store
 	db            *sql.DB
 	root          *os.Root
 	lock          *os.File
 	log           *slog.Logger
 	mu            sync.Mutex
+	cleanupMu     sync.Mutex
 	uploadLocks   map[string]*uploadLock
 	busyUploads   map[string]int
 	finalizing    map[string]bool
@@ -114,6 +117,13 @@ func New(c config.Config, static fs.FS, logger *slog.Logger) (*App, error) {
 	}
 	db.SetMaxOpenConns(1)
 	fail := func(err error) (*App, error) { db.Close(); root.Close(); lock.Close(); return nil, err }
+	var store r2.Store
+	if c.StorageBackend == "r2" {
+		store, e = r2.New(c.R2Endpoint, c.R2Bucket, c.R2CredentialsFile)
+		if e != nil {
+			return fail(e)
+		}
+	}
 	for _, q := range []string{"PRAGMA journal_mode=WAL", "PRAGMA foreign_keys=ON", "PRAGMA busy_timeout=5000", "PRAGMA synchronous=FULL"} {
 		if _, e = db.Exec(q); e != nil {
 			return fail(e)
@@ -139,11 +149,35 @@ func New(c config.Config, static fs.FS, logger *slog.Logger) (*App, error) {
 		}
 	}
 	var version int
-	if e = db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version); e != nil || version != 1 {
+	if e = db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version); e != nil || version < 1 || version > 3 {
 		return fail(fmt.Errorf("不支持的数据库 schema 版本 %d", version))
 	}
+	for next := version + 1; next <= 3; next++ {
+		schema, err := migrations.ReadFile(fmt.Sprintf("migrations/%03d.sql", next))
+		if err != nil {
+			return fail(err)
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return fail(err)
+		}
+		if _, err = tx.Exec(string(schema)); err != nil {
+			tx.Rollback()
+			return fail(err)
+		}
+		if err = tx.Commit(); err != nil {
+			return fail(err)
+		}
+	}
+	var remote int
+	if e = db.QueryRow("SELECT (SELECT count(*) FROM shares WHERE backend='r2' AND state!='deleted') + (SELECT count(*) FROM uploads WHERE backend='r2' AND (state NOT IN ('completed','cleaned') OR (state='completed' AND part_bytes=0 AND staging_cleaned=0)))").Scan(&remote); e != nil {
+		return fail(e)
+	}
+	if remote > 0 && store == nil {
+		return fail(fmt.Errorf("存在 R2 数据，必须保留 R2 配置"))
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a := &App{C: c, db: db, root: root, lock: lock, log: logger, uploadLocks: map[string]*uploadLock{}, busyUploads: map[string]int{}, finalizing: map[string]bool{}, uploadCancel: map[string]context.CancelFunc{}, streams: map[string]map[string]stream{}, limits: map[string]limitEntry{}, hashSlots: make(chan struct{}, 2), uploadSlots: make(chan struct{}, 2), finalizeSlots: make(chan struct{}, 1), ctx: ctx, cancel: cancel, now: time.Now, static: static}
+	a := &App{C: c, r2: store, db: db, root: root, lock: lock, log: logger, uploadLocks: map[string]*uploadLock{}, busyUploads: map[string]int{}, finalizing: map[string]bool{}, uploadCancel: map[string]context.CancelFunc{}, streams: map[string]map[string]stream{}, limits: map[string]limitEntry{}, hashSlots: make(chan struct{}, 2), uploadSlots: make(chan struct{}, 2), finalizeSlots: make(chan struct{}, 1), ctx: ctx, cancel: cancel, now: time.Now, static: static}
 	var st unix.Stat_t
 	if e = unix.Stat(c.DataDir, &st); e != nil {
 		cancel()

@@ -12,3 +12,6 @@
 
 __pycache__/
 *.pyc
+
+# Local credentials; never commit.
+/.parcel-secrets/

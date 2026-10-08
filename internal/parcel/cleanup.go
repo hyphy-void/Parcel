@@ -28,6 +28,9 @@ func (a *App) recover() error {
 		return e
 	}
 	for _, u := range uploads {
+		if u.Backend == "r2" {
+			continue
+		}
 		tmp := "tmp/" + u.ID + ".part"
 		f, e := a.root.OpenFile(tmp, os.O_RDWR, 0600)
 		if errors.Is(e, os.ErrNotExist) && u.State == "finalizing" {
@@ -76,6 +79,9 @@ func (a *App) recover() error {
 		return e
 	}
 	for _, s := range shares {
+		if s.Backend == "r2" {
+			continue
+		}
 		st, e := a.root.Lstat("files/" + s.StorageKey)
 		if e != nil || !st.Mode().IsRegular() || st.Size() != s.Size {
 			if _, e = a.db.Exec("UPDATE shares SET state='missing',error='文件丢失或大小不一致' WHERE id=?", s.ID); e != nil {
@@ -94,6 +100,8 @@ func (a *App) remove(name string) error {
 	return e
 }
 func (a *App) Cleanup() {
+	a.cleanupMu.Lock()
+	defer a.cleanupMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if e := a.diskReady(); e != nil {
@@ -137,12 +145,24 @@ func (a *App) Cleanup() {
 		if e = a.db.QueryRow("SELECT retry_at FROM shares WHERE id=?", s.ID).Scan(&retryAt); e != nil || now < retryAt {
 			continue
 		}
+		if s.Backend == "r2" {
+			var signed int64
+			if a.db.QueryRow("SELECT signed_until FROM shares WHERE id=?", s.ID).Scan(&signed) != nil || now <= signed {
+				continue
+			}
+		}
 		if _, e = a.db.Exec("UPDATE shares SET state='deleting' WHERE id=?", s.ID); e != nil {
 			continue
 		}
-		e = a.remove("files/" + s.StorageKey)
-		if e == nil {
-			e = a.syncDir("files")
+		if s.Backend == "r2" {
+			a.mu.Unlock()
+			e = a.r2.Delete(a.ctx, s.StorageKey)
+			a.mu.Lock()
+		} else {
+			e = a.remove("files/" + s.StorageKey)
+			if e == nil {
+				e = a.syncDir("files")
+			}
 		}
 		if e != nil {
 			var attempts int
@@ -158,6 +178,31 @@ func (a *App) Cleanup() {
 		}
 		a.audit("share_deleted", s.ID, "ok")
 	}
+	// Keep the staging object until all issued PUT URLs expire: deleting it
+	// sooner would let an old URL recreate untracked data after publication.
+	rows, e = a.db.Query("SELECT "+uploadColumns+" FROM uploads WHERE backend='r2' AND part_bytes=0 AND state='completed' AND staging_cleaned=0 AND put_expires<?", now)
+	if e != nil {
+		return
+	}
+	var staged []Upload
+	for rows.Next() {
+		u, err := scanUpload(rows)
+		if err == nil {
+			staged = append(staged, u)
+		}
+	}
+	rows.Close()
+	for _, u := range staged {
+		if a.busyUploads[u.ID] > 0 || a.uploadLocks[u.ID] != nil {
+			continue
+		}
+		a.mu.Unlock()
+		err := a.r2.Delete(a.ctx, putStagingKey(u))
+		a.mu.Lock()
+		if err == nil {
+			_, _ = a.db.Exec("UPDATE uploads SET staging_cleaned=1 WHERE id=?", u.ID)
+		}
+	}
 	rows, e = a.db.Query("SELECT " + uploadColumns + " FROM uploads WHERE state NOT IN ('completed','cleaned')")
 	if e != nil {
 		return
@@ -171,7 +216,7 @@ func (a *App) Cleanup() {
 	}
 	rows.Close()
 	for _, u := range uploads {
-		if a.busyUploads[u.ID] > 0 {
+		if a.busyUploads[u.ID] > 0 || a.uploadLocks[u.ID] != nil {
 			continue
 		}
 		eligible := u.State == "canceled" || u.State == "failed" || u.State == "expired" || now-u.Updated >= int64(a.C.UploadTTL.Seconds())
@@ -181,15 +226,36 @@ func (a *App) Cleanup() {
 		if _, e = a.db.Exec("UPDATE uploads SET state='expired' WHERE id=? AND state IN ('created','uploading','finalizing')", u.ID); e != nil {
 			continue
 		}
-		e = a.remove("tmp/" + u.ID + ".part")
-		if e == nil {
-			e = a.remove("files/" + u.StorageKey)
+		if isSinglePut(u) && now <= u.PutExpires {
+			continue
 		}
-		if e == nil {
-			e = a.syncDir("tmp")
-		}
-		if e == nil {
-			e = a.syncDir("files")
+		if u.Backend == "r2" {
+			a.busyUploads[u.ID]++
+			a.mu.Unlock()
+			if isSinglePut(u) {
+				e = a.r2.Delete(a.ctx, putStagingKey(u))
+			} else {
+				e = a.r2.Abort(a.ctx, u.StorageKey, u.MultipartID)
+			}
+			if e == nil {
+				e = a.r2.Delete(a.ctx, u.StorageKey)
+			}
+			a.mu.Lock()
+			a.busyUploads[u.ID]--
+			if a.busyUploads[u.ID] == 0 {
+				delete(a.busyUploads, u.ID)
+			}
+		} else {
+			e = a.remove("tmp/" + u.ID + ".part")
+			if e == nil {
+				e = a.remove("files/" + u.StorageKey)
+			}
+			if e == nil {
+				e = a.syncDir("tmp")
+			}
+			if e == nil {
+				e = a.syncDir("files")
+			}
 		}
 		if e != nil {
 			_, _ = a.db.Exec("UPDATE uploads SET error='残留文件删除失败，等待重试',attempts=attempts+1 WHERE id=?", u.ID)
@@ -209,7 +275,7 @@ func (a *App) Cleanup() {
 	if e == nil {
 		_, e = tx.Exec("DELETE FROM shares WHERE state='deleted' AND deleted_at<?", now-7*24*3600)
 		if e == nil {
-			_, e = tx.Exec("DELETE FROM uploads WHERE updated<? AND (state='cleaned' OR (state='completed' AND NOT EXISTS(SELECT 1 FROM shares WHERE upload_id=uploads.id)))", now-7*24*3600)
+			_, e = tx.Exec("DELETE FROM uploads WHERE updated<? AND (state='cleaned' OR (state='completed' AND (backend!='r2' OR part_bytes!=0 OR staging_cleaned=1) AND NOT EXISTS(SELECT 1 FROM shares WHERE upload_id=uploads.id)))", now-7*24*3600)
 		}
 		if e == nil {
 			_, e = tx.Exec("DELETE FROM audit_events WHERE created<? OR id<(SELECT COALESCE(max(id),0)-10000 FROM audit_events)", now-7*24*3600)

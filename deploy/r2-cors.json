@@ -1,0 +1,25 @@
+[
+  {
+    "AllowedOrigins": [
+      "https://parcel.playereconlab.com"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "HEAD",
+      "PUT"
+    ],
+    "AllowedHeaders": [
+      "Content-Type",
+      "Range",
+      "X-Amz-Meta-Parcel-Upload"
+    ],
+    "ExposeHeaders": [
+      "ETag",
+      "Content-Length",
+      "Content-Range",
+      "Accept-Ranges",
+      "Content-Disposition"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]

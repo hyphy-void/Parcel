@@ -27,6 +27,7 @@ import {
 import {
   api,
   ApiError,
+  type DownloadTicket,
   availability,
   bytes,
   date,
@@ -415,6 +416,10 @@ function Dashboard({ auth }: { auth: Auth }) {
   const [status, setStatus] = useState<Status>(),
     [items, setItems] = useState<Share[]>([]),
     [total, setTotal] = useState(0),
+    [cleaned, setCleaned] = useState(0),
+    [confirmClear, setConfirmClear] = useState(false),
+    [clearing, setClearing] = useState(false),
+    [message, setMessage] = useState(""),
     [page, setPage] = useState(1),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
@@ -422,16 +427,38 @@ function Dashboard({ auth }: { auth: Auth }) {
     try {
       const [s, list] = await Promise.all([
         api<Status>("/admin/status"),
-        api<{ items: Share[]; total: number }>(`/admin/shares?page=${page}`),
+        api<{ items: Share[]; total: number; cleaned_count: number }>(
+          `/admin/shares?page=${page}`,
+        ),
       ]);
       setStatus(s);
       setItems(list.items);
       setTotal(list.total);
+      setCleaned(list.cleaned_count ?? 0);
       setError("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+  async function clearHistory() {
+    setClearing(true);
+    setError("");
+    try {
+      const result = await api<{ removed: number }>(
+        "/admin/shares/cleaned",
+        { method: "DELETE" },
+        auth.csrf,
+      );
+      setConfirmClear(false);
+      setMessage(`已清除 ${result.removed} 条已清理记录。`);
+      if (page !== 1) setPage(1);
+      else await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setClearing(false);
     }
   }
   useEffect(() => {
@@ -457,22 +484,37 @@ function Dashboard({ auth }: { auth: Auth }) {
           <div className="stat">
             <span>
               <HardDrive size={18} />
-              存储用量
+              {status.storage_backend === "r2" ? "R2 存储额度" : "存储用量"}
             </span>
             <strong>
-              {bytes(status.used_bytes)}
-              <small> / {bytes(status.quota_bytes)}</small>
+              {status.storage_backend === "r2"
+                ? `${((status.r2_used_bytes ?? 0) / 1e9).toFixed(2)} GB`
+                : bytes(status.used_bytes)}
+              <small>
+                {" "}
+                /{" "}
+                {status.storage_backend === "r2"
+                  ? `${((status.r2_quota_bytes ?? 9e9) / 1e9).toFixed(2)} GB`
+                  : bytes(status.quota_bytes)}
+              </small>
             </strong>
             <div className="meter">
               <span
                 style={{
-                  width: `${Math.min(100, ((status.used_bytes + status.reserved_bytes) / status.quota_bytes) * 100)}%`,
+                  width: `${Math.min(100, (status.storage_backend === "r2" ? ((status.r2_used_bytes ?? 0) + (status.r2_reserved_bytes ?? 0)) / (status.r2_quota_bytes ?? 9e9) : (status.used_bytes + status.reserved_bytes) / status.quota_bytes) * 100)}%`,
                 }}
               />
             </div>
             <small>
-              上传预留 {bytes(status.reserved_bytes)} · 待清理{" "}
-              {bytes(status.pending_bytes)}
+              {status.storage_backend === "r2"
+                ? `上传及临时预留 ${bytes(status.r2_reserved_bytes)} · 剩余 ${((status.r2_available_bytes ?? 0) / 1e9).toFixed(2)} GB`
+                : `上传预留 ${bytes(status.reserved_bytes)} · 待清理 ${bytes(status.pending_bytes)}`}
+            </small>
+            <small className="budget-state">
+              {status.storage_backend === "r2" &&
+                ((status.r2_available_bytes ?? 1) <= 0
+                  ? "额度已满，暂停新上传"
+                  : "额度保护已启用 · 满额暂停新上传")}
             </small>
           </div>
           <div className="stat">
@@ -491,24 +533,75 @@ function Dashboard({ auth }: { auth: Auth }) {
               <ShieldCheck size={18} />
               你的服务器
             </span>
-            <strong>本地存储</strong>
+            <strong>
+              {status.storage_backend === "r2" ? "私有 R2 存储" : "本地存储"}
+            </strong>
             <small>
-              磁盘可用 {bytes(status.free_bytes)} · v{status.version}
+              本地磁盘可用 {bytes(status.free_bytes)} · v{status.version}
             </small>
           </div>
         </div>
       )}
+      {status?.storage_backend === "r2" && (
+        <p className="r2-budget-note">
+          按 Parcel
+          管理的文件计量，包含尚未释放的临时空间。账户月度免费存储与读写额度以
+          Cloudflare 为准。
+        </p>
+      )}
       <section className="panel">
-        <div className="panel-title">
+        <div className="panel-title share-list-title">
           <div className="list-heading">
             <h2>分享记录</h2>
             <span>{total} 个文件</span>
           </div>
-          <button className="text-button" onClick={load}>
-            <RefreshCw size={15} />
-            刷新
-          </button>
+          <div className="list-actions">
+            <button className="text-button" onClick={load} disabled={clearing}>
+              <RefreshCw size={15} />
+              刷新
+            </button>
+            <button
+              className="text-button clear-history"
+              disabled={loading || clearing || cleaned === 0}
+              onClick={() => {
+                setMessage("");
+                setConfirmClear(true);
+              }}
+            >
+              <Trash2 size={15} />
+              清除已清理
+            </button>
+          </div>
         </div>
+        {confirmClear && (
+          <div className="clear-history-confirm" role="alert">
+            <div>
+              <strong>清除 {cleaned} 条已清理记录？</strong>
+              <p>记录清除后无法恢复。可下载和等待清理的分享会保留。</p>
+            </div>
+            <div className="list-actions">
+              <button
+                className="text-button"
+                disabled={clearing}
+                onClick={() => setConfirmClear(false)}
+              >
+                取消
+              </button>
+              <button
+                className="button danger-outline"
+                disabled={clearing}
+                onClick={clearHistory}
+              >
+                {clearing ? "正在清除…" : "确认清除"}
+              </button>
+            </div>
+          </div>
+        )}
+        {message && (
+          <p className="history-message" role="status">
+            {message}
+          </p>
+        )}
         {loading ? (
           <Loading />
         ) : items.length ? (
@@ -651,7 +744,11 @@ function NewShare({ auth }: { auth: Auth }) {
           else if (u.state === "finalizing")
             void poll(u.id).catch((e) => {
               setError(e.message);
-              setPhase("failed");
+              setPhase(
+                e instanceof ApiError && e.code === "upload_not_finalizing"
+                  ? "failed"
+                  : "pending",
+              );
             });
           else if (["created", "uploading"].includes(u.state))
             setPhase("paused");
@@ -699,9 +796,26 @@ function NewShare({ auth }: { auth: Auth }) {
   async function poll(id: string, epoch = generation.current) {
     if (!alive.current || epoch !== generation.current) return;
     setPhase("checking");
+    const deadline = Date.now() + 120_000;
     for (;;) {
       if (!alive.current || epoch !== generation.current) return;
-      const u = await api<Upload>(`/uploads/${id}`);
+      if (Date.now() >= deadline)
+        throw new Error(
+          "发布确认超时，上传任务已保留。可稍后查询结果，无需重新上传文件。",
+        );
+      let u: Upload;
+      try {
+        u = await api<Upload>(`/uploads/${id}`, {
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch (e) {
+        if (!alive.current || epoch !== generation.current) return;
+        throw new Error(
+          e instanceof ApiError
+            ? e.message
+            : "暂时无法查询发布结果，上传任务已保留。请稍后再查询。",
+        );
+      }
       if (!alive.current || epoch !== generation.current) return;
       setUpload(u);
       if (u.state === "completed") {
@@ -709,40 +823,94 @@ function NewShare({ auth }: { auth: Auth }) {
         return;
       }
       if (u.state !== "finalizing")
-        throw new Error(u.error || "上传已经失效，请重新上传");
+        throw new ApiError(
+          u.error || "上传已经失效，请重新上传",
+          409,
+          "upload_not_finalizing",
+        );
+      if (u.error)
+        throw new Error(`${u.error}。上传任务已保留，可稍后查询结果。`);
       await sleep(1000);
     }
   }
-  function chunk(id: string, offset: number, blob: Blob): Promise<number> {
-    return new Promise((resolve, reject) => {
+  async function chunk(u: Upload, blob: Blob): Promise<number> {
+    const direct = u.storage_backend === "r2";
+    const single = direct && u.part_bytes === 0;
+    const target: { url: string; headers?: Record<string, string> } = direct
+      ? await api<{ url: string; headers?: Record<string, string> }>(
+          single
+            ? `/uploads/${u.id}/object`
+            : `/uploads/${u.id}/parts/${Math.floor(u.offset / u.part_bytes) + 1}`,
+          { method: "POST" },
+          auth.csrf,
+        )
+      : { url: `/api/v1/uploads/${u.id}` };
+    if (pause.current || !alive.current) throw new Error("上传已暂停");
+    await new Promise<void>((resolve, reject) => {
       const x = new XMLHttpRequest();
       xhr.current = x;
-      x.open("PATCH", `/api/v1/uploads/${id}`);
-      x.setRequestHeader("X-CSRF-Token", auth.csrf);
-      x.setRequestHeader("Upload-Offset", String(offset));
+      x.open(direct ? "PUT" : "PATCH", target.url);
+      if (!direct) {
+        x.setRequestHeader("X-CSRF-Token", auth.csrf);
+        x.setRequestHeader("Upload-Offset", String(u.offset));
+      }
       x.setRequestHeader("Content-Type", "application/octet-stream");
-      x.timeout = 125000;
+      for (const [name, value] of Object.entries(target.headers ?? {}))
+        x.setRequestHeader(name, value);
+      x.timeout = single ? 900000 : 125000;
       x.upload.onprogress = (e) => setSending(e.loaded);
       x.onload = () => {
-        try {
-          const data = JSON.parse(x.responseText);
-          if (x.status >= 200 && x.status < 300) resolve(data.offset);
-          else
+        if (x.status >= 200 && x.status < 300) resolve();
+        else if (direct) reject(new Error("R2 分块上传失败，将获取新地址重试"));
+        else {
+          try {
+            const data = JSON.parse(x.responseText);
             reject(
               new ApiError(data.message || "上传失败", x.status, data.code),
             );
-        } catch {
-          reject(new Error("服务器响应异常"));
+          } catch {
+            reject(new Error("服务器响应异常"));
+          }
         }
       };
-      x.onerror = () => reject(new Error("连接中断"));
+      x.onerror = () => reject(new Error("连接中断或 R2 CORS 未配置"));
       x.ontimeout = () => reject(new Error("分块传输超时"));
       x.onabort = () => reject(new Error("上传已暂停"));
       x.send(blob);
     });
+    return u.offset + blob.size;
   }
   async function start() {
-    if (!file || !settings || running.current) return;
+    if (!settings || running.current) return;
+    if (upload?.state === "finalizing") {
+      running.current = true;
+      const epoch = ++generation.current;
+      setError("");
+      try {
+        await poll(upload.id, epoch);
+      } catch (e) {
+        if (alive.current && epoch === generation.current) {
+          setError((e as Error).message);
+          setPhase(
+            e instanceof ApiError && e.code === "upload_not_finalizing"
+              ? "failed"
+              : "pending",
+          );
+        }
+      } finally {
+        running.current = false;
+      }
+      return;
+    }
+    if (!file) return;
+    if (
+      !upload &&
+      file.size > (settings.upload_confirmation_bytes ?? 100_000_000) &&
+      !window.confirm(
+        `文件超过 100 MB（100,000,000 字节），大小为 ${bytes(file.size)}。确认继续上传？`,
+      )
+    )
+      return;
     running.current = true;
     const epoch = ++generation.current;
     pause.current = false;
@@ -770,6 +938,8 @@ function NewShare({ auth }: { auth: Auth }) {
             headers: { "Idempotency-Key": key },
             body: JSON.stringify({
               name: file.name,
+              confirm_large:
+                file.size > (settings.upload_confirmation_bytes ?? 100_000_000),
               size: file.size,
               password: protect ? password : "",
               ttl_seconds: ttl,
@@ -791,16 +961,38 @@ function NewShare({ auth }: { auth: Auth }) {
       u = await api<Upload>(`/uploads/${u.id}`);
       if (epoch !== generation.current || !alive.current) return;
       setUpload(u);
+      if (u.state === "completed") {
+        await done(u);
+        return;
+      }
+      if (u.state === "finalizing") {
+        await poll(u.id, epoch);
+        return;
+      }
       let retry = 0;
-      while (u.offset < u.size && !pause.current) {
+      while (
+        (u.offset < u.size ||
+          (u.storage_backend === "r2" &&
+            u.size === 0 &&
+            (u.part_bytes === 0 ? !u.object_uploaded : !u.parts?.length))) &&
+        !pause.current
+      ) {
         try {
           const offset = await chunk(
-            u.id,
-            u.offset,
-            file.slice(u.offset, u.offset + settings.chunk_bytes),
+            u,
+            file.slice(
+              u.offset,
+              u.offset +
+                (u.storage_backend === "r2"
+                  ? u.part_bytes || u.size
+                  : settings.chunk_bytes),
+            ),
           );
           if (epoch !== generation.current || !alive.current) return;
-          u = { ...u, offset };
+          u =
+            u.storage_backend === "r2"
+              ? await api<Upload>(`/uploads/${u.id}`)
+              : { ...u, offset };
           setUpload(u);
           setSending(0);
           retry = 0;
@@ -825,12 +1017,26 @@ function NewShare({ auth }: { auth: Auth }) {
         setPhase("paused");
         return;
       }
-      await api(`/uploads/${u.id}/complete`, { method: "POST" }, auth.csrf);
+      u = await api<Upload>(
+        `/uploads/${u.id}/complete`,
+        { method: "POST", signal: AbortSignal.timeout(90_000) },
+        auth.csrf,
+      );
+      if (epoch !== generation.current || !alive.current) return;
+      setUpload(u);
       await poll(u.id, epoch);
     } catch (e) {
       if (alive.current && epoch === generation.current) {
         setError((e as Error).message);
-        setPhase(u ? "paused" : "failed");
+        setPhase(
+          e instanceof ApiError && e.code === "upload_not_finalizing"
+            ? "failed"
+            : u?.state === "finalizing"
+              ? "pending"
+              : u
+                ? "paused"
+                : "failed",
+        );
       }
     } finally {
       running.current = false;
@@ -854,6 +1060,7 @@ function NewShare({ auth }: { auth: Auth }) {
       setError((e as Error).message);
     }
   }
+  const backend = upload?.storage_backend ?? settings?.storage_backend;
   const busy = ["uploading", "retrying", "checking"].includes(phase),
     ratio = upload ? (upload.size ? upload.offset / upload.size : 1) : 0;
   if (result)
@@ -975,17 +1182,30 @@ function NewShare({ auth }: { auth: Auth }) {
               发现未完成上传。重新选择原文件后可继续；文件名与大小匹配不能保证内容未改变。
             </p>
           )}
+          {upload?.storage_backend === "local" &&
+            settings?.storage_backend === "r2" && (
+              <p className="note">
+                这是启用 R2 前创建的本地上传任务，继续上传仍会经过服务器。
+                如需直传 R2，请取消这次上传后新建任务。
+              </p>
+            )}
           {upload && (
             <div className="progress-card">
               <div>
                 <strong>
                   {phase === "checking"
-                    ? "正在校验文件…"
-                    : phase === "paused"
-                      ? "上传已暂停"
-                      : phase === "retrying"
-                        ? "等待重试…"
-                        : "正在上传…"}
+                    ? backend === "r2"
+                      ? "正在完成 R2 上传…"
+                      : "正在校验文件…"
+                    : phase === "pending"
+                      ? "等待发布结果"
+                      : phase === "failed"
+                        ? "上传未完成"
+                        : phase === "paused"
+                          ? "上传已暂停"
+                          : phase === "retrying"
+                            ? "等待重试…"
+                            : "正在上传…"}
                 </strong>
                 <span>{Math.floor(ratio * 100)}%</span>
               </div>
@@ -993,20 +1213,35 @@ function NewShare({ auth }: { auth: Auth }) {
                 <span style={{ width: `${ratio * 100}%` }} />
               </div>
               <small>
-                服务端已确认 {bytes(upload.offset)} / {bytes(upload.size)}
-                {sending > 0 ? ` · 当前分块发送 ${bytes(sending)}` : ""}
+                {backend === "r2" ? "R2 已保存" : "服务端已确认"}{" "}
+                {bytes(upload.offset)} / {bytes(upload.size)}
+                {sending > 0
+                  ? ` · ${upload.storage_backend === "r2" && upload.part_bytes === 0 ? "已发送" : "当前分块发送"} ${bytes(sending)}`
+                  : ""}
               </small>
               {phase === "checking" && (
                 <p className="note">
                   <Loader2 size={15} className="spin" />
-                  校验完成后才会生成可用链接。
+                  {backend === "r2"
+                    ? upload.part_bytes === 0
+                      ? "文件已直传，正在核对并发布分享。"
+                      : "文件已直传，正在合并 R2 分块并核对对象大小，完成后生成分享链接。"
+                    : "校验完成后才会生成可用链接。"}
                 </p>
               )}
             </div>
           )}
           <div className="upload-bottom">
             <ShieldCheck size={18} />
-            <p>文件只保存在本机。分享失效后，Parcel 会自动回收空间。</p>
+            <p>
+              {backend === "r2"
+                ? "文件直传到私有 R2 存储。分享失效后，Parcel 会自动回收空间。"
+                : "文件只保存在本机。分享失效后，Parcel 会自动回收空间。"}
+              {backend === "r2" &&
+                (upload?.part_bytes === 0 ||
+                  (!upload && (!file || file.size <= 100_000_000))) &&
+                " 100 MB 以内整文件上传，中断后需重新发送。"}
+            </p>
           </div>
         </section>
         <section className="panel rules-panel">
@@ -1053,7 +1288,11 @@ function NewShare({ auth }: { auth: Auth }) {
               value={limit}
               onChange={(e) => setLimit(Number(e.target.value))}
             />
-            <small>首次准许传输消耗一次，同一会话续传不重复计数。</small>
+            <small>
+              {backend === "r2"
+                ? "获取下载地址消耗一次，同一会话续签不重复计数。"
+                : "首次准许传输消耗一次，同一会话续传不重复计数。"}
+            </small>
             <div className="toggle-row">
               <label htmlFor="protect">密码保护</label>
               <input
@@ -1104,7 +1343,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 className="button primary full"
                 onClick={start}
                 disabled={
-                  !file ||
+                  (!file && upload?.state !== "finalizing") ||
                   !settings ||
                   phase === "checking" ||
                   (!upload &&
@@ -1120,10 +1359,14 @@ function NewShare({ auth }: { auth: Auth }) {
                   <UploadCloud size={18} />
                 )}
                 {phase === "checking"
-                  ? "正在校验"
-                  : upload
-                    ? "继续上传"
-                    : "上传并创建分享"}
+                  ? backend === "r2"
+                    ? "正在完成上传"
+                    : "正在校验"
+                  : upload?.state === "finalizing"
+                    ? "查询发布结果"
+                    : upload
+                      ? "继续上传"
+                      : "上传并创建分享"}
               </button>
             )}
             {upload && (
@@ -1248,8 +1491,17 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
                   <span>密码保护</span>
                 </div>
               </div>
-              <label>SHA-256</label>
-              <code className="hash">{share.sha256}</code>
+              <label>
+                {share.storage_backend === "r2" ? "R2 ETag" : "SHA-256"}
+              </label>
+              <code className="hash">
+                {share.storage_backend === "r2" ? share.etag : share.sha256}
+              </code>
+              {share.storage_backend === "r2" && (
+                <p className="muted">
+                  对象大小及上传任务已由服务端核验；ETag 不是 SHA-256。
+                </p>
+              )}
               <p className="note">
                 次数用完后，已开始的有效会话仍可续传；会话结束后再回收文件。
               </p>
@@ -1340,11 +1592,17 @@ function Receive({ id }: { id: string }) {
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [ticket, setTicket] = useState<{
-      url: string;
-      expires: number;
-      max_ttl_seconds: number;
-    }>();
+    [ticket, setTicket] = useState<DownloadTicket | undefined>(() => {
+      try {
+        return (
+          JSON.parse(
+            sessionStorage.getItem(`parcel.download.${id}`) || "null",
+          ) || undefined
+        );
+      } catch {
+        return undefined;
+      }
+    });
   async function load() {
     try {
       setShare(await api<Share>(`/shares/${id}`));
@@ -1378,24 +1636,40 @@ function Receive({ id }: { id: string }) {
     setError("");
     try {
       let t = ticket;
-      if (!t)
-        t = await api<{
-          url: string;
-          expires: number;
-          max_ttl_seconds: number;
-        }>(`/shares/${id}/download-sessions`, { method: "POST" });
-      setTicket(t);
-      const head = await fetch(t.url, {
-        method: "HEAD",
-        credentials: "same-origin",
-      });
-      if (!head.ok) {
-        if (head.status !== 503) setTicket(undefined);
-        throw new Error(
-          head.status === 503
-            ? "下载繁忙，请稍后重试。"
-            : "下载会话或分享已失效，请重新打开链接。",
+      if (t?.session) {
+        t = await api<DownloadTicket>(
+          `/shares/${id}/download-sessions/refresh`,
+          {
+            method: "POST",
+            body: JSON.stringify({ session: t.session }),
+          },
         );
+      } else if (!t) {
+        t = await api<DownloadTicket>(`/shares/${id}/download-sessions`, {
+          method: "POST",
+        });
+      }
+      setTicket(t);
+      if (t.session) {
+        try {
+          sessionStorage.setItem(`parcel.download.${id}`, JSON.stringify(t));
+        } catch {
+          /* Private browser policies must not prevent the download. */
+        }
+      }
+      if (!t.session) {
+        const head = await fetch(t.url, {
+          method: "HEAD",
+          credentials: "same-origin",
+        });
+        if (!head.ok) {
+          if (head.status !== 503) setTicket(undefined);
+          throw new Error(
+            head.status === 503
+              ? "下载繁忙，请稍后重试。"
+              : "下载会话或分享已失效，请重新打开链接。",
+          );
+        }
       }
       const a = document.createElement("a");
       a.href = t.url;
@@ -1404,20 +1678,31 @@ function Receive({ id }: { id: string }) {
       a.click();
       a.remove();
       await sleep(500);
-      const active = await fetch(t.url, {
-        method: "HEAD",
-        credentials: "same-origin",
-      });
-      if (
-        active.ok &&
-        active.headers.get("X-Download-Session-State") === "active"
-      )
-        setTicket({
-          ...t,
-          expires: Number(active.headers.get("X-Download-Session-Expires")),
+      if (!t.session) {
+        const active = await fetch(t.url, {
+          method: "HEAD",
+          credentials: "same-origin",
         });
+        if (
+          active.ok &&
+          active.headers.get("X-Download-Session-State") === "active"
+        )
+          setTicket({
+            ...t,
+            expires: Number(active.headers.get("X-Download-Session-Expires")),
+          });
+      }
       await load();
     } catch (e) {
+      if (e instanceof ApiError && [401, 410].includes(e.status)) {
+        setTicket(undefined);
+        try {
+          sessionStorage.removeItem(`parcel.download.${id}`);
+        } catch {
+          /* Unavailable storage. */
+        }
+        await load();
+      }
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -1512,13 +1797,35 @@ function Receive({ id }: { id: string }) {
               {busy ? "正在准备" : ticket ? "再次下载 / 继续" : "下载文件"}
             </button>
             {ticket && (
-              <a className="direct-download" href={ticket.url} download>
+              <a
+                className="direct-download"
+                href={ticket.url}
+                download
+                onClick={
+                  ticket.session
+                    ? (e) => {
+                        e.preventDefault();
+                        void download();
+                      }
+                    : undefined
+                }
+              >
                 若下载未开始，点击此处重新下载
               </a>
             )}
             <p className="note">
-              首次准许传输消耗一次资格。同一有效会话内重试不重复扣次。文件保存进度请查看浏览器下载列表。
+              {share.storage_backend === "r2"
+                ? "获取下载地址消耗一次资格。"
+                : "首次准许传输消耗一次资格。"}
+              同一有效会话内重试不重复扣次。文件保存进度请查看浏览器下载列表。
             </p>
+            {ticket?.session && (
+              <p className="muted">
+                下载地址有效 5
+                分钟。断线后点击下载会续签同一会话，不重复扣次数；下载工具续传时请替换地址并保留
+                Range 偏移。
+              </p>
+            )}
             {share.availability === "exhausted" && !ticket && (
               <p className="note">下载次数已用完，请联系分享者。</p>
             )}

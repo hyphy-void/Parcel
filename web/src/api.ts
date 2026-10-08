@@ -1,4 +1,8 @@
 export type Upload = {
+  storage_backend: "local" | "r2";
+  part_bytes: number;
+  object_uploaded?: boolean;
+  parts?: { number: number; size: number; etag: string }[];
   id: string;
   name: string;
   size: number;
@@ -10,6 +14,8 @@ export type Upload = {
   error: string;
 };
 export type Share = {
+  storage_backend?: "local" | "r2";
+  etag?: string;
   id: string;
   name?: string;
   size?: number;
@@ -26,6 +32,12 @@ export type Share = {
   url: string;
 };
 export type Status = {
+  r2_used_bytes: number;
+  r2_reserved_bytes: number;
+  r2_quota_bytes: number;
+  r2_available_bytes: number;
+  storage_backend: "local" | "r2";
+  upload_confirmation_bytes: number;
   used_bytes: number;
   reserved_bytes: number;
   pending_bytes: number;
@@ -117,4 +129,12 @@ export const availability: Record<string, string> = {
   deleting: "等待清理",
   deleted: "已清理",
   missing: "文件不可用",
+};
+
+export type DownloadTicket = {
+  url: string;
+  expires: number;
+  session?: string;
+  session_expires?: number;
+  max_ttl_seconds: number;
 };

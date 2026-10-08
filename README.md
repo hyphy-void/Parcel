@@ -4,7 +4,7 @@
 
 自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
 
-v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。文件存储在本机 SSD 上；公网分享可由 Caddy 提供 HTTPS，管理入口仅限局域网或 VPN，详见[公网部署说明](docs/public-deployment.md)。
+v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。当前公网部署通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。
 
 管理员登录后上传单个文件，设置可选密码、有效期与下载次数，生成一个分享链接。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
 
@@ -52,3 +52,7 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 - [真实局域网设备验收步骤](docs/lan-acceptance.md)
 
 下载次数指首次准许传输消耗的下载资格；同一有效会话重试与续传不重复扣次，网络中断不退还资格。浏览器的实际保存进度由原生下载列表显示。
+
+### 私有 R2 存储
+
+可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，≤100 MB 单次 PUT，更大文件二次确认并使用 Multipart 续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。

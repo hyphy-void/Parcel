@@ -58,3 +58,31 @@ func TestConfigRejectsExposureAndInvalidLimits(t *testing.T) {
 		t.Fatal("TTL accepted")
 	}
 }
+
+func TestR2Configuration(t *testing.T) {
+	t.Setenv("PARCEL_STORAGE_BACKEND", "r2")
+	t.Setenv("PARCEL_R2_ENDPOINT", "https://example.r2.cloudflarestorage.com")
+	t.Setenv("PARCEL_R2_BUCKET", "parcel")
+	t.Setenv("PARCEL_R2_CREDENTIALS_FILE", "/etc/parcel/r2.credentials")
+	c, e := Load()
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, endpoint := range []string{"https://example.r2.cloudflarestorage.com/parcel", "https://example.r2.cloudflarestorage.com/", "http://example.r2.cloudflarestorage.com", "https://user:secret@example.r2.cloudflarestorage.com", "https://example.com", "https://example.r2.cloudflarestorage.com?key=value"} {
+		v := c
+		v.R2Endpoint = endpoint
+		if v.Validate() == nil {
+			t.Fatal("invalid R2 endpoint accepted")
+		}
+	}
+	v := c
+	v.R2CredentialsFile = ""
+	if v.Validate() == nil {
+		t.Fatal("missing credentials accepted")
+	}
+	v = c
+	v.StorageBackend = "other"
+	if v.Validate() == nil {
+		t.Fatal("unknown backend accepted")
+	}
+}

@@ -14,22 +14,23 @@ import (
 
 type Config struct {
 	Listen, BaseURL, DataDir, RequiredMount, LogLevel                            string
-	MaxFile, Quota, MinFree, Chunk                                               int64
+	R2Quota, MaxFile, Quota, MinFree, Chunk                                      int64
 	UploadTTL, ShareTTL, MaxShareTTL, DownloadIdle, DownloadMax, CleanupInterval time.Duration
 	DownloadLimit                                                                int
 	// TrustedProxies is opt-in. Only these immediate peers may supply client IPs
 	// via X-Forwarded-For; it does not authorize administrative access.
-	TrustedProxies []netip.Prefix
+	TrustedProxies                                          []netip.Prefix
+	StorageBackend, R2Endpoint, R2Bucket, R2CredentialsFile string
 }
 
 func Load() (Config, error) {
-	c := Config{Listen: "127.0.0.1:8080", BaseURL: "http://127.0.0.1:8080", DataDir: "./data", LogLevel: "info", MaxFile: 8 << 30, Quota: 20 << 30, MinFree: 2 << 30, Chunk: 8 << 20, UploadTTL: 24 * time.Hour, ShareTTL: 24 * time.Hour, MaxShareTTL: 7 * 24 * time.Hour, DownloadIdle: 30 * time.Minute, DownloadMax: 8 * time.Hour, CleanupInterval: time.Minute, DownloadLimit: 3}
-	for k, p := range map[string]*string{"LISTEN_ADDR": &c.Listen, "BASE_URL": &c.BaseURL, "DATA_DIR": &c.DataDir, "REQUIRED_MOUNT": &c.RequiredMount, "LOG_LEVEL": &c.LogLevel} {
+	c := Config{R2Quota: 9_000_000_000, StorageBackend: "local", Listen: "127.0.0.1:8080", BaseURL: "http://127.0.0.1:8080", DataDir: "./data", LogLevel: "info", MaxFile: 8 << 30, Quota: 20 << 30, MinFree: 2 << 30, Chunk: 8 << 20, UploadTTL: 24 * time.Hour, ShareTTL: 24 * time.Hour, MaxShareTTL: 7 * 24 * time.Hour, DownloadIdle: 30 * time.Minute, DownloadMax: 8 * time.Hour, CleanupInterval: time.Minute, DownloadLimit: 3}
+	for k, p := range map[string]*string{"LISTEN_ADDR": &c.Listen, "BASE_URL": &c.BaseURL, "DATA_DIR": &c.DataDir, "REQUIRED_MOUNT": &c.RequiredMount, "LOG_LEVEL": &c.LogLevel, "STORAGE_BACKEND": &c.StorageBackend, "R2_ENDPOINT": &c.R2Endpoint, "R2_BUCKET": &c.R2Bucket, "R2_CREDENTIALS_FILE": &c.R2CredentialsFile} {
 		if v, ok := os.LookupEnv("PARCEL_" + k); ok {
 			*p = v
 		}
 	}
-	for k, p := range map[string]*int64{"MAX_FILE_BYTES": &c.MaxFile, "STORAGE_QUOTA_BYTES": &c.Quota, "MIN_FREE_BYTES": &c.MinFree, "UPLOAD_CHUNK_BYTES": &c.Chunk} {
+	for k, p := range map[string]*int64{"R2_STORAGE_QUOTA_BYTES": &c.R2Quota, "MAX_FILE_BYTES": &c.MaxFile, "STORAGE_QUOTA_BYTES": &c.Quota, "MIN_FREE_BYTES": &c.MinFree, "UPLOAD_CHUNK_BYTES": &c.Chunk} {
 		if v, ok := os.LookupEnv("PARCEL_" + k); ok {
 			n, e := strconv.ParseInt(v, 10, 64)
 			if e != nil {
@@ -72,6 +73,25 @@ func Load() (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.StorageBackend != "" && c.StorageBackend != "local" && c.StorageBackend != "r2" {
+		return fmt.Errorf("STORAGE_BACKEND 必须是 local 或 r2")
+	}
+	if c.StorageBackend == "r2" {
+		if c.R2Quota <= 0 {
+			return fmt.Errorf("R2_STORAGE_QUOTA_BYTES 必须大于零")
+		}
+		u, err := url.Parse(c.R2Endpoint)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || !strings.HasSuffix(u.Hostname(), ".r2.cloudflarestorage.com") || u.Port() != "" {
+			return fmt.Errorf("R2_ENDPOINT 必须是 R2 S3 HTTPS origin，不含桶名")
+		}
+		if c.MaxFile > (16<<20)*10000 {
+			return fmt.Errorf("R2 文件上限不能超过 10,000 个 16 MiB 分块")
+		}
+		if c.R2Bucket == "" || strings.ContainsAny(c.R2Bucket, "/ \\?\n") || c.R2CredentialsFile == "" {
+			return fmt.Errorf("R2_BUCKET 和 R2_CREDENTIALS_FILE 必须配置")
+		}
+	}
+
 	for _, prefix := range c.TrustedProxies {
 		if !prefix.IsValid() || prefix.Bits() == 0 || prefix.Addr().Is4In6() {
 			return fmt.Errorf("TRUSTED_PROXIES 必须是有效的 IPv4/IPv6 CIDR，不能信任所有地址或使用映射 IPv4")

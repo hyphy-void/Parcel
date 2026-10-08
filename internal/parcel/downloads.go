@@ -174,6 +174,11 @@ func (a *App) download(w http.ResponseWriter, r *http.Request) {
 		a.problem(w, r, 410, "download_unavailable", "下载凭证或分享已失效")
 		return
 	}
+	if s.Backend == "r2" {
+		a.mu.Unlock()
+		a.problem(w, r, 409, "direct_download_required", "请重新获取 R2 下载地址")
+		return
+	}
 	active := 0
 	for _, v := range a.streams {
 		active += len(v)

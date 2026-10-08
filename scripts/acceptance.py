@@ -38,7 +38,7 @@ def main():
         work = Path(tmp)
         sock = socket.socket(); sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]; sock.close()
         base = f'http://127.0.0.1:{port}'
-        env = {**os.environ, 'PARCEL_LISTEN_ADDR': f'127.0.0.1:{port}', 'PARCEL_BASE_URL': base, 'PARCEL_DATA_DIR': str(work / 'data'), 'PARCEL_MAX_FILE_BYTES': str(max(args.size, 8 << 20)), 'PARCEL_STORAGE_QUOTA_BYTES': str(max(args.size * 2 + (1 << 30), 1 << 30)), 'PARCEL_MIN_FREE_BYTES': '0', 'PARCEL_REQUIRED_MOUNT': '/', 'PARCEL_CLEANUP_INTERVAL': '1s', 'GOMEMLIMIT': '192MiB'}
+        env = {**os.environ, 'PARCEL_STORAGE_BACKEND': 'local', 'PARCEL_LISTEN_ADDR': f'127.0.0.1:{port}', 'PARCEL_BASE_URL': base, 'PARCEL_DATA_DIR': str(work / 'data'), 'PARCEL_MAX_FILE_BYTES': str(max(args.size, 8 << 20)), 'PARCEL_STORAGE_QUOTA_BYTES': str(max(args.size * 2 + (1 << 30), 1 << 30)), 'PARCEL_MIN_FREE_BYTES': '0', 'PARCEL_REQUIRED_MOUNT': '/', 'PARCEL_CLEANUP_INTERVAL': '1s', 'GOMEMLIMIT': '192MiB'}
         binary = str(work / 'parcel-under-test')
         shutil.copy2(ROOT / 'bin/parcel', binary)
         report['binary_sha256'] = hashlib.sha256(Path(binary).read_bytes()).hexdigest()
@@ -98,7 +98,7 @@ def main():
                 return json.loads(body)
 
         def create(name, size):
-            return api('POST', '/uploads', {'name': name, 'size': size, 'max_downloads': 3}, expected=201)
+            return api('POST', '/uploads', {'name': name, 'size': size, 'confirm_large': size > 100_000_000, 'max_downloads': 3}, expected=201)
 
         def send(u, source, offset=0, end=None):
             end = args.size if end is None else end
