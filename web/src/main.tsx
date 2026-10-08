@@ -709,7 +709,7 @@ function NewShare({ auth }: { auth: Auth }) {
     [ttl, setTTL] = useState(initialSaved?.ttl || 86400),
     [limit, setLimit] = useState(initialSaved?.limit || 3),
     [error, setError] = useState(""),
-    [phase, setPhase] = useState("idle"),
+    [phase, setPhase] = useState(initialSaved ? "recovering" : "idle"),
     [upload, setUpload] = useState<Upload>(),
     [saved, setSaved] = useState(initialSaved),
     [result, setResult] = useState<Share>(),
@@ -736,6 +736,7 @@ function NewShare({ auth }: { auth: Auth }) {
         saved.id ? {} : { headers: { "Idempotency-Key": saved.key || "" } },
       )
         .then((u) => {
+          if (!alive.current) return;
           setUpload(u);
           setTTL(u.ttl_seconds);
           setLimit(u.max_downloads);
@@ -752,14 +753,17 @@ function NewShare({ auth }: { auth: Auth }) {
             });
           else if (["created", "uploading"].includes(u.state))
             setPhase("paused");
-          else {
-            localStorage.removeItem(savedKey);
-            setSaved(undefined);
-            setUpload(undefined);
-          }
+          else resetUpload();
         })
         .catch((e) => {
-          if (!(e instanceof ApiError && e.status === 404)) setError(e.message);
+          if (!alive.current) return;
+          if (e instanceof ApiError && e.status === 404) {
+            clearDraft();
+            setPhase("idle");
+          } else {
+            setError(e.message);
+            setPhase("failed");
+          }
         });
     return () => {
       alive.current = false;
@@ -767,6 +771,17 @@ function NewShare({ auth }: { auth: Auth }) {
       xhr.current?.abort();
     };
   }, []);
+  function clearDraft() {
+    localStorage.removeItem(savedKey);
+    setSaved(undefined);
+  }
+  function resetUpload() {
+    clearDraft();
+    setUpload(undefined);
+    setFile(undefined);
+    setPhase("idle");
+    setError("");
+  }
   function choose(f?: File) {
     if (!f) return;
     if (settings && f.size > settings.max_file_bytes) {
@@ -785,9 +800,10 @@ function NewShare({ auth }: { auth: Auth }) {
     setFile(f);
     setError("");
   }
-  async function done(u: Upload) {
+  async function done(u: Upload, epoch = generation.current) {
     const s = await api<Share>(`/admin/shares/${u.share_id}`);
-    if (!alive.current) return;
+    if (!alive.current || epoch !== generation.current) return;
+    setError("");
     setResult(s);
     setPhase("done");
     localStorage.removeItem(savedKey);
@@ -819,7 +835,7 @@ function NewShare({ auth }: { auth: Auth }) {
       if (!alive.current || epoch !== generation.current) return;
       setUpload(u);
       if (u.state === "completed") {
-        await done(u);
+        await done(u, epoch);
         return;
       }
       if (u.state !== "finalizing")
@@ -835,10 +851,11 @@ function NewShare({ auth }: { auth: Auth }) {
   }
   async function chunk(u: Upload, blob: Blob): Promise<number> {
     const direct = u.storage_backend === "r2";
-    const single = direct && u.part_bytes === 0;
+    const legacyPut = direct && u.part_bytes === 0;
+    const single = direct && (legacyPut || u.size <= u.part_bytes);
     const target: { url: string; headers?: Record<string, string> } = direct
       ? await api<{ url: string; headers?: Record<string, string> }>(
-          single
+          legacyPut
             ? `/uploads/${u.id}/object`
             : `/uploads/${u.id}/parts/${Math.floor(u.offset / u.part_bytes) + 1}`,
           { method: "POST" },
@@ -894,7 +911,8 @@ function NewShare({ auth }: { auth: Auth }) {
         }
       };
       x.onerror = () => reject(new Error("连接中断或 R2 CORS 未配置"));
-      x.ontimeout = () => reject(new Error("分块传输超时"));
+      x.ontimeout = () =>
+        reject(new Error(single ? "整文件传输超时" : "分块传输超时"));
       x.onabort = () => reject(new Error("上传已暂停"));
       x.send(blob);
     });
@@ -982,7 +1000,7 @@ function NewShare({ auth }: { auth: Auth }) {
       if (epoch !== generation.current || !alive.current) return;
       setUpload(u);
       if (u.state === "completed") {
-        await done(u);
+        await done(u, epoch);
         return;
       }
       if (u.state === "finalizing") {
@@ -1016,9 +1034,11 @@ function NewShare({ auth }: { auth: Auth }) {
           setUpload(u);
           if (
             u.storage_backend === "r2" &&
-            u.part_bytes === 0 &&
+            (u.part_bytes === 0 || u.size <= u.part_bytes) &&
             ["created", "uploading"].includes(u.state) &&
-            !u.object_uploaded
+            (u.part_bytes === 0
+              ? !u.object_uploaded
+              : !u.parts?.length || u.offset !== u.size)
           )
             throw new ApiError(
               "R2 已响应上传成功，但服务端尚未确认完整对象。任务已保留，请稍后继续；不会自动重传整个文件。",
@@ -1060,6 +1080,14 @@ function NewShare({ auth }: { auth: Auth }) {
       await poll(u.id, epoch);
     } catch (e) {
       if (alive.current && epoch === generation.current) {
+        // A definite rejection never created a task. Network/5xx uncertainty
+        // retains the idempotency key so a lost success can still be recovered.
+        if (
+          !u &&
+          e instanceof ApiError &&
+          [400, 401, 403, 413, 429, 507].includes(e.status)
+        )
+          clearDraft();
         setError((e as Error).message);
         setPhase(
           e instanceof ApiError && e.code === "upload_not_finalizing"
@@ -1077,24 +1105,65 @@ function NewShare({ auth }: { auth: Auth }) {
     }
   }
   async function cancel() {
-    generation.current++;
+    const epoch = ++generation.current;
     pause.current = true;
     xhr.current?.abort();
-    if (!upload) return;
+    setPhase("canceling");
+    let current = upload;
     try {
-      await api(`/uploads/${upload.id}`, { method: "DELETE" }, auth.csrf);
-      localStorage.removeItem(savedKey);
-      setSaved(undefined);
-      setUpload(undefined);
-      setFile(undefined);
-      setPhase("idle");
-      setError("");
+      if (!current && saved?.key) {
+        current = await api<Upload>("/uploads/lookup", {
+          headers: { "Idempotency-Key": saved.key },
+          signal: AbortSignal.timeout(30_000),
+        });
+      }
+      if (current) {
+        await api(
+          `/uploads/${current.id}`,
+          {
+            method: "DELETE",
+            signal: AbortSignal.timeout(90_000),
+          },
+          auth.csrf,
+        );
+      }
+      if (alive.current && epoch === generation.current) resetUpload();
     } catch (e) {
+      if (!alive.current || epoch !== generation.current) return;
+      if (e instanceof ApiError && e.status === 404) {
+        resetUpload();
+        return;
+      }
+      // Cancellation stopped the old poll. Reconcile with the server instead
+      // of leaving the page in checking with no operation able to finish it.
+      if (current) {
+        try {
+          current = await api<Upload>(`/uploads/${current.id}`, {
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!alive.current || epoch !== generation.current) return;
+          setUpload(current);
+          if (current.state === "completed") {
+            await done(current, epoch);
+            return;
+          }
+        } catch {
+          // Keep the task and allow a later explicit query/retry.
+        }
+      }
+      if (!alive.current || epoch !== generation.current) return;
+      setPhase(current?.state === "finalizing" ? "pending" : "paused");
       setError((e as Error).message);
     }
   }
   const backend = upload?.storage_backend ?? settings?.storage_backend;
-  const busy = ["uploading", "retrying", "checking"].includes(phase),
+  const busy = [
+      "uploading",
+      "retrying",
+      "checking",
+      "canceling",
+      "recovering",
+    ].includes(phase),
     ratio = upload ? (upload.size ? upload.offset / upload.size : 1) : 0;
   if (result)
     return (
@@ -1249,14 +1318,15 @@ function NewShare({ auth }: { auth: Auth }) {
                 {backend === "r2" ? "R2 已保存" : "服务端已确认"}{" "}
                 {bytes(upload.offset)} / {bytes(upload.size)}
                 {sending > 0
-                  ? ` · ${upload.storage_backend === "r2" && upload.part_bytes === 0 ? "已发送" : "当前分块发送"} ${bytes(sending)}`
+                  ? ` · ${upload.storage_backend === "r2" && (upload.part_bytes === 0 || upload.size <= upload.part_bytes) ? "已发送" : "当前分块发送"} ${bytes(sending)}`
                   : ""}
               </small>
               {phase === "checking" && (
                 <p className="note">
                   <Loader2 size={15} className="spin" />
                   {backend === "r2"
-                    ? upload.part_bytes === 0
+                    ? upload.part_bytes === 0 ||
+                      upload.size <= upload.part_bytes
                       ? "文件已直传，正在核对并发布分享。"
                       : "文件已直传，正在合并 R2 分块并核对对象大小，完成后生成分享链接。"
                     : "校验完成后才会生成可用链接。"}
@@ -1272,6 +1342,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 : "文件只保存在本机。分享失效后，Parcel 会自动回收空间。"}
               {backend === "r2" &&
                 (upload?.part_bytes === 0 ||
+                  (upload && upload.size <= upload.part_bytes) ||
                   (!upload && (!file || file.size <= 100_000_000))) &&
                 " 100 MB 以内整文件上传，中断后需重新发送。"}
             </p>
@@ -1378,7 +1449,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 disabled={
                   (!file && upload?.state !== "finalizing") ||
                   !settings ||
-                  phase === "checking" ||
+                  ["checking", "canceling", "recovering"].includes(phase) ||
                   (!upload &&
                     (limit < 1 ||
                       limit > 100 ||
@@ -1402,10 +1473,11 @@ function NewShare({ auth }: { auth: Auth }) {
                       : "上传并创建分享"}
               </button>
             )}
-            {upload && (
+            {(upload || saved) && (
               <button
                 className="text-button danger cancel-upload"
                 onClick={cancel}
+                disabled={phase === "canceling" || phase === "recovering"}
               >
                 <X size={16} />
                 取消这次上传

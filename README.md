@@ -55,4 +55,4 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 
 ### 私有 R2 存储
 
-可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，≤100 MB 单次 PUT，更大文件二次确认并使用 Multipart 续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。
+可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，≤100 MB 使用单分块 Multipart（浏览器一次 PUT），更大文件二次确认并分块续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。

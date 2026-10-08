@@ -170,7 +170,7 @@ func New(c config.Config, static fs.FS, logger *slog.Logger) (*App, error) {
 		}
 	}
 	var remote int
-	if e = db.QueryRow("SELECT (SELECT count(*) FROM shares WHERE backend='r2' AND state!='deleted') + (SELECT count(*) FROM uploads WHERE backend='r2' AND (state NOT IN ('completed','cleaned') OR (state='completed' AND part_bytes=0 AND staging_cleaned=0)))").Scan(&remote); e != nil {
+	if e = db.QueryRow("SELECT (SELECT count(*) FROM shares WHERE backend='r2' AND state!='deleted') + (SELECT count(*) FROM uploads WHERE backend='r2' AND (state NOT IN ('completed','cleaned') OR part_bytes=0))").Scan(&remote); e != nil {
 		return fail(e)
 	}
 	if remote > 0 && store == nil {

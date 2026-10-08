@@ -21,13 +21,26 @@ func waitPublished(t *testing.T, f *fixture, u Upload) Share {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	t.Fatal("single PUT publication timed out")
+	t.Fatal("publication timed out")
 	return Share{}
 }
+
+// Model schema-3 tasks created before new uploads switched to one-part
+// multipart. Their signed URLs and recovery protocol remain supported.
+func legacyPutUpload(t *testing.T, f *fixture, size int64, limit int) Upload {
+	t.Helper()
+	u := f.create(t, size, "", limit)
+	if _, err := f.a.db.Exec("UPDATE uploads SET part_bytes=0 WHERE id=?", u.ID); err != nil {
+		t.Fatal(err)
+	}
+	u.PartBytes = 0
+	return u
+}
+
 func TestSinglePutValidationPublicationAndRetention(t *testing.T) {
 	f := testApp(t)
 	store := useR2(f)
-	u := f.create(t, 7, "", 2)
+	u := legacyPutUpload(t, f, 7, 2)
 	if !isSinglePut(u) {
 		t.Fatal("small upload did not select PUT")
 	}
@@ -79,7 +92,7 @@ func TestSinglePutZeroBytesAndCopyCrashRecovery(t *testing.T) {
 	for _, copied := range []bool{false, true} {
 		f := testApp(t)
 		store := useR2(f)
-		u := f.create(t, 0, "", 1)
+		u := legacyPutUpload(t, f, 0, 1)
 		store.staging = r2.Object{Size: 0, UploadID: u.ID, ETag: "zero"}
 		v := decodeResponse[Upload](t, f.request("GET", "/api/v1/uploads/"+u.ID, nil, nil, true), 200)
 		if !v.ObjectUploaded {
@@ -107,7 +120,7 @@ func TestR2StorageGuardReservationsAndCancel(t *testing.T) {
 	f.publish(t, []byte("legacy"), "", 1)
 	store := useR2(f)
 	f.a.C.R2Quota = 14
-	u := f.create(t, 7, "", 1)
+	u := legacyPutUpload(t, f, 7, 1)
 	used, reserved, err := f.a.r2Usage()
 	if err != nil || used != 0 || reserved != 14 {
 		t.Fatal("R2 storage guard must exclude local and reserve both copies")

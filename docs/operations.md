@@ -74,11 +74,13 @@ sudo ufw allow from 192.168.5.0/24 to 192.168.5.16 port 8080 proto tcp comment '
 | `PARCEL_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` |
 | `GOMEMLIMIT` | Go 默认 | systemd 样例设 `192MiB`，是 GC 软目标 |
 
+请求正文默认最多读取 15 秒，包括鉴权或来源拒绝后的正文收尾；JSON 超时返回 HTTP 408。已通过检查的本地上传 PATCH 使用独立的两分钟正文期限，大文件下载仍使用自己的流超时。
+
 本地传输的单实例固定限制为 2 个上传分块请求、4 个文件下载流、1 个文件哈希校验任务、2 个密码哈希任务；未完成上传最多 100 个。修改配置后重启服务。HTTPS BASE_URL 会启用 Secure Cookie，v0.1 程序本身提供 HTTP，HTTPS 部署须另行提供同源 TLS 终止并保持 Host/Origin。
 
 ## 4. 文件生命周期与下载
 
-以下描述本地存储路径；R2 的单次 PUT / Multipart 核验、5 分钟地址和授权时计数见 [R2 存储说明](r2-storage.md)。
+以下描述本地存储路径；R2 的单分块 / Multipart 核验、5 分钟地址和授权时计数见 [R2 存储说明](r2-storage.md)。
 
 文件经过完整字节数验证与流式 SHA-256 校验后才发布。发布前的请求不会生成可用分享。上传回复丢失时应查询 upload offset，再发下一块；刷新页面可重新选择原文件继续。重新选择文件的名称、大小和修改时间只作辅助检查，内容是否一致由上传者保证。
 
@@ -214,4 +216,4 @@ sudo systemctl disable --now parcel-update.timer
 
 ## R2 存储
 
-新增私有 R2 配置、CORS、单次 PUT、Multipart 恢复、9 GB 存储保护、下载会话与跨 schema 回滚流程见 [r2-storage.md](r2-storage.md)。本地存储为默认值，历史文件继续使用本地下载。
+新增私有 R2 配置、CORS、单分块上传、历史单次 PUT 和 Multipart 恢复、9 GB 存储保护、下载会话与跨 schema 回滚流程见 [r2-storage.md](r2-storage.md)。本地存储为默认值，历史文件继续使用本地下载。

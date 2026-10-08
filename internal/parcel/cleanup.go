@@ -178,9 +178,11 @@ func (a *App) Cleanup() {
 		}
 		a.audit("share_deleted", s.ID, "ok")
 	}
-	// Keep the staging object until all issued PUT URLs expire: deleting it
-	// sooner would let an old URL recreate untracked data after publication.
-	rows, e = a.db.Query("SELECT "+uploadColumns+" FROM uploads WHERE backend='r2' AND part_bytes=0 AND state='completed' AND staging_cleaned=0 AND put_expires<?", now)
+	// Legacy single PUTs can finish after their signed URL expires, even if
+	// deletion already succeeded. Keep their finite set of terminal records
+	// and revisit the staging keys hourly. For terminal tasks put_expires is
+	// the next cleanup time; active tasks still store the last URL expiry.
+	rows, e = a.db.Query("SELECT "+uploadColumns+" FROM uploads WHERE backend='r2' AND part_bytes=0 AND state IN ('completed','cleaned') AND put_expires<?", now)
 	if e != nil {
 		return
 	}
@@ -200,7 +202,7 @@ func (a *App) Cleanup() {
 		err := a.r2.Delete(a.ctx, putStagingKey(u))
 		a.mu.Lock()
 		if err == nil {
-			_, _ = a.db.Exec("UPDATE uploads SET staging_cleaned=1 WHERE id=?", u.ID)
+			_, _ = a.db.Exec("UPDATE uploads SET staging_cleaned=1,put_expires=? WHERE id=?", now+3600, u.ID)
 		}
 	}
 	rows, e = a.db.Query("SELECT " + uploadColumns + " FROM uploads WHERE state NOT IN ('completed','cleaned')")
@@ -261,7 +263,11 @@ func (a *App) Cleanup() {
 			_, _ = a.db.Exec("UPDATE uploads SET error='残留文件删除失败，等待重试',attempts=attempts+1 WHERE id=?", u.ID)
 			continue
 		}
-		_, _ = a.db.Exec("UPDATE uploads SET state='cleaned',updated=? WHERE id=?", now, u.ID)
+		if isSinglePut(u) {
+			_, _ = a.db.Exec("UPDATE uploads SET state='cleaned',updated=?,staging_cleaned=1,put_expires=? WHERE id=?", now, now+3600, u.ID)
+		} else {
+			_, _ = a.db.Exec("UPDATE uploads SET state='cleaned',updated=? WHERE id=?", now, u.ID)
+		}
 	}
 	// Delete sessions only after their active streams have stopped.
 	_, _ = a.db.Exec("DELETE FROM admin_sessions WHERE expires<=?", now)
@@ -275,7 +281,7 @@ func (a *App) Cleanup() {
 	if e == nil {
 		_, e = tx.Exec("DELETE FROM shares WHERE state='deleted' AND deleted_at<?", now-7*24*3600)
 		if e == nil {
-			_, e = tx.Exec("DELETE FROM uploads WHERE updated<? AND (state='cleaned' OR (state='completed' AND (backend!='r2' OR part_bytes!=0 OR staging_cleaned=1) AND NOT EXISTS(SELECT 1 FROM shares WHERE upload_id=uploads.id)))", now-7*24*3600)
+			_, e = tx.Exec("DELETE FROM uploads WHERE updated<? AND (backend!='r2' OR part_bytes!=0) AND (state='cleaned' OR (state='completed' AND NOT EXISTS(SELECT 1 FROM shares WHERE upload_id=uploads.id)))", now-7*24*3600)
 		}
 		if e == nil {
 			_, e = tx.Exec("DELETE FROM audit_events WHERE created<? OR id<(SELECT COALESCE(max(id),0)-10000 FROM audit_events)", now-7*24*3600)

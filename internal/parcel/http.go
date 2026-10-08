@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -48,6 +49,10 @@ func (a *App) Handler() http.Handler {
 	m.HandleFunc("/", a.frontend)
 	u, _ := url.Parse(a.C.BaseURL)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Bound body reads, including net/http's drain after an early rejection.
+		// Accepted local PATCH uploads install their own two-minute deadline.
+		// Do not clear this here: draining happens after the handler returns.
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(15 * time.Second))
 		id := randomToken()
 		w.Header().Set("X-Request-ID", id)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -99,15 +104,23 @@ func (a *App) decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if e := d.Decode(v); e != nil {
-		a.problem(w, r, 400, "invalid_json", "请求格式不正确")
+		a.jsonReadProblem(w, r, e)
 		return false
 	}
 	var extra any
 	if e := d.Decode(&extra); e != io.EOF {
-		a.problem(w, r, 400, "invalid_json", "请求只能包含一个 JSON 对象")
+		a.jsonReadProblem(w, r, e)
 		return false
 	}
 	return true
+}
+func (a *App) jsonReadProblem(w http.ResponseWriter, r *http.Request, err error) {
+	var timeout net.Error
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		a.problem(w, r, 408, "request_timeout", "请求正文读取超时，请重试")
+		return
+	}
+	a.problem(w, r, 400, "invalid_json", "请求格式不正确，且只能包含一个 JSON 对象")
 }
 func (a *App) frontend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" && r.Method != "HEAD" {

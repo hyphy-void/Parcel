@@ -158,9 +158,6 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		needed := req.Size
-		if req.Size <= uploadConfirmationBytes {
-			needed *= 2
-		}
 		if needed > a.C.R2Quota-r2Used-r2Reserved {
 			a.problem(w, r, 507, "r2_quota_exceeded", "R2 存储保护额度不足，已停止新上传。请等待文件清理释放空间。")
 			return
@@ -211,8 +208,11 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 	backend, partBytes := "local", int64(0)
 	if a.r2 != nil {
 		backend = "r2"
-		if req.Size > uploadConfirmationBytes {
-			partBytes = r2.PartSize
+		partBytes = r2.PartSize
+		if req.Size <= uploadConfirmationBytes {
+			// A single multipart part keeps the whole-file browser PUT while
+			// letting cancellation and publication revoke the upload ID.
+			partBytes = uploadConfirmationBytes
 		}
 		key = "parcel/v2/" + key
 	}
@@ -346,7 +346,7 @@ func (a *App) patchUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	ctl := http.NewResponseController(w)
 	_ = ctl.SetReadDeadline(time.Now().Add(2 * time.Minute))
-	defer ctl.SetReadDeadline(time.Time{})
+	// Leave the deadline installed for net/http draining on an early file error.
 	f, e := a.root.OpenFile("tmp/"+id+".part", os.O_RDWR, 0600)
 	if e != nil {
 		a.internal(w, r, e)

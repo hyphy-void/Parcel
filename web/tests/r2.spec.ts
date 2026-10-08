@@ -438,137 +438,142 @@ test("R2 配置下恢复旧本地任务应说明实际存储路径", async ({ pa
   ).toHaveCount(0);
 });
 
-for (const size of [0, 20 << 20]) {
-  for (const outcome of ["success", "rejected", "unverified"]) {
-    test(`小文件一次 PUT（${size} 字节，${outcome}），不请求 Multipart`, async ({
-      page,
-    }) => {
-      let stored = false,
-        published = false,
-        puts = 0;
-      const u = () => ({
-        ...pendingUpload,
-        id: "single-put-task",
-        name: "whole.bin",
-        size,
-        offset: stored ? size : 0,
-        part_bytes: 0,
-        object_uploaded: stored,
-        state: published ? "completed" : "created",
-      });
-      await page.route("**/api/v1/uploads**", async (route) => {
-        const req = route.request();
-        expect(req.method()).not.toBe("PATCH");
-        expect(req.url()).not.toContain("/parts/");
-        if (req.url().endsWith("/object")) {
-          await route.fulfill({
-            json: {
-              url: "https://test.r2.cloudflarestorage.com/whole",
-              headers: {
-                [size === 0 ? "Content-Type" : "content-type"]:
-                  "application/octet-stream",
-                "X-Amz-Meta-Parcel-Upload": "single-put-task",
-              },
-            },
-          });
-        } else if (req.url().endsWith("/complete")) {
-          expect(stored).toBe(true);
-          published = true;
-          await route.fulfill({ status: 202, json: u() });
-        } else
-          await route.fulfill({
-            status: req.method() === "POST" ? 201 : 200,
-            json: u(),
-          });
-      });
-      await page.route(
-        "https://test.r2.cloudflarestorage.com/**",
-        async (route) => {
-          if (route.request().method() === "OPTIONS") {
+for (const legacy of [false, true]) {
+  for (const size of [0, 20 << 20]) {
+    for (const outcome of ["success", "rejected", "unverified"]) {
+      test(`${legacy ? "历史单 PUT" : "新单分块"}任务一次 PUT（${size} 字节，${outcome}）`, async ({
+        page,
+      }) => {
+        let stored = false,
+          published = false,
+          puts = 0;
+        const u = () => ({
+          ...pendingUpload,
+          id: "single-put-task",
+          name: "whole.bin",
+          size,
+          offset: stored ? size : 0,
+          part_bytes: legacy ? 0 : 100_000_000,
+          parts: stored && !legacy ? [{ number: 1, size, etag: "whole" }] : [],
+          object_uploaded: stored,
+          state: published ? "completed" : "created",
+        });
+        await page.route("**/api/v1/uploads**", async (route) => {
+          const req = route.request();
+          expect(req.method()).not.toBe("PATCH");
+          expect(req.url()).not.toContain(legacy ? "/parts/" : "/object");
+          if (req.url().endsWith(legacy ? "/object" : "/parts/1")) {
             await route.fulfill({
-              status: 204,
-              headers: {
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "PUT",
-                "Access-Control-Allow-Headers":
-                  "content-type,x-amz-meta-parcel-upload",
+              json: {
+                url: "https://test.r2.cloudflarestorage.com/whole",
+                headers: {
+                  [size === 0 ? "Content-Type" : "content-type"]:
+                    "application/octet-stream",
+                  ...(legacy
+                    ? { "X-Amz-Meta-Parcel-Upload": "single-put-task" }
+                    : {}),
+                },
               },
             });
-            return;
-          }
-          expect(route.request().method()).toBe("PUT");
-          expect(await route.request().headerValue("content-type")).toBe(
-            "application/octet-stream",
-          );
-          expect(
-            await route.request().headerValue("x-amz-meta-parcel-upload"),
-          ).toBe("single-put-task");
-          const transmitted =
-            route.request().postDataBuffer()?.length ??
-            Number(await route.request().headerValue("content-length"));
-          expect(transmitted).toBe(size);
-          puts++;
-          stored = outcome === "success";
-          await route.fulfill({
-            status: outcome === "rejected" ? 403 : 200,
-            headers: { "Access-Control-Allow-Origin": "*" },
-            body:
-              outcome === "rejected"
-                ? "<Error><Code>SignatureDoesNotMatch</Code></Error>"
-                : "",
-          });
-        },
-      );
-      await page.route("**/api/v1/admin/shares/pending-share", (route) =>
-        route.fulfill({
-          json: {
-            id: "pending-share",
-            name: "whole.bin",
-            size,
-            url: "http://127.0.0.1:18280/s/pending-share",
-            expires: 9999999999,
-            max_downloads: 3,
-          },
-        }),
-      );
-      await page.route("**/api/v1/admin/status", async (route) => {
-        const response = await route.fetch();
-        await route.fulfill({
-          json: { ...(await response.json()), storage_backend: "r2" },
+          } else if (req.url().endsWith("/complete")) {
+            expect(stored).toBe(true);
+            published = true;
+            await route.fulfill({ status: 202, json: u() });
+          } else
+            await route.fulfill({
+              status: req.method() === "POST" ? 201 : 200,
+              json: u(),
+            });
         });
-      });
-      await page.route("**/admin/new", async (route) => {
-        const response = await route.fetch();
-        const headers = response.headers();
-        headers["content-security-policy"] = headers[
-          "content-security-policy"
-        ].replace(
-          "connect-src 'self'",
-          "connect-src 'self' https://test.r2.cloudflarestorage.com",
+        await page.route(
+          "https://test.r2.cloudflarestorage.com/**",
+          async (route) => {
+            if (route.request().method() === "OPTIONS") {
+              await route.fulfill({
+                status: 204,
+                headers: {
+                  "Access-Control-Allow-Origin": "*",
+                  "Access-Control-Allow-Methods": "PUT",
+                  "Access-Control-Allow-Headers":
+                    "content-type,x-amz-meta-parcel-upload",
+                },
+              });
+              return;
+            }
+            expect(route.request().method()).toBe("PUT");
+            expect(await route.request().headerValue("content-type")).toBe(
+              "application/octet-stream",
+            );
+            expect(
+              await route.request().headerValue("x-amz-meta-parcel-upload"),
+            ).toBe(legacy ? "single-put-task" : null);
+            const transmitted =
+              route.request().postDataBuffer()?.length ??
+              Number(await route.request().headerValue("content-length"));
+            expect(transmitted).toBe(size);
+            puts++;
+            stored = outcome === "success";
+            await route.fulfill({
+              status: outcome === "rejected" ? 403 : 200,
+              headers: { "Access-Control-Allow-Origin": "*", ETag: "whole" },
+              body:
+                outcome === "rejected"
+                  ? "<Error><Code>SignatureDoesNotMatch</Code></Error>"
+                  : "",
+            });
+          },
         );
-        await route.fulfill({ response, headers });
-      });
-      await login(page);
-      await page.getByLabel("选择文件", { exact: true }).setInputFiles({
-        name: "whole.bin",
-        mimeType: "application/octet-stream",
-        buffer: Buffer.alloc(size),
-      });
-      await page.getByRole("button", { name: "上传并创建分享" }).click();
-      if (outcome === "success") {
-        await expect(
-          page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
-        ).toBeVisible();
-      } else {
-        await expect(page.getByRole("alert")).toContainText(
-          outcome === "rejected" ? "签名校验失败" : "不会自动重传整个文件",
+        await page.route("**/api/v1/admin/shares/pending-share", (route) =>
+          route.fulfill({
+            json: {
+              id: "pending-share",
+              name: "whole.bin",
+              size,
+              url: "http://127.0.0.1:18280/s/pending-share",
+              expires: 9999999999,
+              max_downloads: 3,
+            },
+          }),
         );
-        expect(published).toBe(false);
-        expect(
-          await page.evaluate(() => localStorage.getItem("parcel.upload")),
-        ).not.toBeNull();
-      }
-      expect(puts).toBe(1);
-    });
+        await page.route("**/api/v1/admin/status", async (route) => {
+          const response = await route.fetch();
+          await route.fulfill({
+            json: { ...(await response.json()), storage_backend: "r2" },
+          });
+        });
+        await page.route("**/admin/new", async (route) => {
+          const response = await route.fetch();
+          const headers = response.headers();
+          headers["content-security-policy"] = headers[
+            "content-security-policy"
+          ].replace(
+            "connect-src 'self'",
+            "connect-src 'self' https://test.r2.cloudflarestorage.com",
+          );
+          await route.fulfill({ response, headers });
+        });
+        await login(page);
+        await page.getByLabel("选择文件", { exact: true }).setInputFiles({
+          name: "whole.bin",
+          mimeType: "application/octet-stream",
+          buffer: Buffer.alloc(size),
+        });
+        await page.getByRole("button", { name: "上传并创建分享" }).click();
+        if (outcome === "success") {
+          await expect(
+            page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
+          ).toBeVisible();
+        } else {
+          await expect(page.getByRole("alert")).toContainText(
+            outcome === "rejected" ? "签名校验失败" : "不会自动重传整个文件",
+          );
+          expect(published).toBe(false);
+          expect(
+            await page.evaluate(() => localStorage.getItem("parcel.upload")),
+          ).not.toBeNull();
+        }
+        expect(puts).toBe(1);
+      });
+    }
   }
 }
