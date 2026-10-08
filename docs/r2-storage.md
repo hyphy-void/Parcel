@@ -201,3 +201,14 @@ go run ./scripts/r2-browser-probe -action cleanup
 ```
 
 使用开发凭据文件 `.parcel-secrets/r2.credentials`；地址为 5 分钟有效期，每次测试前重新生成 manifest。另有显式启用的 `r2-production.spec.ts`，仅当操作员提供受限的短期管理员会话文件时运行真实公网完整前端测试；运行后须撤销并清理生成的分享及管理员会话，禁止使用 trace 记录登录授权。
+
+
+上述修复提交 `e4877c0` 已推送并安装到 Pi。ARM64 本地/远端/安装 SHA-256 均为：
+
+```text
+d892fedce6f44ad6e5a714392a88c37049f389ffa257e89ccee3bcba42a0c1e1
+```
+
+备份位于 `/var/backups/parcel-r2-put-header-fix-20261009-012635`，包含旧二进制、完整停机数据和原配置；本次 schema 保持 3，无数据库迁移。`/opt/parcel/parcel.previous` 现在是修复前的 schema 3 二进制，此次回滚可仅恢复该二进制并保留最新 schema 3 数据；更早 schema 2 的完整备份仍保留。未修改 Caddy、R2 CORS 或用户分享。
+
+部署后通过真实公网完整前端上传 **93,607,928 字节（89.3 MiB）**生成文件，Chromium 只发出一次 R2 PUT，完成后由 Pi HEAD、复制并发布真实分享，浏览器成功页截图已保存。没有模拟公网接口或跳过服务端核验。测试分享、临时对象、元数据和短期管理员会话随后清理；用量恢复，用户已有文件和分享保留。公网静态资源与测试构建逐字节一致，服务和 readiness 正常。仍打开旧上传页的用户需要刷新页面加载修复后的 JavaScript。
