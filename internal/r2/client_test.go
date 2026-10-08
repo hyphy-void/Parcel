@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -267,7 +268,15 @@ func TestLiveSinglePut(t *testing.T) {
 	defer cancel()
 	key := "parcel/probe/put-" + time.Now().UTC().Format("20060102T150405.000000000")
 	client := &http.Client{Timeout: 90 * time.Second}
-	for _, body := range [][]byte{nil, []byte("verified PUT object")} {
+	bodies := [][]byte{nil, []byte("verified PUT object")}
+	if raw := os.Getenv("PARCEL_R2_LIVE_LARGE_BYTES"); raw != "" {
+		size, err := strconv.Atoi(raw)
+		if err != nil || size < 1 || size > 100_000_000 {
+			t.Fatal("invalid optional live PUT size")
+		}
+		bodies = append(bodies, bytes.Repeat([]byte{'x'}, size))
+	}
+	for _, body := range bodies {
 		stage := key + ".pending"
 		defer func() { _ = c.Delete(context.Background(), stage); _ = c.Delete(context.Background(), key) }()
 		address, headers, e := c.SignPut(ctx, stage, "put-probe", int64(len(body)))
@@ -285,6 +294,26 @@ func TestLiveSinglePut(t *testing.T) {
 		response.Body.Close()
 		if (response.StatusCode != 200 && response.StatusCode != 204) || response.Header.Get("Access-Control-Allow-Origin") != "https://parcel.playereconlab.com" || !strings.Contains(strings.ToLower(response.Header.Get("Access-Control-Allow-Headers")), "x-amz-meta-parcel-upload") {
 			t.Fatalf("whole PUT metadata CORS preflight rejected: status=%d origin=%q allowed_headers=%q", response.StatusCode, response.Header.Get("Access-Control-Allow-Origin"), response.Header.Get("Access-Control-Allow-Headers"))
+		}
+		if len(body) > 0 && len(body) <= 4096 {
+			// Browsers append repeated setRequestHeader calls. Unlike zero-byte
+			// PUTs, nonempty PUTs bind Content-Type into the signature.
+			bad, _ := http.NewRequestWithContext(ctx, "PUT", address, bytes.NewReader(body))
+			for k, v := range headers {
+				bad.Header.Set(k, v)
+			}
+			bad.Header.Set("Content-Type", "application/octet-stream, application/octet-stream")
+			bad.Header.Set("Origin", "https://parcel.playereconlab.com")
+			res, e := client.Do(bad)
+			if e != nil {
+				t.Fatal("duplicate header transport failed")
+			}
+			b, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
+			res.Body.Close()
+			if res.StatusCode != 403 || !bytes.Contains(b, []byte("SignatureDoesNotMatch")) {
+				t.Fatal("duplicate signed Content-Type did not reproduce signature rejection")
+			}
+			t.Log("nonempty PUT with duplicate Content-Type reproduces HTTP 403 SignatureDoesNotMatch")
 		}
 		put := func(payload []byte) {
 			req, _ := http.NewRequestWithContext(ctx, "PUT", address, bytes.NewReader(payload))
@@ -321,7 +350,9 @@ func TestLiveSinglePut(t *testing.T) {
 			t.Fatal("R2 copy verification failed")
 		}
 		if len(body) > 0 {
-			put(bytes.Repeat([]byte{'z'}, len(body)))
+			if len(body) <= 4096 {
+				put(bytes.Repeat([]byte{'z'}, len(body)))
+			}
 			get, e := c.SignGet(ctx, key, "probe.bin")
 			if e != nil {
 				t.Fatal(e)

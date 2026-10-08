@@ -854,15 +854,35 @@ function NewShare({ auth }: { auth: Auth }) {
         x.setRequestHeader("X-CSRF-Token", auth.csrf);
         x.setRequestHeader("Upload-Offset", String(u.offset));
       }
-      x.setRequestHeader("Content-Type", "application/octet-stream");
-      for (const [name, value] of Object.entries(target.headers ?? {}))
-        x.setRequestHeader(name, value);
+      // XHR appends repeated headers; signed headers must be sent exactly once.
+      const headers = new Headers(target.headers);
+      if (!headers.has("Content-Type"))
+        headers.set("Content-Type", "application/octet-stream");
+      headers.forEach((value, name) => x.setRequestHeader(name, value));
       x.timeout = single ? 900000 : 125000;
       x.upload.onprogress = (e) => setSending(e.loaded);
       x.onload = () => {
         if (x.status >= 200 && x.status < 300) resolve();
-        else if (direct) reject(new Error("R2 分块上传失败，将获取新地址重试"));
-        else {
+        else if (direct) {
+          const code = new DOMParser()
+            .parseFromString(x.responseText, "application/xml")
+            .querySelector("Code")?.textContent;
+          const reason =
+            code === "SignatureDoesNotMatch"
+              ? "上传签名校验失败"
+              : code === "AccessDenied"
+                ? "存储访问被拒绝"
+                : "存储服务拒绝了请求";
+          reject(
+            new ApiError(
+              `R2 ${single ? "整文件" : "分块"}上传失败（HTTP ${x.status}）：${reason}。上传任务已保留。`,
+              x.status,
+              code === "RequestExpired" || code === "ExpiredToken"
+                ? "r2_url_expired"
+                : "r2_upload_rejected",
+            ),
+          );
+        } else {
           try {
             const data = JSON.parse(x.responseText);
             reject(
@@ -994,13 +1014,26 @@ function NewShare({ auth }: { auth: Auth }) {
               ? await api<Upload>(`/uploads/${u.id}`)
               : { ...u, offset };
           setUpload(u);
+          if (
+            u.storage_backend === "r2" &&
+            u.part_bytes === 0 &&
+            ["created", "uploading"].includes(u.state) &&
+            !u.object_uploaded
+          )
+            throw new ApiError(
+              "R2 已响应上传成功，但服务端尚未确认完整对象。任务已保留，请稍后继续；不会自动重传整个文件。",
+              409,
+              "r2_upload_unverified",
+            );
           setSending(0);
           retry = 0;
         } catch (e) {
           if (pause.current) break;
           if (
             ++retry > 3 ||
-            (e instanceof ApiError && [401, 413, 507].includes(e.status))
+            (e instanceof ApiError &&
+              e.code !== "r2_url_expired" &&
+              [400, 401, 403, 409, 413, 507].includes(e.status))
           )
             throw e;
           setPhase("retrying");

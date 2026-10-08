@@ -178,3 +178,26 @@ ca44912e97f6a2f1c894c44cbad747eb912e933bae0bbdd9829cf071e27ba50c
 生产实际验证通过：鉴权与 CSRF、>100 MB 确认、≤100 MB 单次 PUT、元数据请求头 OPTIONS、HEAD 恢复、R2 内部条件复制与发布、临时空间预留、9 GB 后端保护配置、分享密码、5 分钟 GET、文件名、Range、授权会话计数、续签不重复扣次、撤销后拒绝续签、Multipart 任务创建与取消、分享对象及临时对象清理、配额释放。仅对生成的测试分享缩短保留期限以验证删除，未调整用户分享；测试对象、记录和临时管理会话均已清理。旧本地文件 SHA-256 保持一致，公网前端静态资源与已测试的本地构建逐字节一致。
 
 验收通过后恢复原 Caddy 配置及公网 API。`parcel`、`caddy`、`cloudflared` 均 active，回环 `/readyz` 正常；公网首页正常、未登录管理 API 返回 401，公网 readiness 仍按原路由策略返回 403。
+
+
+## 2026-10-09 单次 PUT 重试问题修复
+
+非空单次 PUT 的 SDK 预签名结果包含 `Content-Type: application/octet-stream`，并将该头纳入签名。旧前端先设置默认 Content-Type，再逐个设置签名请求头；XMLHttpRequest 会追加重复头，实际发送 `application/octet-stream, application/octet-stream`。真实 R2 返回 HTTP 403 / `SignatureDoesNotMatch`，因此发送进度虽然达到 100%，对象仍未被接受。空文件的签名头不同，不能仅以空文件验证代表非空上传。
+
+修复将请求头交由 `Headers` 按大小写无关的名称整理，每个头仅调用一次 `setRequestHeader`。签名、权限等不可重试错误立即显示具体原因并保留任务；PUT 返回成功但 HEAD 未确认完整对象时也停止自动重传，避免无限将整文件重新发送。传输完成后仍保留服务端核验，不将发送进度当作发布成功。
+
+此前 Go 冒烟使用 `http.Header.Set`，重复设置会替换；浏览器模拟只返回任务元数据头，遗漏了 SDK 对非空文件返回的 Content-Type，因此未覆盖真实故障。此次先补真实请求头断言，旧前端测试失败并明确捕获重复值；修复后 84 项浏览器测试通过（含 Chromium、Firefox、移动 Chromium 各自的空文件和 20 MiB 真实 R2 PUT）。真实 R2 验证还覆盖非空重复头的 403 复现，以及 93,607,928 字节整文件上传、HEAD、复制和下载一致性。Go race/vet 和构建通过。
+
+真实浏览器探针只写入随机 `parcel/probe/browser-probe-*` 对象，权限与 CORS 使用真实生产桶；网页/API 使用隔离模拟记录，不修改生产 SQLite。签名地址保存在 0700 目录内的 0600 manifest，浏览器探针关闭 trace；不得提交、打印或共享该 manifest。
+
+```bash
+export PARCEL_R2_LIVE_ENDPOINT=https://15cfc46fe23bf82055e97614de76b744.r2.cloudflarestorage.com
+export PARCEL_R2_LIVE_BUCKET=parcel
+go run ./scripts/r2-browser-probe -action init
+PARCEL_BROWSER_R2_MANIFEST="$PWD/.parcel-secrets/browser-probe.json" \
+  npm --prefix web run test:e2e -- --grep '真实浏览器'
+go run ./scripts/r2-browser-probe -action verify
+go run ./scripts/r2-browser-probe -action cleanup
+```
+
+使用开发凭据文件 `.parcel-secrets/r2.credentials`；地址为 5 分钟有效期，每次测试前重新生成 manifest。另有显式启用的 `r2-production.spec.ts`，仅当操作员提供受限的短期管理员会话文件时运行真实公网完整前端测试；运行后须撤销并清理生成的分享及管理员会话，禁止使用 trace 记录登录授权。
