@@ -77,7 +77,7 @@ R2 内容流不经过 Parcel，无法从服务器观察活跃传输。为避免�
 
 ## 迁移与生产安装
 
-当前本地版本支持 schema **3**，逐次事务迁移 schema 1 → 2 → 3，拒绝更高版本。首次 R2 迁移将旧记录标为 local，无需迁移已有文件；本次 2 → 3 增加单次 PUT 地址期限和临时对象清理状态。生产目前仍为 schema 2。跨 schema 回滚须恢复升级前的一致性数据，不能仅回滚二进制。
+当前本地版本支持 schema **3**，逐次事务迁移 schema 1 → 2 → 3，拒绝更高版本。首次 R2 迁移将旧记录标为 local，无需迁移已有文件；本次 2 → 3 增加单次 PUT 地址期限和临时对象清理状态。生产已于 2026-10-09 升级到 schema 3。跨 schema 回滚须恢复升级前的一致性数据，不能仅回滚二进制。
 
 1. 本地执行构建和验证，`./scripts/release.sh --skip-web` 产生 ARM64 等产物、schema 3 元数据和 SHA256SUMS。现有自动 updater 拒绝跨 schema 升级，第一次必须手动维护。
 2. 用 Tailscale SSH 检查远端 `git status --short` 和修改差异，检查 systemd 服务用户、现有配置及数据目录。保留远端修改，不 reset。只同步必要源码或经核验二进制。
@@ -144,7 +144,7 @@ go test -count=1 -run 'TestLiveR2|TestLiveSinglePut' -v ./internal/r2
 
 `/opt/parcel/parcel.previous` 另保留升级前二进制。备份目录内 `rollback.py` 可恢复升级前二进制、配置和完整数据，并保全失败现场。**公网已恢复后不能直接执行数据库回退**：应先暂停写入、备份现状并清点升级后新增记录与 R2 对象，按上文迁移步骤处理，避免丢失新上传元数据。首次部署时的生产密钥暂存副本已删除，正式凭据保存在 `/etc/parcel/r2.credentials`。
 
-## 2026-10-09 本地修正（尚未部署）
+## 2026-10-09 本地修正与验证
 
 前端现在按上传任务的实际 backend 显示路径。恢复启用 R2 前的 local 任务时，会说明继续上传仍经过服务器，并提示取消后新建任务以使用 R2；不再仅凭全局配置标注直传。R2 已保存的分块与服务端完成/HEAD 发布确认分别展示，完成阶段说明为“正在完成 R2 上传”。
 
@@ -152,4 +152,29 @@ go test -count=1 -run 'TestLiveR2|TestLiveSinglePut' -v ./internal/r2
 
 本地新增 ≤100 MB 单次 PUT、9 GB 存储保护和清除已清理历史记录。完整构建、TypeScript、Go race/vet 和 66 项 Chromium/Firefox/移动浏览器测试通过；真实 R2 单次 PUT 验证覆盖空文件、任务元数据、条件复制、不可覆盖发布对象及删除。管理页截图使用独立临时数据库和生成的示例记录，未使用生产文件。
 
-用户授权从 Pi 安全取回凭据后，开发副本保存到 `.parcel-secrets/r2.credentials`，文件 0600、目录 0700，整个目录被 Git 忽略。不要提交或打印该文件。本次没有替换生产二进制、迁移生产数据库或修改桶 CORS。
+用户授权从 Pi 安全取回凭据后，开发副本保存到 `.parcel-secrets/r2.credentials`，文件 0600、目录 0700，整个目录被 Git 忽略。不要提交或打印该文件。上述是部署前的本地验证记录；用户随后授权提交、推送并部署，安装结果见下节。
+
+
+## 2026-10-09 schema 3 生产部署
+
+实现提交为 `a2cb1f1`，已推送至 `origin/main`。ARM64 产物在开发机器交叉编译，传输前、Pi 上传后和安装后的 SHA-256 一致：
+
+```text
+ca44912e97f6a2f1c894c44cbad747eb912e933bae0bbdd9829cf071e27ba50c
+```
+
+已安装到 `/opt/parcel/parcel`，显式配置 `PARCEL_R2_STORAGE_QUOTA_BYTES=9000000000`，数据库从 schema 2 事务迁移到 3，SQLite `quick_check` 正常。停机前启用临时公网 API 维护门禁；二进制、完整数据、原配置与 Caddy 配置的一致性备份保存在：
+
+```text
+/var/backups/parcel-r2-v3-20261009-002645
+```
+
+目录权限 0700，含 `deployment.json` 验收记录和 `rollback.py`。`/opt/parcel/parcel.previous` 保留此次升级前的 schema 2 二进制，更早的 schema 1 备份仍保留在首次部署备份目录。跨 schema 不能仅替换二进制回滚；恢复脚本要求公网 API 处于维护状态。恢复公网写入后，须先备份现状、保全新记录并清点 R2 对象，再评估是否恢复旧快照。
+
+首次加载临时维护配置因文件权限导致 Caddy 拒绝读取，检查立即恢复原配置，没有替换二进制或数据库；修正为保留原文件权限后重试成功。远端源码已 fast-forward 到实现提交；原未跟踪 `AGENTS.md` 与新仓库版本内容一致，先备份再恢复原件，`deploy/Caddyfile.next` 保持未跟踪且未修改。用户另行要求终止的 128,878,726 字节未完成 Multipart 已通过管理员取消接口终止，清理状态为 `cleaned`，残留与配额释放成功。
+
+生产桶已按 `deploy/r2-cors.json` 更新 CORS，允许任务元数据请求头；仍限定生产 Origin，APAC、Standard 和私有访问保持不变。此次控制台显示已有生命周期规则为 1 天后中止未完成 Multipart，保持其现有设置。
+
+生产实际验证通过：鉴权与 CSRF、>100 MB 确认、≤100 MB 单次 PUT、元数据请求头 OPTIONS、HEAD 恢复、R2 内部条件复制与发布、临时空间预留、9 GB 后端保护配置、分享密码、5 分钟 GET、文件名、Range、授权会话计数、续签不重复扣次、撤销后拒绝续签、Multipart 任务创建与取消、分享对象及临时对象清理、配额释放。仅对生成的测试分享缩短保留期限以验证删除，未调整用户分享；测试对象、记录和临时管理会话均已清理。旧本地文件 SHA-256 保持一致，公网前端静态资源与已测试的本地构建逐字节一致。
+
+验收通过后恢复原 Caddy 配置及公网 API。`parcel`、`caddy`、`cloudflared` 均 active，回环 `/readyz` 正常；公网首页正常、未登录管理 API 返回 401，公网 readiness 仍按原路由策略返回 403。

@@ -187,7 +187,7 @@ sudo /usr/local/lib/parcel/update.py
 
 上一程序保留为 `/opt/parcel/parcel.previous`。新程序启动失败或健康检查失败会恢复上一程序并再次验证；回滚失败返回非零退出状态，需查看日志。SIGINT/SIGTERM 会进入同一恢复流程；断电或 SIGKILL 无法执行恢复代码，可按第 6 节手动恢复。安装与升级共用文件锁，避免并发替换。
 
-升级期间会短暂中断传输，可通过项目已有的续传机制恢复。工具不修改配置、密码或分享文件，也不创建整盘数据快照。**schema 不同的发布会拒绝安装**，须停止服务、备份整个数据目录后手动迁移；二进制回滚不能替代数据恢复。当前本地 schema 为 3，生产仍为 2；从 schema 1 或 2 升级需按 [R2 迁移流程](r2-storage.md) 停机备份并手动安装，发布者应保持同 schema 下的数据兼容性。
+升级期间会短暂中断传输，可通过项目已有的续传机制恢复。工具不修改配置、密码或分享文件，也不创建整盘数据快照。**schema 不同的发布会拒绝安装**，须停止服务、备份整个数据目录后手动迁移；二进制回滚不能替代数据恢复。当前 schema 为 3（生产已升级）；从 schema 1 或 2 升级需按 [R2 迁移流程](r2-storage.md) 停机备份并手动安装，发布者应保持同 schema 下的数据兼容性。
 
 默认健康检查使用 `PARCEL_BASE_URL/readyz`；有代理等情况可在 `/etc/parcel/update.env` 设置 `PARCEL_HEALTH_URL`，该地址应直达同一服务，并符合应用 Host 校验。配置按字面量 `KEY=value` 读取，不执行 shell；空格需引号，不支持变量展开。自动升级依赖公开 GitHub Release 下载；私有仓库资产下载不在本工具支持范围内。API 限流时可手动运行 `sudo --preserve-env=GH_TOKEN ...`，令牌仅发送到 GitHub API。
 
