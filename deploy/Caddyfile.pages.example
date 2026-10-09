@@ -1,0 +1,31 @@
+# Pages gateway -> Access Service Auth -> cloudflared -> Caddy -> Go.
+# Tunnel hostname: parcel-origin.example.com, service HTTP 127.0.0.1:8080.
+# Go: BASE_URL=https://parcel.example.com, LISTEN_ADDR=127.0.0.1:8081,
+# ADMIN_AUTH=access, GATEWAY_SECRET_FILE=/etc/parcel/gateway.secret.
+# Replace BOTH domains. Protect the entire origin hostname with Service Auth.
+# No access logs: paths and cookies contain share credentials.
+{
+	auto_https off
+}
+
+http://:8080 {
+	bind 127.0.0.1
+	@api {
+		host parcel-origin.example.com
+		path /api/v1/*
+	}
+	route {
+		header Cache-Control "private, no-store"
+		header Referrer-Policy no-referrer
+		header X-Content-Type-Options nosniff
+		handle @api {
+			reverse_proxy 127.0.0.1:8081 {
+				header_up Host parcel.example.com
+				header_up -X-Forwarded-For
+			}
+		}
+		handle {
+			respond "Route not exposed." 403
+		}
+	}
+}

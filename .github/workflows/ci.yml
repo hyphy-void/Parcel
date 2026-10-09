@@ -23,16 +23,25 @@ jobs:
       - run: npm --prefix web run build
       - run: go test -race ./...
       - run: go vet ./...
+      - name: Verify Pages gateway and build static deployment
+        run: |
+          npm --prefix cloudflare ci
+          npm --prefix cloudflare test
+          VITE_ADMIN_AUTH=access npm --prefix web run build -- --outDir ../dist/pages-web --emptyOutDir
+          npm --prefix cloudflare run build
+          npm --prefix cloudflare run test:runtime
       - run: ./scripts/release.sh --skip-web
       - name: Use AMD64 release binary for integration and browser tests
         run: |
           mkdir -p bin
           install -m 0755 dist/parcel-linux-amd64 bin/parcel
+      - run: PARCEL_TEST_BINARY="$PWD/bin/parcel" npm --prefix cloudflare run test:integration
       - run: PARCEL_TEST_BINARY="$PWD/bin/parcel" python3 -m unittest discover -s scripts/tests -v
       - run: npx playwright install --with-deps chromium firefox
         working-directory: web
       - run: npm run test:e2e
         working-directory: web
+      - run: npm --prefix cloudflare run test:browser
       - uses: actions/upload-artifact@v4
         with:
           name: parcel-linux

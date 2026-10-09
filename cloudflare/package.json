@@ -1,0 +1,21 @@
+{
+  "name": "parcel-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "dev": "wrangler pages dev ../dist/pages --port 8788",
+    "test:integration": "node --test tests/origin.integration.mjs",
+    "test:runtime": "node --test tests/runtime.smoke.mjs",
+    "test:browser": "node --test tests/access-ui.browser.mjs"
+  },
+  "dependencies": {
+    "jose": "^6.2.12"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "miniflare": "^5.20261006.1-alpha",
+    "wrangler": "^4.149.0"
+  }
+}

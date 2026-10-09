@@ -1,0 +1,6 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "parcel",
+  // Local development only: Dashboard owns production variables and bindings.
+  "compatibility_date": "2026-10-09"
+}

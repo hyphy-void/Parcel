@@ -1,0 +1,14 @@
+# Optional locally managed Tunnel configuration. A remotely managed Tunnel can
+# set the equivalent published application and Origin Access validation in Dash.
+tunnel: REPLACE_WITH_EXISTING_TUNNEL_ID
+credentials-file: /etc/cloudflared/REPLACE_WITH_EXISTING_TUNNEL_ID.json
+ingress:
+  - hostname: parcel-origin.example.com
+    service: http://127.0.0.1:8080
+    originRequest:
+      access:
+        required: true
+        teamName: REPLACE_WITH_ZERO_TRUST_TEAM_NAME
+        audTag:
+          - REPLACE_WITH_ORIGIN_SERVICE_APPLICATION_AUD
+  - service: http_status:404

@@ -66,6 +66,13 @@ func (a *App) Handler() http.Handler {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Cache-Control", "private, no-store")
 		}
+		if len(a.gatewaySecret) > 0 {
+			var ok bool
+			r, ok = a.gatewayRequest(w, r)
+			if !ok {
+				return
+			}
+		}
 		if !strings.EqualFold(r.Host, u.Host) {
 			a.problem(w, r, 403, "host_denied", "访问地址不受信任")
 			return

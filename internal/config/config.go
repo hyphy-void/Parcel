@@ -21,11 +21,12 @@ type Config struct {
 	// via X-Forwarded-For; it does not authorize administrative access.
 	TrustedProxies                                          []netip.Prefix
 	StorageBackend, R2Endpoint, R2Bucket, R2CredentialsFile string
+	AdminAuth, GatewaySecretFile                            string
 }
 
 func Load() (Config, error) {
-	c := Config{R2Quota: 9_000_000_000, StorageBackend: "local", Listen: "127.0.0.1:8080", BaseURL: "http://127.0.0.1:8080", DataDir: "./data", LogLevel: "info", MaxFile: 8 << 30, Quota: 20 << 30, MinFree: 2 << 30, Chunk: 8 << 20, UploadTTL: 24 * time.Hour, ShareTTL: 24 * time.Hour, MaxShareTTL: 7 * 24 * time.Hour, DownloadIdle: 30 * time.Minute, DownloadMax: 8 * time.Hour, CleanupInterval: time.Minute, DownloadLimit: 3}
-	for k, p := range map[string]*string{"LISTEN_ADDR": &c.Listen, "BASE_URL": &c.BaseURL, "DATA_DIR": &c.DataDir, "REQUIRED_MOUNT": &c.RequiredMount, "LOG_LEVEL": &c.LogLevel, "STORAGE_BACKEND": &c.StorageBackend, "R2_ENDPOINT": &c.R2Endpoint, "R2_BUCKET": &c.R2Bucket, "R2_CREDENTIALS_FILE": &c.R2CredentialsFile} {
+	c := Config{AdminAuth: "password", R2Quota: 9_000_000_000, StorageBackend: "local", Listen: "127.0.0.1:8080", BaseURL: "http://127.0.0.1:8080", DataDir: "./data", LogLevel: "info", MaxFile: 8 << 30, Quota: 20 << 30, MinFree: 2 << 30, Chunk: 8 << 20, UploadTTL: 24 * time.Hour, ShareTTL: 24 * time.Hour, MaxShareTTL: 7 * 24 * time.Hour, DownloadIdle: 30 * time.Minute, DownloadMax: 8 * time.Hour, CleanupInterval: time.Minute, DownloadLimit: 3}
+	for k, p := range map[string]*string{"LISTEN_ADDR": &c.Listen, "BASE_URL": &c.BaseURL, "DATA_DIR": &c.DataDir, "REQUIRED_MOUNT": &c.RequiredMount, "LOG_LEVEL": &c.LogLevel, "STORAGE_BACKEND": &c.StorageBackend, "R2_ENDPOINT": &c.R2Endpoint, "R2_BUCKET": &c.R2Bucket, "R2_CREDENTIALS_FILE": &c.R2CredentialsFile, "ADMIN_AUTH": &c.AdminAuth, "GATEWAY_SECRET_FILE": &c.GatewaySecretFile} {
 		if v, ok := os.LookupEnv("PARCEL_" + k); ok {
 			*p = v
 		}
@@ -73,6 +74,15 @@ func Load() (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.AdminAuth != "" && c.AdminAuth != "password" && c.AdminAuth != "access" {
+		return fmt.Errorf("ADMIN_AUTH 必须是 password 或 access")
+	}
+	if c.AdminAuth == "access" && c.GatewaySecretFile == "" {
+		return fmt.Errorf("Access 管理鉴权必须配置 GATEWAY_SECRET_FILE")
+	}
+	if c.GatewaySecretFile != "" && (c.AdminAuth != "access" || c.StorageBackend != "r2" || !strings.HasPrefix(c.BaseURL, "https://")) {
+		return fmt.Errorf("Pages 网关必须使用 Access 管理鉴权、HTTPS BASE_URL 和 R2 存储")
+	}
 	if c.StorageBackend != "" && c.StorageBackend != "local" && c.StorageBackend != "r2" {
 		return fmt.Errorf("STORAGE_BACKEND 必须是 local 或 r2")
 	}

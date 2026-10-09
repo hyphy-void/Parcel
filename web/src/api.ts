@@ -73,8 +73,30 @@ export async function api<T>(
     ...options,
     headers,
     credentials: "same-origin",
+    redirect: "manual",
   });
+  if (
+    response.type === "opaqueredirect" ||
+    (response.status >= 300 && response.status < 400)
+  ) {
+    if (path !== "/auth/session" && /^\/(auth|admin|uploads)(\/|$)/.test(path))
+      location.assign("/login");
+    throw new ApiError("登录已失效，请重新验证身份", 401, "access_required");
+  }
+  if (!response.headers.get("Content-Type")?.includes("application/json"))
+    throw new ApiError(
+      "服务响应不正确，请稍后重试",
+      response.status || 502,
+      "invalid_response",
+    );
   const data = await response.json();
+  if (
+    response.status === 401 &&
+    data.code === "access_required" &&
+    path !== "/auth/session" &&
+    /^\/(auth|admin|uploads)(\/|$)/.test(path)
+  )
+    location.assign("/login");
   if (!response.ok)
     throw new ApiError(
       data.message || "请求失败，请重试",

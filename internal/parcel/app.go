@@ -37,6 +37,7 @@ type limitEntry struct {
 }
 type App struct {
 	C             config.Config
+	gatewaySecret []byte
 	r2            r2.Store
 	db            *sql.DB
 	root          *os.Root
@@ -64,6 +65,10 @@ type App struct {
 
 func New(c config.Config, static fs.FS, logger *slog.Logger) (*App, error) {
 	if e := c.Validate(); e != nil {
+		return nil, e
+	}
+	secret, e := loadGatewaySecret(c.GatewaySecretFile)
+	if e != nil {
 		return nil, e
 	}
 	if logger == nil {
@@ -177,7 +182,7 @@ func New(c config.Config, static fs.FS, logger *slog.Logger) (*App, error) {
 		return fail(fmt.Errorf("存在 R2 数据，必须保留 R2 配置"))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	a := &App{C: c, r2: store, db: db, root: root, lock: lock, log: logger, uploadLocks: map[string]*uploadLock{}, busyUploads: map[string]int{}, finalizing: map[string]bool{}, uploadCancel: map[string]context.CancelFunc{}, streams: map[string]map[string]stream{}, limits: map[string]limitEntry{}, hashSlots: make(chan struct{}, 2), uploadSlots: make(chan struct{}, 2), finalizeSlots: make(chan struct{}, 1), ctx: ctx, cancel: cancel, now: time.Now, static: static}
+	a := &App{C: c, gatewaySecret: secret, r2: store, db: db, root: root, lock: lock, log: logger, uploadLocks: map[string]*uploadLock{}, busyUploads: map[string]int{}, finalizing: map[string]bool{}, uploadCancel: map[string]context.CancelFunc{}, streams: map[string]map[string]stream{}, limits: map[string]limitEntry{}, hashSlots: make(chan struct{}, 2), uploadSlots: make(chan struct{}, 2), finalizeSlots: make(chan struct{}, 1), ctx: ctx, cancel: cancel, now: time.Now, static: static}
 	var st unix.Stat_t
 	if e = unix.Stat(c.DataDir, &st); e != nil {
 		cancel()

@@ -12,6 +12,19 @@ func (a *App) setCookie(w http.ResponseWriter, name, value, path string, ttl tim
 }
 func (a *App) admin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if a.C.AdminAuth == "access" {
+			identity, ok := r.Context().Value(gatewayIdentityKey{}).(gatewayIdentity)
+			if !ok || identity.Subject == "" || identity.Email == "" {
+				a.problem(w, r, 401, "access_required", "请通过管理入口验证身份")
+				return
+			}
+			if r.Method != "GET" && r.Method != "HEAD" && !a.validAccessCSRF(r, identity) {
+				a.problem(w, r, 403, "csrf_denied", "请求验证失败，请刷新页面")
+				return
+			}
+			next(w, r)
+			return
+		}
 		c, e := r.Cookie("parcel_admin")
 		if e != nil {
 			a.problem(w, r, 401, "unauthorized", "请先登录")
@@ -32,6 +45,10 @@ func (a *App) admin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	if a.C.AdminAuth == "access" {
+		a.problem(w, r, 403, "access_required", "管理员使用 Cloudflare Access 登录")
+		return
+	}
 	if !a.rate(w, r, "login:"+a.clientIP(r), 5, time.Minute) {
 		return
 	}
@@ -74,6 +91,13 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, 200, map[string]any{"authenticated": true, "csrf": csrf})
 }
 func (a *App) session(w http.ResponseWriter, r *http.Request) {
+	if a.C.AdminAuth == "access" {
+		a.admin(func(w http.ResponseWriter, r *http.Request) {
+			identity := r.Context().Value(gatewayIdentityKey{}).(gatewayIdentity)
+			jsonOK(w, 200, map[string]any{"authenticated": true, "auth_mode": "access", "csrf": a.accessCSRF(identity), "email": identity.Email})
+		})(w, r)
+		return
+	}
 	a.admin(func(w http.ResponseWriter, r *http.Request) {
 		c, _ := r.Cookie("parcel_admin")
 		var csrf string
@@ -86,6 +110,10 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	})(w, r)
 }
 func (a *App) logout(w http.ResponseWriter, r *http.Request) {
+	if a.C.AdminAuth == "access" {
+		jsonOK(w, 200, map[string]any{"ok": true, "logout_url": "/cdn-cgi/access/logout"})
+		return
+	}
 	c, _ := r.Cookie("parcel_admin")
 	a.mu.Lock()
 	_, e := a.db.Exec("DELETE FROM admin_sessions WHERE token_hash=?", tokenHash(c.Value))

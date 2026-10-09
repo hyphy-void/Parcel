@@ -12,6 +12,9 @@ import (
 // first untrusted hop can be supplied by that client and must not be used.
 // Forwarded, X-Real-IP and forwarding headers for Host/scheme are not trusted.
 func (a *App) clientIP(r *http.Request) string {
+	if identity, ok := r.Context().Value(gatewayIdentityKey{}).(gatewayIdentity); ok {
+		return identity.ClientIP
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr

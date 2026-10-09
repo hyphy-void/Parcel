@@ -41,7 +41,7 @@ import {
 import "./style.css";
 import "./login.css";
 
-type Auth = { csrf: string };
+type Auth = { csrf: string; auth_mode?: "password" | "access"; email?: string };
 function desktopAutofocus() {
   return matchMedia("(min-width: 768px) and (pointer: fine)").matches;
 }
@@ -93,8 +93,16 @@ function Shell({
   const [error, setError] = useState("");
   async function logout() {
     try {
-      await api("/auth/logout", { method: "POST" }, auth?.csrf);
-      location.assign("/login");
+      const result = await api<{ logout_url?: string }>(
+        "/auth/logout",
+        { method: "POST" },
+        auth?.csrf,
+      );
+      location.assign(
+        result.logout_url === "/cdn-cgi/access/logout"
+          ? result.logout_url
+          : "/login",
+      );
     } catch (e) {
       setError((e as Error).message);
     }
@@ -357,6 +365,26 @@ function Login() {
     } finally {
       setBusy(false);
     }
+  }
+  if (import.meta.env.VITE_ADMIN_AUTH === "access") {
+    return (
+      <Shell pageClass="login-app">
+        <div className="login-layout">
+          <LoginVisual ref={visual} focused={false} busy={false} />
+          <div className="auth-card">
+            <span className="auth-caption">
+              <ShieldCheck size={16} />
+              管理员登录
+            </span>
+            <h1>让文件轻装上路。</h1>
+            <p className="muted">验证管理员身份后，上传文件并管理分享。</p>
+            <a className="button primary full" href="/admin">
+              进入管理页面 <ArrowRight size={18} />
+            </a>
+          </div>
+        </div>
+      </Shell>
+    );
   }
   return (
     <Shell pageClass="login-app">

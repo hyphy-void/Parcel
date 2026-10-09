@@ -104,7 +104,7 @@ func run() error {
 		fmt.Println("清理完成。")
 		return nil
 	}
-	if !a.AdminExists() {
+	if c.AdminAuth != "access" && !a.AdminExists() {
 		return fmt.Errorf("管理员尚未初始化，请先运行 parcel admin-password")
 	}
 	a.Start()

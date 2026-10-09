@@ -86,3 +86,33 @@ func TestR2Configuration(t *testing.T) {
 		t.Fatal("unknown backend accepted")
 	}
 }
+
+func TestAccessRequiresProtectedR2Gateway(t *testing.T) {
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.AdminAuth = "access"
+	if c.Validate() == nil {
+		t.Fatal("Access accepted without gateway secret")
+	}
+	c.GatewaySecretFile = "/etc/parcel/gateway.secret"
+	if c.Validate() == nil {
+		t.Fatal("gateway accepted with local storage")
+	}
+	c.StorageBackend = "r2"
+	c.R2Endpoint = "https://example.r2.cloudflarestorage.com"
+	c.R2Bucket = "parcel"
+	c.R2CredentialsFile = "/etc/parcel/r2.credentials"
+	if c.Validate() == nil {
+		t.Fatal("gateway accepted over HTTP")
+	}
+	c.BaseURL = "https://parcel.example.com"
+	if err = c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.AdminAuth = "typo"
+	if c.Validate() == nil {
+		t.Fatal("invalid auth mode accepted")
+	}
+}

@@ -4,7 +4,7 @@
 
 自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
 
-v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。当前公网部署通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。
+v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。当前公网部署通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。下一部署模式已实现 Pages 静态前端 + API Gateway + Access 身份验证，接入步骤见 [Pages 部署说明](docs/pages-deployment.md)。
 
 管理员登录后上传单个文件，设置可选密码、有效期与下载次数，生成一个分享链接。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
 
@@ -56,3 +56,7 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 ### 私有 R2 存储
 
 可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，≤100 MB 使用单分块 Multipart（浏览器一次 PUT），更大文件二次确认并分块续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。
+
+### Pages / Access 网关
+
+`./scripts/build-pages.sh` 生成 `dist/pages`，由 Cloudflare 承载页面和 API 初验；Go 在 Pi 保留 SQLite 与 R2 控制面。管理员使用 Access 登录，内部 Origin 使用 Service Auth 与 Go HMAC 验签。配置和切换步骤见 [docs/pages-deployment.md](docs/pages-deployment.md)。
