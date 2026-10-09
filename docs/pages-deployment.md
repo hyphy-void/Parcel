@@ -1,6 +1,6 @@
 # Pages、Access 与 R2 部署
 
-实现日期：2026-10-09（Asia/Shanghai）。这是下一部署模式；现有 Tunnel 模式仍可独立运行。**Dashboard 配置和域名切换完成前，公网仍使用旧入口。**
+上线日期：2026-10-10（Asia/Shanghai）。公网已切换到 Pages；树莓派仅提供经过 Access 与网关验签的内部 API。原 Tunnel + 密码模式仍保留供开发及回滚使用。
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ Pages 使用 [Advanced mode](https://developers.cloudflare.com/pages/functions/a
 - API 请求最大 64 KiB，正文读取和 Origin 请求分别限时 15 秒；JSON 初验、Origin 与跨站 API 检查。分享页面允许从邮件和其他网站导航进入。
 - 管理页面和 API 验证 Access JWT 的 RS256 签名、issuer、管理员应用 AUD、到期时间、用户身份和邮箱白名单。仅邮箱头、服务令牌或 Parcel 密码均不能替代身份验证。[Cloudflare JWT 验证说明](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 - 内部 Origin 使用独立 Access **Service Auth** 应用；网关每次发送 `CF-Access-Client-Id` / `CF-Access-Client-Secret`。[服务令牌文档](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
-- Go 额外验证 HMAC 请求签名：时间戳、随机 nonce、方法、路径/参数、公网 origin、身份、客户端 IP、正文摘要、Content-Type、CSRF、幂等键和分享 cookie。有效时间窗为过去 60 秒至未来 15 秒；进程内 nonce 保留两分钟，拒绝重放。Pi 和 Cloudflare 时钟须同步。TLS/Access 是传输边界；nonce 缓存重启后不会持久保留。
+- Go 额外验证 HMAC 请求签名（内部 Access Cookie 被过滤，仅绑定当前分享 grant）：时间戳、随机 nonce、方法、路径/参数、公网 origin、身份、客户端 IP、正文摘要、Content-Type、CSRF、幂等键和分享 cookie。有效时间窗为过去 60 秒至未来 15 秒；进程内 nonce 保留两分钟，拒绝重放。Pi 和 Cloudflare 时钟须同步。TLS/Access 是传输边界；nonce 缓存重启后不会持久保留。
 - Access 管理会话每次从已验证身份授权，CSRF 绑定身份；无需 Parcel 管理密码或新数据库表。退出先校验 CSRF，再导航至 `/cdn-cgi/access/logout`。[Access 退出行为](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/)
 - API、管理 HTML 和入口 HTML不缓存。浏览器伪造的身份/转发头、Access cookie、服务凭据不会透传；只传当前分享的 grant cookie，响应只保留 Parcel grant cookie。
 - 网关每个运行实例每分钟限制公开 API 120 次、管理员 API 600 次、解锁/签发/续签合计 20 次；最多保留 10,000 个限流键。**这不是跨所有实例的全局限流**。Go 的分享密码与票据限制仍保留；流量级保护由下文 WAF 规则承担。
@@ -31,25 +31,27 @@ Pages 使用 [Advanced mode](https://developers.cloudflare.com/pages/functions/a
 
 旧本地文件均为可丢弃实验数据，本次不迁移。Pages 模式仅提供 R2 控制面；本地传输路径禁用。默认局域网/旧 Tunnel 模式仍保留供开发测试使用。
 
-## 当前准备状态
+## 当前上线状态
 
 2026-10-10 已创建 Git 集成的 Pages 项目 `parcel`（`parcel-yck.pages.dev`），生产分支 `main`，Node 24，构建命令 `./scripts/build-pages.sh`，输出 `dist/pages`。首次部署成功；运行时兼容日期为 `2026-10-09`，配额耗尽行为已设为 **Fail closed**。
 
 已创建 `parcel-admin` 和 `parcel-origin` 两个独立 Access 应用。管理员应用覆盖下文七个目标，只关联管理员邮箱 Allow 策略，并启用 HttpOnly cookie；Origin 只关联专用服务令牌的 Service Auth 策略。`parcel-pi` Tunnel 已添加内部 Origin 路由，并要求校验 `parcel-origin` 应用 JWT。服务令牌有效期至 2027-10-10，三项密钥均已存入 Pages Production Secrets，普通运行变量也已配置。凭据仅保存在被 Git 忽略的 `.parcel-secrets/` 和 Pi 上；不写入本文。
 
-**当前公网域名仍路由到旧 Tunnel，Pi 活动配置仍为密码模式。** 正式切换和公网闭环验收尚未完成，不能将以上配置状态视为上线成功。
+公网 `parcel.playereconlab.com` 已作为 Pages custom domain 激活，SSL 已启用；DNS CNAME 指向 `parcel-yck.pages.dev`。Pi 活动配置已切换为 Access 模式，Caddy 只为内部 Origin 提供 API，后端监听 `127.0.0.1:8081`。三个 systemd 服务均 active，本机 readyz 通过。旧公网 Tunnel route 保留供回滚，DNS 已不再指向它。
 
-2026-10-09 已在 Pi 安装新版 ARM64 后端，活动配置仍为原 Tunnel + Parcel 密码模式。三个 systemd 服务均 active，本机 readyz 通过，公网首页 200、未登录管理 API 401。另在 Pi 临时数据目录执行了 Access 模式启动、签名身份、无签名绕过拒绝的隔离测试，不访问生产对象或修改生产数据库。
+- 当前 ARM64 二进制 SHA-256：`541718bf85466e046b9e52d50bf5c326fb32282efaea63b63ef3f60a42026c3b`，部署前已核对本机与 Pi 暂存文件一致。
+- 首次准备备份：Pi `/etc/parcel/pages-prep-20261009-220259/`；正式切换配置备份：`/etc/parcel/pages-cutover-20261010-002805/`。
+- 本次二进制备份：`/opt/parcel/parcel.before-pages-cookie-fix`。R2 凭据、SSD 数据、SQLite schema 3 和 Pi checkout 的未提交修改均保留。
+- HMAC 文件：Pi `/etc/parcel/gateway.secret`（0600）；Pages Secret 使用同一密钥。不要重新生成覆盖。
+- Pages 上线修复：后端不可用统一返回 503 JSON（避免 Cloudflare 替换 502 错误正文）；Origin Access 注入的 `CF_Authorization` Cookie 不参与 Parcel HMAC，验签后仅保留当前分享 grant；SPA 从 ASSETS 的 `/` 读取入口，避免 Pages 将 `/index.html` 重定向至 `/` 形成循环。
+- WAF `parcel-share-actions`：公网分享解锁、签发和续签合计每 IP 每 10 秒最多 10 次，超限 Block 10 秒。当前 Free 套餐只有一条速率限制规则和 10 秒窗口；应用自身的分钟级限制仍生效。
+- 缓存规则 `parcel-private-no-cache`：公网及 Origin 的 `/api/*`、`/login`、`/admin`、`/admin/*` 绕过缓存。Cloudflare 托管规则集在安全设置中显示始终启用。
+- R2 公共开发 URL 已禁用，无公开 custom domain；CORS 仅允许正式公网 origin 的 GET、HEAD、PUT。
+- Pi 尚未安装自动升级服务；以后启用时须设置下文的本机健康检查地址。
 
-- 安装二进制 SHA-256：`dfba70f2069f2ce7faf6e284ffa66776193adc829034ba8afe18a8f6c55d8ca0`。
-- 切换前备份：Pi `/etc/parcel/pages-prep-20261009-220259/`，含旧二进制、parcel.env、Caddyfile。
-- 待切换环境：Pi `/etc/parcel/parcel.pages.next.env`，保留现有 R2/SSD 配置并启用 Access 与网关验签。
-- 待切换 Caddy：Pi `/etc/parcel/Caddyfile.pages.next`，已用 Pi 上的 Caddy 2.6.2 验证。
-- 密钥已生成并核对一致：本机 `.parcel-secrets/gateway.secret`，Pi `/etc/parcel/gateway.secret`（0600，parcel 用户可读）。**直接复用现有密钥，不要执行下方生成命令覆盖它。**
-- Pages 上传目录：本机 `dist/pages`。Access UI 截图：[access-login.png](previews/access-login.png)。
-- Pi checkout 的未提交修改未覆盖或同步。
+验证结果：完整 Go race/vet 通过；网关 11 项测试、真实 Go 联调、workerd 打包运行及 Chromium/Firefox Access UI 测试通过。上线后 15 项匿名公网检查全部通过：首页与分享页 200、未知分享 API 404、管理员及上传入口跳转 Access、内部 Origin 拒绝匿名访问、维护与本地文件路由不公开。真实 Origin 签名请求通过，重复 nonce 被拒绝。停机验证确认 Pi 后端离线时首页仍返回 200，公开 API 返回 503 JSON `origin_unavailable`；恢复后三个服务 active、本机 readyz 通过。另用生成的验收文件验证直接 R2 PUT/GET、公开分享密码 grant、无密码分享匿名下载、同会话续签不重复计数、并发仅消费剩余一个下载名额、到期与撤销后禁止续签。生成的测试分享均已撤销；SQLite 显示三个未签下载 URL 的测试分享已自动清理，两个签过 URL 的分享按保留期限等待清理（共 94 字节）。
 
-验证结果：Go race/vet、TypeScript、111 项原有浏览器测试通过（另 3 项真实公网 R2 测试因未启用对应环境跳过）；升级器 19 项通过；网关 10 项测试、真实 Go 联调、workerd 打包运行、Chromium/Firefox 的 Access UI 测试通过。最后 API 跳转修复后重新验证相关 15 项原有浏览器回归。新的 Pages/Access 公网闭环尚待 Dashboard 配置及正式切换后验收。
+**真实管理员 Access 邮箱登录及登录后的浏览器上传闭环仍待验证码完成。** 上述 Origin 运维签名探测不替代真实管理员 JWT 验收。R2 已签 URL 的有效窗口与延迟清理按下文及 R2 文档执行；不提前删除仍处于已签 URL/会话保留期的对象。
 
 ## 本地构建与验证
 
@@ -64,7 +66,7 @@ npm --prefix cloudflare run test:browser  # Access UI；先安装 web Playwright
 
 `dist/pages` 是唯一 Pages 上传目录，包含静态文件、`_worker.js` 和 `_routes.json`。它不包含凭据。Pages 构建不覆盖 `web/dist`，不会把 Access UI 意外嵌入本地密码模式的程序。Go schema 保持 3；CI 同时验证网关、workerd、真实 Go 联调及原有测试。
 
-## 需要你在 Dashboard 完成的配置
+## Dashboard 配置参考（本账户已配置）
 
 建议保留公网地址 `https://parcel.playereconlab.com`，新建内部地址 `https://parcel-origin.playereconlab.com`。内部地址仅供网关使用；无需路由器入站端口。
 
