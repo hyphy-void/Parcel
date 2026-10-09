@@ -209,11 +209,6 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 	if a.r2 != nil {
 		backend = "r2"
 		partBytes = r2.PartSize
-		if req.Size <= uploadConfirmationBytes {
-			// A single multipart part keeps the whole-file browser PUT while
-			// letting cancellation and publication revoke the upload ID.
-			partBytes = uploadConfirmationBytes
-		}
 		key = "parcel/v2/" + key
 	}
 	_, e = a.db.Exec("INSERT INTO uploads(id,name,size,ttl,max_downloads,password_hash,state,storage_key,share_id,created,updated,idem,backend,part_bytes) VALUES(?,?,?,?,?,?,'created',?,?,?,?,?,?,?)", id, req.Name, req.Size, req.TTL, req.MaxDownloads, hash, key, shareID, a.now().Unix(), a.now().Unix(), idemValue, backend, partBytes)

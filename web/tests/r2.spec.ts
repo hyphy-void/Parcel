@@ -377,9 +377,9 @@ test("R2 发布超时保留任务，无需重选文件即可查询成功", async
   );
   await restoreUpload(page, pendingUpload);
   await expect(
-    page.getByText("正在完成 R2 上传…", { exact: true }),
+    page.getByText("传输完成，正在发布…", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("R2 已保存", { exact: false })).toBeVisible();
+  await expect(page.getByText("已上传", { exact: false })).toBeVisible();
   await page.clock.fastForward(121_000);
   await expect(page.getByRole("alert")).toContainText("发布确认超时");
   await expect(
@@ -441,7 +441,7 @@ test("R2 配置下恢复旧本地任务应说明实际存储路径", async ({ pa
 for (const legacy of [false, true]) {
   for (const size of [0, 20 << 20]) {
     for (const outcome of ["success", "rejected", "unverified"]) {
-      test(`${legacy ? "历史单 PUT" : "新单分块"}任务一次 PUT（${size} 字节，${outcome}）`, async ({
+      test(`${legacy ? "历史单 PUT" : "历史单分块"}任务一次 PUT（${size} 字节，${outcome}）`, async ({
         page,
       }) => {
         let stored = false,

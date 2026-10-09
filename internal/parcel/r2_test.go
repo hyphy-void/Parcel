@@ -105,17 +105,6 @@ func (s *fakeR2) Copy(_ context.Context, _, _ string, etag string) error {
 	return nil
 }
 
-// Existing small Multipart tasks remain compatible after switching new tasks to PUT.
-func legacyR2Upload(t *testing.T, f *fixture, size int64, password string, limit int) Upload {
-	t.Helper()
-	u := f.create(t, size, password, limit)
-	_, err := f.a.db.Exec("UPDATE uploads SET part_bytes=? WHERE id=?", r2.PartSize, u.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	u.PartBytes = r2.PartSize
-	return u
-}
 func useR2(f *fixture) *fakeR2 {
 	s := &fakeR2{}
 	f.a.r2 = s
@@ -126,7 +115,7 @@ func useR2(f *fixture) *fakeR2 {
 }
 func r2Publish(t *testing.T, f *fixture, s *fakeR2, limit int) Share {
 	t.Helper()
-	u := legacyR2Upload(t, f, 7, "", limit)
+	u := f.create(t, 7, "", limit)
 	decodeResponse[Upload](t, f.request("GET", "/api/v1/uploads/"+u.ID, nil, nil, true), 200)
 	s.parts = []r2.Part{{Number: 1, Size: 7, ETag: "part"}}
 	decodeResponse[Upload](t, f.request("POST", "/api/v1/uploads/"+u.ID+"/complete", nil, nil, true), 202)
@@ -147,7 +136,7 @@ func r2Publish(t *testing.T, f *fixture, s *fakeR2, limit int) Share {
 func TestR2RecoveryAndValidation(t *testing.T) {
 	f := testApp(t)
 	s := useR2(f)
-	u := legacyR2Upload(t, f, 7, "", 2)
+	u := f.create(t, 7, "", 2)
 	if w := f.request("POST", "/api/v1/uploads/"+u.ID+"/parts/1", nil, nil, false); w.Code != 401 {
 		t.Fatal("part signing without admin")
 	}
@@ -264,7 +253,7 @@ func TestR2QuotaCancelAndLocalCompatibility(t *testing.T) {
 	if w := f.request("GET", ticket, nil, nil, false); w.Code != 200 || w.Body.String() != "legacy" {
 		t.Fatal("legacy download failed")
 	}
-	u := legacyR2Upload(t, f, 7, "", 1)
+	u := f.create(t, 7, "", 1)
 	f.request("GET", "/api/v1/uploads/"+u.ID, nil, nil, true)
 	used, reserved, _, _ := f.a.usage()
 	if used != 6 || reserved != 7 {
@@ -355,7 +344,7 @@ func TestR2PasswordAndSessionBoundaries(t *testing.T) {
 func TestR2ObjectMetadataMismatchAndExpiredUpload(t *testing.T) {
 	f := testApp(t)
 	s := useR2(f)
-	u := legacyR2Upload(t, f, 7, "", 1)
+	u := f.create(t, 7, "", 1)
 	decodeResponse[Upload](t, f.request("GET", "/api/v1/uploads/"+u.ID, nil, nil, true), 200)
 	_, _ = f.a.db.Exec("UPDATE uploads SET state='finalizing' WHERE id=?", u.ID)
 	s.object = r2.Object{Size: 7, UploadID: "different-task", ETag: "etag"}

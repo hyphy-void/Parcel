@@ -7,27 +7,29 @@ import (
 	"github.com/hyphy-void/Parcel/internal/r2"
 )
 
-func TestSmallR2UploadUsesOneRevocablePart(t *testing.T) {
-	for _, size := range []int64{0, 7, uploadConfirmationBytes} {
+func TestR2UploadsUseUniformRevocableParts(t *testing.T) {
+	for _, size := range []int64{0, 7, r2.PartSize, r2.PartSize + 3, uploadConfirmationBytes, uploadConfirmationBytes + 1} {
 		f := testApp(t)
 		store := useR2(f)
 		f.a.C.MaxFile = 1 << 30
 		f.a.C.Quota = 2 << 30
 		f.a.C.R2Quota = max(1, size)
-		u := f.create(t, size, "", 1)
-		if isSinglePut(u) || u.PartBytes < max(1, u.Size) || partCount(u) != 1 {
-			t.Fatalf("small upload must have one abortable part: %+v", u)
+		u := decodeResponse[Upload](t, f.request("POST", "/api/v1/uploads", map[string]any{"name": "parts.bin", "size": size, "max_downloads": 1, "confirm_large": size > uploadConfirmationBytes}, nil, true), 201)
+		if isSinglePut(u) || u.PartBytes != r2.PartSize || partCount(u) != int32(max(1, (size+r2.PartSize-1)/r2.PartSize)) {
+			t.Fatalf("upload must use 16 MiB abortable parts: %+v", u)
 		}
 		_, reserved, err := f.a.r2Usage()
 		if err != nil || reserved != size {
 			t.Fatalf("one-part reservation=%d want=%d err=%v", reserved, size, err)
 		}
 		decodeResponse[map[string]any](t, f.request("POST", "/api/v1/uploads/"+u.ID+"/parts/1", nil, nil, true), 200)
-		store.parts = []r2.Part{{Number: 1, Size: size, ETag: "whole-part"}}
+		for number := int32(1); number <= partCount(u); number++ {
+			store.parts = append(store.parts, r2.Part{Number: number, Size: partSize(u, number), ETag: "part"})
+		}
 		decodeResponse[Upload](t, f.request("POST", "/api/v1/uploads/"+u.ID+"/complete", nil, nil, true), 202)
 		waitPublished(t, f, u)
 		if store.completed != 1 || store.copied != 0 {
-			t.Fatal("one-part upload must complete without a staging copy")
+			t.Fatal("multipart upload must complete without a staging copy")
 		}
 	}
 }

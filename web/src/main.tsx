@@ -742,7 +742,7 @@ function NewShare({ auth }: { auth: Auth }) {
     [saved, setSaved] = useState(initialSaved),
     [result, setResult] = useState<Share>(),
     [drag, setDrag] = useState(false),
-    [sending, setSending] = useState(0);
+    [sending, setSending] = useState<{ offset: number; loaded: number }>();
   const input = useRef<HTMLInputElement>(null),
     pause = useRef(false),
     xhr = useRef<XMLHttpRequest | undefined>(undefined),
@@ -806,6 +806,7 @@ function NewShare({ auth }: { auth: Auth }) {
   function resetUpload() {
     clearDraft();
     setUpload(undefined);
+    setSending(undefined);
     setFile(undefined);
     setPhase("idle");
     setError("");
@@ -877,10 +878,10 @@ function NewShare({ auth }: { auth: Auth }) {
       await sleep(1000);
     }
   }
-  async function chunk(u: Upload, blob: Blob): Promise<number> {
+  async function chunk(u: Upload, blob: Blob, epoch: number): Promise<number> {
     const direct = u.storage_backend === "r2";
     const legacyPut = direct && u.part_bytes === 0;
-    const single = direct && (legacyPut || u.size <= u.part_bytes);
+    setSending(undefined);
     const target: { url: string; headers?: Record<string, string> } = direct
       ? await api<{ url: string; headers?: Record<string, string> }>(
           legacyPut
@@ -890,7 +891,8 @@ function NewShare({ auth }: { auth: Auth }) {
           auth.csrf,
         )
       : { url: `/api/v1/uploads/${u.id}` };
-    if (pause.current || !alive.current) throw new Error("上传已暂停");
+    if (pause.current || !alive.current || epoch !== generation.current)
+      throw new Error("上传已暂停");
     await new Promise<void>((resolve, reject) => {
       const x = new XMLHttpRequest();
       xhr.current = x;
@@ -904,11 +906,22 @@ function NewShare({ auth }: { auth: Auth }) {
       if (!headers.has("Content-Type"))
         headers.set("Content-Type", "application/octet-stream");
       headers.forEach((value, name) => x.setRequestHeader(name, value));
-      x.timeout = single ? 900000 : 125000;
-      x.upload.onprogress = (e) => setSending(e.loaded);
+      x.timeout = legacyPut ? 900000 : 125000;
+      const updateProgress = (loaded: number) => {
+        if (alive.current && epoch === generation.current && xhr.current === x)
+          setSending({ offset: u.offset, loaded: Math.min(loaded, blob.size) });
+      };
+      x.upload.onprogress = (e) => updateProgress(e.loaded);
+      const releaseRequest = () => {
+        if (xhr.current === x) xhr.current = undefined;
+      };
       x.onload = () => {
-        if (x.status >= 200 && x.status < 300) resolve();
-        else if (direct) {
+        if (x.status >= 200 && x.status < 300) {
+          updateProgress(blob.size);
+          releaseRequest();
+          resolve();
+        } else if (direct) {
+          releaseRequest();
           const code = new DOMParser()
             .parseFromString(x.responseText, "application/xml")
             .querySelector("Code")?.textContent;
@@ -920,7 +933,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 : "存储服务拒绝了请求";
           reject(
             new ApiError(
-              `R2 ${single ? "整文件" : "分块"}上传失败（HTTP ${x.status}）：${reason}。上传任务已保留。`,
+              `R2 ${legacyPut ? "整文件" : "分块"}上传失败（HTTP ${x.status}）：${reason}。上传任务已保留。`,
               x.status,
               code === "RequestExpired" || code === "ExpiredToken"
                 ? "r2_url_expired"
@@ -928,6 +941,7 @@ function NewShare({ auth }: { auth: Auth }) {
             ),
           );
         } else {
+          releaseRequest();
           try {
             const data = JSON.parse(x.responseText);
             reject(
@@ -938,10 +952,18 @@ function NewShare({ auth }: { auth: Auth }) {
           }
         }
       };
-      x.onerror = () => reject(new Error("连接中断或 R2 CORS 未配置"));
-      x.ontimeout = () =>
-        reject(new Error(single ? "整文件传输超时" : "分块传输超时"));
-      x.onabort = () => reject(new Error("上传已暂停"));
+      x.onerror = () => {
+        releaseRequest();
+        reject(new Error("连接中断或 R2 CORS 未配置"));
+      };
+      x.ontimeout = () => {
+        releaseRequest();
+        reject(new Error(legacyPut ? "整文件传输超时" : "分块传输超时"));
+      };
+      x.onabort = () => {
+        releaseRequest();
+        reject(new Error("上传已暂停"));
+      };
       x.send(blob);
     });
     return u.offset + blob.size;
@@ -1053,6 +1075,7 @@ function NewShare({ auth }: { auth: Auth }) {
                   ? u.part_bytes || u.size
                   : settings.chunk_bytes),
             ),
+            epoch,
           );
           if (epoch !== generation.current || !alive.current) return;
           u =
@@ -1073,9 +1096,10 @@ function NewShare({ auth }: { auth: Auth }) {
               409,
               "r2_upload_unverified",
             );
-          setSending(0);
+          setSending(undefined);
           retry = 0;
         } catch (e) {
+          setSending(undefined);
           if (pause.current) break;
           if (
             ++retry > 3 ||
@@ -1098,6 +1122,7 @@ function NewShare({ auth }: { auth: Auth }) {
         setPhase("paused");
         return;
       }
+      setPhase("checking");
       u = await api<Upload>(
         `/uploads/${u.id}/complete`,
         { method: "POST", signal: AbortSignal.timeout(90_000) },
@@ -1129,7 +1154,7 @@ function NewShare({ auth }: { auth: Auth }) {
       }
     } finally {
       running.current = false;
-      setSending(0);
+      setSending(undefined);
     }
   }
   async function cancel() {
@@ -1186,13 +1211,32 @@ function NewShare({ auth }: { auth: Auth }) {
   }
   const backend = upload?.storage_backend ?? settings?.storage_backend;
   const busy = [
-      "uploading",
-      "retrying",
-      "checking",
-      "canceling",
-      "recovering",
-    ].includes(phase),
-    ratio = upload ? (upload.size ? upload.offset / upload.size : 1) : 0;
+    "uploading",
+    "retrying",
+    "checking",
+    "canceling",
+    "recovering",
+  ].includes(phase);
+  // The active request has its own start offset. Adding to a freshly confirmed
+  // upload.offset would count that request twice during the handoff to R2.
+  const transferred = upload
+    ? Math.min(
+        upload.size,
+        Math.max(upload.offset, sending ? sending.offset + sending.loaded : 0),
+      )
+    : 0;
+  const emptyTransferred =
+    upload &&
+    (upload.object_uploaded ||
+      !!upload.parts?.length ||
+      ["finalizing", "completed"].includes(upload.state));
+  const ratio = upload
+    ? upload.size
+      ? transferred / upload.size
+      : emptyTransferred
+        ? 1
+        : 0
+    : 0;
   if (result)
     return (
       <Shell auth={auth}>
@@ -1324,9 +1368,7 @@ function NewShare({ auth }: { auth: Auth }) {
               <div>
                 <strong>
                   {phase === "checking"
-                    ? backend === "r2"
-                      ? "正在完成 R2 上传…"
-                      : "正在校验文件…"
+                    ? "传输完成，正在发布…"
                     : phase === "pending"
                       ? "等待发布结果"
                       : phase === "failed"
@@ -1335,29 +1377,34 @@ function NewShare({ auth }: { auth: Auth }) {
                           ? "上传已暂停"
                           : phase === "retrying"
                             ? "等待重试…"
-                            : "正在上传…"}
+                            : ratio === 1
+                              ? "传输完成，正在确认…"
+                              : "正在上传…"}
                 </strong>
                 <span>{Math.floor(ratio * 100)}%</span>
               </div>
-              <div className="meter">
-                <span style={{ width: `${ratio * 100}%` }} />
+              <div
+                className="meter"
+                role="progressbar"
+                aria-label="文件上传进度"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.floor(ratio * 100)}
+              >
+                <span
+                  style={{
+                    width: `${ratio * 100}%`,
+                    transition: ratio === 1 ? "none" : undefined,
+                  }}
+                />
               </div>
               <small>
-                {backend === "r2" ? "R2 已保存" : "服务端已确认"}{" "}
-                {bytes(upload.offset)} / {bytes(upload.size)}
-                {sending > 0
-                  ? ` · ${upload.storage_backend === "r2" && (upload.part_bytes === 0 || upload.size <= upload.part_bytes) ? "已发送" : "当前分块发送"} ${bytes(sending)}`
-                  : ""}
+                已上传 {bytes(transferred)} / {bytes(upload.size)}
               </small>
               {phase === "checking" && (
                 <p className="note">
                   <Loader2 size={15} className="spin" />
-                  {backend === "r2"
-                    ? upload.part_bytes === 0 ||
-                      upload.size <= upload.part_bytes
-                      ? "文件已直传，正在核对并发布分享。"
-                      : "文件已直传，正在合并 R2 分块并核对对象大小，完成后生成分享链接。"
-                    : "校验完成后才会生成可用链接。"}
+                  正在核对文件并生成分享链接，无需重新上传。
                 </p>
               )}
             </div>
@@ -1368,11 +1415,6 @@ function NewShare({ auth }: { auth: Auth }) {
               {backend === "r2"
                 ? "文件直传到私有 R2 存储。分享失效后，Parcel 会自动回收空间。"
                 : "文件只保存在本机。分享失效后，Parcel 会自动回收空间。"}
-              {backend === "r2" &&
-                (upload?.part_bytes === 0 ||
-                  (upload && upload.size <= upload.part_bytes) ||
-                  (!upload && (!file || file.size <= 100_000_000))) &&
-                " 100 MB 以内整文件上传，中断后需重新发送。"}
             </p>
           </div>
         </section>
