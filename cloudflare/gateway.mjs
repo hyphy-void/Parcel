@@ -453,7 +453,7 @@ export function createGateway(deps = {}) {
           await response.body?.cancel();
           return respond(
             problem(
-              502,
+              503,
               "origin_unavailable",
               "Origin 鉴权或响应不正确，请检查服务配置",
             ),
@@ -475,7 +475,7 @@ export function createGateway(deps = {}) {
         return result;
       } catch {
         return respond(
-          problem(502, "origin_unavailable", "服务暂时不可用，请稍后重试"),
+          problem(503, "origin_unavailable", "服务暂时不可用，请稍后重试"),
         );
       }
     },

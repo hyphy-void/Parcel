@@ -298,11 +298,16 @@ test("Access redirects, upstream failure and internal cookies never leak to clie
     new Response("<html>denied</html>", { status: 403 }),
   ]) {
     const gateway = createGateway({ fetch: async () => reply });
-    assert.equal(
-      (await gateway.fetch(request(`/api/v1/shares/${id}`), env)).status,
-      502,
-    );
+    const response = await gateway.fetch(request(`/api/v1/shares/${id}`), env);
+    assert.equal(response.status, 503);
+    assert.match(response.headers.get("Content-Type"), /application\/json/);
+    assert.equal((await response.json()).code, "origin_unavailable");
   }
+  const unavailable = await createGateway({
+    fetch: async () => { throw new Error("Origin offline"); },
+  }).fetch(request(`/api/v1/shares/${id}`), env);
+  assert.equal(unavailable.status, 503);
+  assert.equal((await unavailable.json()).code, "origin_unavailable");
   const gateway = createGateway({
     fetch: async () => {
       const response = json({ locked: false });
