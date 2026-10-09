@@ -33,6 +33,12 @@ Pages 使用 [Advanced mode](https://developers.cloudflare.com/pages/functions/a
 
 ## 当前准备状态
 
+2026-10-10 已创建 Git 集成的 Pages 项目 `parcel`（`parcel-yck.pages.dev`），生产分支 `main`，Node 24，构建命令 `./scripts/build-pages.sh`，输出 `dist/pages`。首次部署成功；运行时兼容日期为 `2026-10-09`，配额耗尽行为已设为 **Fail closed**。
+
+已创建 `parcel-admin` 和 `parcel-origin` 两个独立 Access 应用。管理员应用覆盖下文七个目标，只关联管理员邮箱 Allow 策略，并启用 HttpOnly cookie；Origin 只关联专用服务令牌的 Service Auth 策略。`parcel-pi` Tunnel 已添加内部 Origin 路由，并要求校验 `parcel-origin` 应用 JWT。服务令牌有效期至 2027-10-10，三项密钥均已存入 Pages Production Secrets，普通运行变量也已配置。凭据仅保存在被 Git 忽略的 `.parcel-secrets/` 和 Pi 上；不写入本文。
+
+**当前公网域名仍路由到旧 Tunnel，Pi 活动配置仍为密码模式。** 正式切换和公网闭环验收尚未完成，不能将以上配置状态视为上线成功。
+
 2026-10-09 已在 Pi 安装新版 ARM64 后端，活动配置仍为原 Tunnel + Parcel 密码模式。三个 systemd 服务均 active，本机 readyz 通过，公网首页 200、未登录管理 API 401。另在 Pi 临时数据目录执行了 Access 模式启动、签名身份、无签名绕过拒绝的隔离测试，不访问生产对象或修改生产数据库。
 
 - 安装二进制 SHA-256：`dfba70f2069f2ce7faf6e284ffa66776193adc829034ba8afe18a8f6c55d8ca0`。
@@ -81,7 +87,7 @@ npm --prefix cloudflare run test:browser  # Access UI；先安装 web Playwright
 | `parcel.playereconlab.com` | `/api/v1/admin/*` |
 | `parcel.playereconlab.com` | `/api/v1/uploads` 与 `/api/v1/uploads/*` |
 
-若 Dashboard 路径匹配中 `/*` 同时覆盖父路径，可复用该规则，但必须验收父路径也受保护。不要保护整个公网域名：`/`、`/assets/*`、`/s/*`、`/api/v1/shares/*` 必须允许普通接收者。不要对管理员路径设置 Bypass。不要给管理员应用允许 Origin Service Token。
+`/*` 不覆盖父路径，`/admin` 和 `/api/v1/uploads` 必须各自保留精确目标。[路径匹配说明](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/) 不要保护整个公网域名：`/`、`/assets/*`、`/s/*`、`/api/v1/shares/*` 必须允许普通接收者。不要对管理员路径设置 Bypass。不要给管理员应用允许 Origin Service Token。
 
 记录 Zero Trust team domain（`https://<team>.cloudflareaccess.com`）和**管理员应用 AUD**，它们与 Origin 应用 AUD 不同。
 
