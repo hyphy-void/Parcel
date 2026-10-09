@@ -27,8 +27,8 @@ def main():
     opener = urllib.request.build_opener(NoRedirect())
     failures = []
 
-    def check(label, url, statuses, json_code=None, access_redirect=False):
-        request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 Parcel-Acceptance', 'Cache-Control': 'no-cache'})
+    def check(label, url, statuses, json_code=None, access_redirect=False, method='GET'):
+        request = urllib.request.Request(url, method=method, headers={'User-Agent': 'Mozilla/5.0 Parcel-Acceptance', 'Cache-Control': 'no-cache'})
         try:
             try:
                 response = opener.open(request, timeout=20)
@@ -55,6 +55,7 @@ def main():
     check('Public nonexistent share API', args.base_url + '/api/v1/shares/' + 'a'*32, {404}, 'not_found')
     for path in ['/login', '/admin', '/admin/new', '/api/v1/auth/session', '/api/v1/admin/status', '/api/v1/uploads/lookup']:
         check('Access ' + path, args.base_url + path, {302, 401, 403}, access_redirect=True)
+    check('Access upload creation', args.base_url + '/api/v1/uploads', {302, 401, 403}, access_redirect=True, method='POST')
     for path in ['/readyz', '/healthz', '/api/v1/downloads/' + 'a'*32 + '/file', '/_worker.js']:
         check('Hidden ' + path, args.base_url + path, {404})
     check('Internal Origin denies browsers', args.origin_url + '/api/v1/admin/status', {302, 401, 403}, access_redirect=True)

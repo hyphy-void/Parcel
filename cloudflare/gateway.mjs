@@ -364,7 +364,9 @@ export function createGateway(deps = {}) {
           !url.pathname.startsWith("/assets/") &&
           url.pathname !== "/favicon.ico"
         )
-          assetURL.pathname = "/index.html";
+          // Pages canonicalizes /index.html to /. Fetch the canonical asset
+          // directly so SPA navigation cannot redirect back into this worker.
+          assetURL.pathname = "/";
         const response = await env.ASSETS.fetch(new Request(assetURL, request));
         const secured = respond(response, adminPage);
         if (!url.pathname.startsWith("/assets/"))

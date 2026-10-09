@@ -73,12 +73,26 @@ test("public share navigation works across sites and never calls the origin", as
     env,
   );
   assert.equal(response.status, 200);
-  assert.equal(await response.text(), "/index.html");
+  assert.equal(await response.text(), "/");
   assert.match(
     response.headers.get("Content-Security-Policy"),
     /account\.r2\.cloudflarestorage\.com/,
   );
   assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
+});
+
+test("SPA routes avoid Pages index.html canonical redirects", async () => {
+  const gateway = createGateway({ verifyAccess: async () => identity });
+  const pagesEnv = {
+    ...env,
+    ASSETS: {
+      fetch: async (request) => new URL(request.url).pathname === "/index.html"
+        ? new Response(null, { status: 308, headers: { Location: "/" } })
+        : new Response("SPA", { headers: { "Content-Type": "text/html" } }),
+    },
+  };
+  for (const path of ["/", `/s/${id}`, "/admin", "/admin/new"])
+    assert.equal((await gateway.fetch(request(path), pagesEnv)).status, 200, path);
 });
 
 test("administration, uploads and session routes require verified Access identity", async () => {

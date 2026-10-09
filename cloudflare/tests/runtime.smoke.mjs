@@ -30,10 +30,12 @@ test("built Pages bundle runs JWT, HMAC, assets and grant cookies inside workerd
       compatibilityDate: "2026-10-09",
       bindings: env,
       serviceBindings: {
-        ASSETS: async (request) =>
-          new Response(await readFile(resolve("../dist/pages/index.html")), {
+        ASSETS: async (request) => {
+          assert.equal(new URL(request.url).pathname, "/");
+          return new Response(await readFile(resolve("../dist/pages/index.html")), {
             headers: { "Content-Type": "text/html" },
-          }),
+          });
+        },
       },
       outboundService: async (request) => {
         const url = new URL(request.url);
