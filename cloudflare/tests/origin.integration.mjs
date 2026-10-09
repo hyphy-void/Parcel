@@ -97,6 +97,11 @@ test("Pages gateway interoperates with the real Go origin and Access CSRF", asyn
             headers: {
               ...Object.fromEntries(options.headers),
               Host: new URL(env.PUBLIC_URL).host,
+              // Origin Access adds a transport cookie after Pages signs.
+              Cookie: [
+                options.headers.get("Cookie"),
+                "CF_Authorization=origin-service-jwt",
+              ].filter(Boolean).join("; "),
             },
           },
           (response) => {

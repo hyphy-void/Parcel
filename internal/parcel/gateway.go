@@ -96,9 +96,10 @@ func (a *App) gatewayRequest(w http.ResponseWriter, r *http.Request) (*http.Requ
 		return deny()
 	}
 	bodyHash := r.Header.Get(fields[5])
+	grantCookie := gatewayGrantCookie(r)
 	canonical := strings.Join([]string{"parcel-gateway-v1", timestamp, nonce, r.Method, r.URL.RequestURI(), a.C.BaseURL,
 		identity.Subject, identity.Email, identity.ClientIP, bodyHash, r.Header.Get("Content-Type"),
-		r.Header.Get("X-CSRF-Token"), r.Header.Get("Idempotency-Key"), r.Header.Get("Cookie")}, "\n")
+		r.Header.Get("X-CSRF-Token"), r.Header.Get("Idempotency-Key"), grantCookie}, "\n")
 	mac := hmac.New(sha256.New, a.gatewaySecret)
 	mac.Write([]byte(canonical))
 	signature, err := hex.DecodeString(r.Header.Get(fields[6]))
@@ -115,7 +116,30 @@ func (a *App) gatewayRequest(w http.ResponseWriter, r *http.Request) (*http.Requ
 		return deny()
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	r.Header.Del("Cookie")
+	if grantCookie != "" {
+		r.Header.Set("Cookie", grantCookie)
+	}
 	return r.WithContext(context.WithValue(r.Context(), gatewayIdentityKey{}, identity)), true
+}
+
+// Match the edge's cookie selection. Origin Access can inject CF_Authorization
+// after signing; only the current share's grant belongs to the signed protocol.
+func gatewayGrantCookie(r *http.Request) string {
+	if !strings.HasPrefix(r.URL.Path, "/api/v1/shares/") {
+		return ""
+	}
+	id := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/api/v1/shares/"), "/", 2)[0]
+	if !isSafeID(id) {
+		return ""
+	}
+	for _, part := range strings.Split(r.Header.Get("Cookie"), ";") {
+		cookie := strings.TrimSpace(part)
+		if strings.HasPrefix(cookie, "parcel_grant_"+id+"=") {
+			return cookie
+		}
+	}
+	return ""
 }
 
 func (a *App) accessCSRF(identity gatewayIdentity) string {

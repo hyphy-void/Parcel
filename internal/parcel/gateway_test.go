@@ -61,7 +61,6 @@ func TestGatewayAccessAndCSRF(t *testing.T) {
 	// A Parcel password cookie cannot substitute for Access identity.
 	r = signedRequest(f, "GET", "/api/v1/admin/status", "", "", "")
 	r.AddCookie(f.cookie)
-	signRequest(f, r, "")
 	decodeResponse[map[string]any](t, serveGateway(f, r), 401)
 	for _, identity := range []string{"admin-id", "other-admin"} {
 		r = signedRequest(f, "POST", "/api/v1/auth/logout", "", identity, "admin@example.com")
@@ -81,7 +80,7 @@ func TestGatewayAccessAndCSRF(t *testing.T) {
 }
 func TestGatewayRejectsTamperingAndReplay(t *testing.T) {
 	f := gatewayFixture(t)
-	for _, field := range []string{"X-Parcel-Subject", "X-Parcel-Email", "X-Parcel-Client-IP", "X-Parcel-Body-SHA256", "X-Parcel-Nonce", "Content-Type", "Cookie", "X-CSRF-Token", "Idempotency-Key"} {
+	for _, field := range []string{"X-Parcel-Subject", "X-Parcel-Email", "X-Parcel-Client-IP", "X-Parcel-Body-SHA256", "X-Parcel-Nonce", "Content-Type", "X-CSRF-Token", "Idempotency-Key"} {
 		t.Run(field, func(t *testing.T) {
 			r := signedRequest(f, "GET", "/api/v1/auth/session", "", "admin-id", "admin@example.com")
 			r.Header.Set(field, "tampered")
@@ -140,6 +139,41 @@ func TestGatewayClientIPCannotBeSpoofed(t *testing.T) {
 	if !ok || f.a.clientIP(verified) != "198.51.100.9" {
 		t.Fatal("signed client IP ignored")
 	}
+}
+
+func TestGatewayOriginAccessCookieDoesNotChangeSignature(t *testing.T) {
+	f := gatewayFixture(t)
+	id := randomToken()
+	grant := "parcel_grant_" + id + "=signed-grant"
+	for _, tc := range []struct {
+		name, path, subject, email, signedCookie, transportCookie string
+	}{
+		{"administrator", "/api/v1/auth/session", "admin-id", "admin@example.com", "", "CF_Authorization=origin-service-jwt"},
+		{"public", "/api/v1/shares/" + id, "", "", "", "CF_Authorization=origin-service-jwt"},
+		{"grant-first", "/api/v1/shares/" + id, "", "", grant, grant + "; CF_Authorization=origin-service-jwt"},
+		{"grant-last", "/api/v1/shares/" + id, "", "", grant, "CF_Authorization=origin-service-jwt; " + grant},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := signedRequest(f, "GET", tc.path, "", tc.subject, tc.email)
+			r.Header.Set("Cookie", tc.signedCookie)
+			signRequest(f, r, "")
+			// Origin Access adds its own authorization cookie after Pages signs.
+			r.Header.Set("Cookie", tc.transportCookie)
+			w := httptest.NewRecorder()
+			verified, ok := f.a.gatewayRequest(w, r)
+			if !ok {
+				t.Fatalf("Origin Access cookie invalidated signature: %s", w.Body.String())
+			}
+			if got := verified.Header.Get("Cookie"); got != tc.signedCookie {
+				t.Fatalf("internal transport cookie reached handlers: %q", got)
+			}
+		})
+	}
+	r := signedRequest(f, "GET", "/api/v1/shares/"+id, "", "", "")
+	r.Header.Set("Cookie", grant)
+	signRequest(f, r, "")
+	r.Header.Set("Cookie", "CF_Authorization=origin-service-jwt; parcel_grant_"+id+"=tampered")
+	decodeResponse[map[string]any](t, serveGateway(f, r), 403)
 }
 func TestGatewaySecretFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "secret")
