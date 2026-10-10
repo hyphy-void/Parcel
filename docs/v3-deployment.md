@@ -149,6 +149,8 @@ D1 快照不是 R2 文件备份；对象删除与数据库恢复必须一起考�
 
 正式 Worker 可连接当前 V3 生产分支 `v3/serverless`。在 Workers 的 Settings > Builds 中选择仓库、生产分支，关闭其他分支自动构建，根目录保持仓库根目录，使用 Node 24：
 
+当前正式实例已配置为 `hyphy-void/Parcel` 的 `v3/serverless` 分支；生产构建已启用，预览分支构建已关闭。后续推送此分支时，Cloudflare Builds 使用下述命令更新正式 Worker。
+
 - 构建命令：`npm run build:production`
 - 部署命令：`npm run deploy:production`
 - 构建变量：`PARCEL_WORKER_BUILD_CONFIG`，JSON 对象，仅包含 `accountId`、`workerName`、`databaseId`、`databaseName`、`bucketName`，填写已上线实例的资源标识。
