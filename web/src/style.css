@@ -972,6 +972,9 @@ footer > span:last-child {
   outline-offset: -3px;
 }
 .copy-field button {
+  justify-content: center;
+  min-width: 48px;
+  flex-shrink: 0;
   background: var(--soft);
   border: 0;
   border-left: 1px solid var(--control-border);
@@ -1697,4 +1700,75 @@ footer > span:last-child {
   font-size: 12px;
   line-height: 1.7;
   margin: -10px 0 22px;
+}
+
+/* Sharing uses the existing surface, accent and control-radius tokens. */
+.share-action {
+  margin-top: 16px;
+}
+.share-dialog {
+  width: min(480px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: left;
+  overflow: auto;
+}
+.share-dialog::backdrop {
+  background: rgb(24 20 32 / 48%);
+}
+.share-dialog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.share-dialog-heading h2 {
+  margin: 0;
+  font-size: 21px;
+}
+.share-close {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--ink);
+}
+.share-close:hover {
+  background: var(--soft-hover);
+}
+.share-dialog .copy-content {
+  margin-top: 0;
+  min-height: 220px;
+  line-height: 1.7;
+}
+.share-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+.share-dialog-actions .button {
+  flex: 1;
+  white-space: nowrap;
+}
+.copy-field button:active,
+.share-close:active {
+  transform: scale(0.98);
+}
+@media (max-width: 767px) {
+  .share-dialog {
+    padding: 20px;
+  }
+  .share-dialog-actions {
+    flex-direction: column;
+  }
 }

@@ -129,6 +129,21 @@ for (const scheme of ["light", "dark"] as const) {
     const receiveUrl = await page
       .getByLabel("分享链接", { exact: true })
       .inputValue();
+    await page.getByRole("button", { name: "分享", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "分享文件" });
+    for (const control of await dialog.locator("button, textarea").all()) {
+      const colors = await control.evaluate((el) => ({
+        text: getComputedStyle(el).color,
+        background: getComputedStyle(el).backgroundColor,
+      }));
+      expect(contrast(colors.text, colors.background)).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+    const bounds = await dialog.boundingBox();
+    expect(bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    expect(bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    await page.keyboard.press("Escape");
     await page.getByRole("link", { name: "查看分享详情" }).click();
     await page.getByRole("heading", { name: "管理分享" }).waitFor();
     await assertTheme();

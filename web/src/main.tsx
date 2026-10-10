@@ -20,6 +20,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  Share2,
   Trash2,
   UploadCloud,
   X,
@@ -183,93 +184,191 @@ function Shell({
     </div>
   );
 }
+async function copyText(
+  content: string,
+  input: HTMLInputElement | HTMLTextAreaElement | null,
+) {
+  const copySelection = () => {
+    try {
+      if (!input) return false;
+      const active = document.activeElement;
+      input.focus({ preventScroll: true });
+      input.select();
+      input.setSelectionRange(0, content.length);
+      const success = document.execCommand("copy");
+      if (success && active instanceof HTMLElement)
+        active.focus({ preventScroll: true });
+      return success;
+    } catch {
+      return false;
+    }
+  };
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(content);
+      return true;
+    } catch {
+      return copySelection();
+    }
+  }
+  // Keep the HTTP fallback synchronous so the click's user activation applies.
+  return copySelection();
+}
 function CopyField({
   value,
+  name = "文件",
   password,
   passwordRequired = false,
-  label = "分享链接",
+  children,
 }: {
   value: string;
+  name?: string;
   password?: string;
   passwordRequired?: boolean;
-  label?: string;
+  children?: React.ReactNode;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const content = `链接：${value}${password ? `\n提取码：${password}` : ""}`;
-  const [copied, setCopied] = useState(false);
-  const [fallback, setFallback] = useState(false);
-  async function copy() {
-    setCopied(false);
-    setFallback(false);
-    const copySelection = () => {
-      try {
-        const input = ref.current;
-        if (!input) return false;
-        const active = document.activeElement;
-        input.focus({ preventScroll: true });
-        input.select();
-        input.setSelectionRange(0, content.length);
-        const success = document.execCommand("copy");
-        if (success && active instanceof HTMLElement)
-          active.focus({ preventScroll: true });
-        return success;
-      } catch {
-        return false;
-      }
-    };
-    let success = false;
-    if (window.isSecureContext && navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(content);
-        success = true;
-      } catch {
-        success = copySelection();
-      }
+  const linkRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const id = React.useId();
+  const missingPassword = passwordRequired && !password;
+  const content = `我用 Parcel 分享了「${name}」\n链接：${value}${password ? `\n提取码：${password}` : missingPassword ? "\n提取码：请向分享者获取" : ""}`;
+  const [copied, setCopied] = useState<"link" | "message">();
+  const [linkFallback, setLinkFallback] = useState(false);
+  const [messageStatus, setMessageStatus] = useState("");
+  const [sharing, setSharing] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(undefined), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  async function copyLink() {
+    setCopied(undefined);
+    setLinkFallback(false);
+    if (await copyText(value, linkRef.current)) setCopied("link");
+    else setLinkFallback(true);
+  }
+  async function copyMessage() {
+    setCopied(undefined);
+    setMessageStatus("");
+    if (await copyText(content, messageRef.current)) {
+      setCopied("message");
+      setMessageStatus("分享文案已复制，可以粘贴发送给对方。");
     } else {
-      // Keep the HTTP fallback synchronous so the click's user activation applies.
-      success = copySelection();
+      setMessageStatus("分享文案已选中，请使用系统的复制操作。");
     }
-    if (success) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } else {
-      setFallback(true);
+  }
+  function openShare() {
+    setMessageStatus("");
+    setCopied(undefined);
+    dialogRef.current?.showModal();
+  }
+  async function sendShare() {
+    setSharing(true);
+    setMessageStatus("");
+    try {
+      // The URL is already in the text; a separate url would duplicate it.
+      await navigator.share({ title: name, text: content });
+    } catch (e) {
+      if ((e as Error).name !== "AbortError")
+        setMessageStatus("暂时无法打开系统分享，请复制文案后发送。");
+    } finally {
+      setSharing(false);
     }
   }
   return (
     <div className="copy-wrapper">
-      <label htmlFor="copy-link">{label}</label>
+      <label htmlFor={`${id}-link`}>分享链接</label>
       <div className="copy-field">
-        <input id="copy-link" readOnly value={value} />
-        <button type="button" onClick={copy} aria-label="复制分享链接">
-          {copied ? <Check size={18} /> : <Copy size={18} />}
-          {copied ? "已复制" : "复制"}
+        <input id={`${id}-link`} ref={linkRef} readOnly value={value} />
+        <button type="button" onClick={copyLink} aria-label="复制分享链接">
+          {copied === "link" ? (
+            <Check size={18} aria-hidden="true" />
+          ) : (
+            <Copy size={18} aria-hidden="true" />
+          )}
         </button>
       </div>
-      {passwordRequired && !password && (
-        <small>无法读取原提取码，复制内容仅含链接。</small>
-      )}
-      <textarea
-        ref={ref}
-        readOnly
-        value={content}
-        aria-label="分享内容"
-        aria-hidden={!fallback}
-        tabIndex={fallback ? 0 : -1}
-        className={fallback ? "copy-content" : "sr-only"}
-      />
       <small
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        className={fallback ? undefined : "sr-only"}
+        className={linkFallback ? undefined : "sr-only"}
       >
-        {fallback
-          ? "分享内容已选中，请使用系统的复制操作。"
-          : copied
+        {linkFallback
+          ? "链接已选中，请使用系统的复制操作。"
+          : copied === "link"
             ? "分享链接已复制。"
             : ""}
       </small>
+      {children}
+      <button
+        type="button"
+        className={`button primary ${children ? "full" : "share-action"}`}
+        onClick={openShare}
+      >
+        <Share2 size={18} aria-hidden="true" />
+        分享
+      </button>
+      <dialog
+        ref={dialogRef}
+        className="share-dialog"
+        aria-labelledby={`${id}-title`}
+      >
+        <div className="share-dialog-heading">
+          <h2 id={`${id}-title`}>分享文件</h2>
+          <button
+            type="button"
+            className="share-close"
+            aria-label="关闭分享"
+            onClick={() => dialogRef.current?.close()}
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+        <p className="muted">复制下面的文案，发给接收文件的人。</p>
+        {missingPassword && (
+          <p className="note">
+            无法读取原提取码，请另外发送，或在分享详情中设置新密码。
+          </p>
+        )}
+        <label htmlFor={`${id}-message`}>分享文案</label>
+        <textarea
+          id={`${id}-message`}
+          ref={messageRef}
+          readOnly
+          value={content}
+          className="copy-content"
+        />
+        <div className="share-dialog-actions">
+          <button
+            type="button"
+            className="button primary"
+            onClick={copyMessage}
+          >
+            {copied === "message" ? (
+              <Check size={17} aria-hidden="true" />
+            ) : (
+              <Copy size={17} aria-hidden="true" />
+            )}
+            {copied === "message" ? "已复制" : "复制分享文案"}
+          </button>
+          {window.isSecureContext && typeof navigator.share === "function" && (
+            <button
+              type="button"
+              className="button secondary"
+              onClick={sendShare}
+              disabled={sharing}
+            >
+              <Share2 size={17} aria-hidden="true" />
+              {sharing ? "正在打开…" : "系统分享"}
+            </button>
+          )}
+        </div>
+        <small role="status" aria-live="polite" aria-atomic="true">
+          {messageStatus}
+        </small>
+      </dialog>
     </div>
   );
 }
@@ -1273,30 +1372,32 @@ function NewShare({ auth }: { auth: Auth }) {
           </p>
           <CopyField
             value={result.url}
+            name={result.name}
             password={protect ? password : undefined}
             passwordRequired={result.password_required}
-          />
-          {protect && password && (
-            <div className="password-display">
-              <LockKeyhole size={17} />
-              <span>分享密码</span>
-              <code>{password}</code>
+          >
+            {protect && password && (
+              <div className="password-display">
+                <LockKeyhole size={17} />
+                <span>分享密码</span>
+                <code>{password}</code>
+              </div>
+            )}
+            <div className="rule-grid">
+              <div>
+                <Clock3 size={18} />
+                <strong>{date(result.expires)}</strong>
+                <span>到期自动失效</span>
+              </div>
+              <div>
+                <ArrowDown size={18} />
+                <strong>{result.max_downloads} 次</strong>
+                <span>新下载资格</span>
+              </div>
             </div>
-          )}
-          <div className="rule-grid">
-            <div>
-              <Clock3 size={18} />
-              <strong>{date(result.expires)}</strong>
-              <span>到期自动失效</span>
-            </div>
-            <div>
-              <ArrowDown size={18} />
-              <strong>{result.max_downloads} 次</strong>
-              <span>新下载资格</span>
-            </div>
-          </div>
+          </CopyField>
           <a
-            className="button primary full"
+            className="button secondary full"
             href={`/admin/shares/${result.id}`}
           >
             查看分享详情 <ArrowRight size={17} />
@@ -1631,7 +1732,7 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
       );
       setMessage(
         password
-          ? "密码已更新，旧授权已失效。复制分享时会附上新提取码。"
+          ? "密码已更新，旧授权已失效。分享文案会附上新提取码。"
           : "密码保护已关闭，旧授权已失效。",
       );
       setCopyPassword(password || undefined);
@@ -1670,6 +1771,7 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
             <section className="panel detail-main">
               <CopyField
                 value={share.url}
+                name={share.name}
                 password={share.password_required ? copyPassword : undefined}
                 passwordRequired={share.password_required}
               />
