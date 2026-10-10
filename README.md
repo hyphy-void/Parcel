@@ -50,6 +50,7 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 ## 文档
 
 - [设计与开发计划](docs/development-plan.md)
+- [V3 正式实例配置与截图](docs/v3-configuration.md)
 - [安装、配置与运维](docs/operations.md)
 - [验收报告与未测项目](docs/acceptance.md)
 - [真实局域网设备验收步骤](docs/lan-acceptance.md)

@@ -1,6 +1,6 @@
 # V3：Cloudflare 原生后端
 
-当前正式地址已切换到 V3，代码位于 `v3/serverless` 分支，正式开源发布另行决定。Workers 承担 API 和 Access 身份验证，D1 是唯一权威状态源，R2 保持私有、16 MiB Multipart 和浏览器直传/直下载。新模式不依赖树莓派、Tunnel 或内部 Origin 服务令牌。原 Go 模式继续保留。
+当前正式地址已切换到 V3，代码位于 `v3/serverless` 分支，正式开源发布另行决定。Workers 承担 API 和 Access 身份验证，D1 是唯一权威状态源，R2 保持私有、16 MiB Multipart 和浏览器直传/直下载。新模式不依赖树莓派、Tunnel 或内部 Origin 服务令牌。原 Go 模式代码继续保留；旧实例服务已停用、旧 R2 桶已删除，实际配置与退役记录见 [V3 配置记录](v3-configuration.md)。
 
 ## 完成条件
 
@@ -55,7 +55,7 @@ Workers 目前默认限制单次 PBKDF2 为 100,000 次，提高到一百万的�
 
 用户授权后，通过 Dashboard 将 `parcel.playereconlab.com` 绑定到 `parcel-v3` Worker；旧 Pages 项目已经没有自定义域。部署正式配置后，远程 API 核实正式 `PUBLIC_URL`、对应管理员 Access AUD、独立 D1/R2 与 Free 设置，关闭 workers.dev 和预览地址。正式 Access 七个管理路径及邮箱策略复用已审阅的原应用，R2 CORS 保留隔离来源并加入正式来源。
 
-未登录 `/admin` 与管理 API 返回 302 到 Access，公共页面 200、未知分享 404，隔离 workers.dev 返回 404。Chrome 在正式域名通过既有 Access 登录，管理面板显示 Cloudflare 原生后端。原 Go、SQLite、配置及旧桶保留；V3 独立桶由 D1 唯一管理，旧模式不会写入新桶。正式开源、合并和发布 Release 仍另行决定。
+未登录 `/admin` 与管理 API 返回 302 到 Access，公共页面 200、未知分享 404，隔离 workers.dev 返回 404。Chrome 在正式域名通过既有 Access 登录，管理面板显示 Cloudflare 原生后端。切换当时原 Go、SQLite、配置及旧桶保留；随后按用户要求停用旧服务并删除空的旧桶 `parcel`，SQLite 与配置继续保留。V3 独立桶由 D1 唯一管理，旧模式不会写入新桶。正式开源、合并和发布 Release 仍另行决定。
 
 正式域名重新完成 16 MiB + 3 字节密码保护 Multipart 上传，错误密码拒绝、正确密码解锁，两次真实下载的 SHA-256 与原文件一致，续签后 D1 计数保持 1/1。未授权请求无法获得文件名。正式配置下的实际 Cron 为 `outcome:ok`，CPU 3 ms、无异常；撤销测试分享立即失效，未签发会话的对象进入后台清理流程。
 
