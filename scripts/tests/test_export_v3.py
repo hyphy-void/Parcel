@@ -80,6 +80,22 @@ class ExportV3Tests(unittest.TestCase):
             module.restore_database(snapshot, self.path, "parcel-test")
         self.assertEqual(self.db.execute("SELECT download_count FROM shares").fetchone()[0], 2)
 
+    def test_rollback_refuses_encrypted_verifiers_before_touching_sqlite(self):
+        import hashlib
+        spec = importlib.util.spec_from_file_location("rollback_v3", ROOT / "scripts/rollback-v3.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        data = json.loads(EXPORT.export_database(self.path, "parcel-test", now=100)["payload"])
+        data["source"] = "d1-v3"
+        data["rows"]["shares"][0]["password_hash"] = "$parcel-a2$encrypted"
+        payload = json.dumps(data)
+        snapshot = Path(self.temp.name) / "encrypted.json"
+        snapshot.write_text(json.dumps({"payload":payload,"sha256":hashlib.sha256(payload.encode()).hexdigest()}))
+        with self.assertRaisesRegex(ValueError,"SESSION_SECRET"):
+            module.restore_database(snapshot,self.path,"parcel-test")
+        self.assertEqual(self.db.execute("SELECT download_count,password_hash FROM shares").fetchone(),(1,""))
+        self.assertEqual(list(self.path.parent.glob("*.before-v3-rollback-*")),[])
+
     def test_export_refuses_a_running_go_process_lock(self):
         import fcntl
         import os

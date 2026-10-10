@@ -119,14 +119,12 @@ test("bootstrap retries reuse D1/R2, preserve other rules, only protect administ
 });
 test("bootstrap refuses unmanaged existing resources and never enables paid billing", async () => {
   const m = mock();
-  await assert.rejects(
-    resources({ ...config(), workersPaid: false }, m.api),
-    /never enables billing/,
-  );
-  assert.equal(m.calls.length, 0);
-  m.data.bucket = { name: "parcel-v3" };
-  await assert.rejects(resources(config(), m.api), /Existing bucket/);
-  assert.equal(m.calls.filter((c) => c.method === "PUT").length, 0);
+  await resources({ ...config(), workersPaid: false }, m.api);
+  assert.ok(!m.calls.some((c) => /subscription|billing/.test(c.key)));
+  const fresh = mock();
+  fresh.data.bucket = { name: "parcel-v3" };
+  await assert.rejects(resources(config(), fresh.api), /Existing bucket/);
+  assert.equal(fresh.calls.filter((c) => c.method === "PUT").length, 0);
 });
 test("Cloudflare API errors do not expose tokens, body or credential-bearing URLs", async () => {
   const api = new CloudflareAPI("a".repeat(32), "do-not-print", async () =>

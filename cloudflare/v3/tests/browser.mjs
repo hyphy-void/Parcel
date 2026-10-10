@@ -27,6 +27,7 @@ for (const [name, engine, viewport] of [
           acceptDownloads: true,
         }),
         page = await context.newPage();
+      const passwordRequests = [];
       let puts = [],
         downloads = 0,
         apiCalls = 0,
@@ -54,6 +55,19 @@ for (const [name, engine, viewport] of [
           ])
             delete headers[key];
           const body = req.postDataBuffer();
+          if (
+            body &&
+            (/\/uploads$/.test(url.pathname) || /\/unlock$/.test(url.pathname))
+          ) {
+            const payload = JSON.parse(body.toString());
+            if (payload.password_proof) {
+              assert.equal(payload.password, undefined);
+              assert.ok(!body.includes(Buffer.from("v3-password")));
+              assert.equal(payload.password_proof.scheme, "client-argon2id-v1");
+              passwordRequests.push(payload.password_proof);
+            }
+          }
+
           const response = await f.mf.dispatchFetch(req.url(), {
             method: req.method(),
             headers,
@@ -117,6 +131,13 @@ for (const [name, engine, viewport] of [
       });
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(f.config.PUBLIC_URL + "/admin");
+      await expect(
+        page.getByText("Cloudflare 原生后端", { exact: false }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("本地磁盘可用", { exact: false }),
+      ).toHaveCount(0);
       await page.goto(f.config.PUBLIC_URL + "/admin/new");
       const bytes = (source = Buffer.concat([
         Buffer.alloc(16 << 20, 0x61),
@@ -153,6 +174,16 @@ for (const [name, engine, viewport] of [
       await expect(
         page.getByRole("button", { name: "下载文件", exact: true }),
       ).toBeVisible();
+      assert.equal(passwordRequests.length, 2);
+      assert.deepEqual(passwordRequests[0], passwordRequests[1]);
+      const browserStorage = await page.evaluate(() =>
+        JSON.stringify({
+          local: { ...localStorage },
+          session: { ...sessionStorage },
+        }),
+      );
+      assert.ok(!browserStorage.includes(passwordRequests[0].key));
+      assert.ok(!browserStorage.includes("v3-password"));
       const downloadPromise = page.waitForEvent("download");
       await page.getByRole("button", { name: "下载文件", exact: true }).click();
       const download = await downloadPromise,

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixture } from "./fixture.mjs";
+import { fixture, passwordProof } from "./fixture.mjs";
+import { legacyPassword, wrapLegacyPassword } from "../password.mjs";
 
 test("V3 actual workerd serves assets and verifies Access/CSRF, rejects origin bypass", async (t) => {
   const f = await fixture(t);
@@ -321,7 +322,7 @@ test("password protection preserves Go Argon2id hashes, grants and sessions are 
     "$argon2id$v=19$m=32768,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$A3W+APQ22i3uCifCT3RkV4zNYn7bSDZepRuL9Off/ao";
   await f.db
     .prepare("UPDATE shares SET password_hash=? WHERE id=?")
-    .bind(legacy, s.id)
+    .bind(await wrapLegacyPassword(legacy, f.config.SESSION_SECRET), s.id)
     .run();
   const locked = await (
     await f.api(`/api/v1/shares/${s.id}`, { admin: false, expected: 200 })
@@ -331,18 +332,25 @@ test("password protection preserves Go Argon2id hashes, grants and sessions are 
   await f.api(`/api/v1/shares/${s.id}/unlock`, {
     admin: false,
     method: "POST",
-    body: { password: "wrong" },
+    body: {
+      password_proof: await passwordProof("wrong", legacyPassword(legacy).salt),
+    },
     expected: 401,
   });
   const start = performance.now();
   const unlock = await f.api(`/api/v1/shares/${s.id}/unlock`, {
     admin: false,
     method: "POST",
-    body: { password: "密码-test" },
+    body: {
+      password_proof: await passwordProof(
+        "密码-test",
+        legacyPassword(legacy).salt,
+      ),
+    },
     expected: 200,
   });
   t.diagnostic(
-    `Argon2id workerd wall time: ${Math.round(performance.now() - start)} ms (not production CPU measurement)`,
+    `Client derivation and workerd validation wall time: ${Math.round(performance.now() - start)} ms (not production CPU measurement)`,
   );
   const cookie = unlock.headers.get("set-cookie").split(";")[0];
   const ticket = await (
@@ -355,7 +363,22 @@ test("password protection preserves Go Argon2id hashes, grants and sessions are 
   ).json();
   await f.api(`/api/v1/admin/shares/${s.id}/password`, {
     method: "PATCH",
-    body: { password: "new-password" },
+    body: {},
+    expected: 400,
+  });
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT version FROM shares WHERE id=?")
+        .bind(s.id)
+        .first()
+    ).version,
+    1,
+  );
+  const newProof = await passwordProof("new-password");
+  await f.api(`/api/v1/admin/shares/${s.id}/password`, {
+    method: "PATCH",
+    body: { password_proof: newProof },
     expected: 200,
   });
   await f.api(`/api/v1/shares/${s.id}/download-sessions`, {
@@ -373,7 +396,7 @@ test("password protection preserves Go Argon2id hashes, grants and sessions are 
   await f.api(`/api/v1/shares/${s.id}/unlock`, {
     admin: false,
     method: "POST",
-    body: { password: "new-password" },
+    body: { password_proof: newProof },
     expected: 200,
   });
   await f.api(`/api/v1/admin/shares/${s.id}/password`, {
@@ -637,4 +660,38 @@ test("R2 deletion failure preserves charged usage and retries durable cleanup af
     0,
   );
   assert.equal(await f.bucket.head(row.storage_key), null);
+});
+
+test("Free cleanup processes one eligible share per Cron and keeps remaining quota charged", async (t) => {
+  const f = await fixture(t);
+  const shares = [await f.publish(7), await f.publish(11)];
+  for (const share of shares)
+    await f.api(`/api/v1/admin/shares/${share.id}`, {
+      method: "DELETE",
+      expected: 200,
+    });
+  await f.maintain();
+  const states = (
+    await f.db.prepare("SELECT state,size,storage_key FROM shares").all()
+  ).results;
+  assert.equal(states.filter((row) => row.state === "deleted").length, 1);
+  const waiting = states.find((row) => row.state !== "deleted");
+  assert.ok(await f.bucket.head(waiting.storage_key));
+  assert.equal(
+    (await f.db.prepare("SELECT used FROM storage_usage").first()).used,
+    waiting.size,
+  );
+  await f.maintain();
+  assert.equal(
+    (await f.db.prepare("SELECT used FROM storage_usage").first()).used,
+    0,
+  );
+  assert.equal(
+    (
+      await f.db
+        .prepare("SELECT count(*) AS n FROM shares WHERE state='deleted'")
+        .first()
+    ).n,
+    2,
+  );
 });

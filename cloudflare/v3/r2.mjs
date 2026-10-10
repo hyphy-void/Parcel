@@ -1,6 +1,9 @@
 import { AwsClient } from "aws4fetch";
 import { XMLParser } from "fast-xml-parser";
 
+// Cache only derived signing keys in isolate memory; aws4fetch includes the
+// credential secret and UTC date in each cache key. Bound retained entries.
+const signingCache = new Map();
 export const PART_BYTES = 16 << 20,
   URL_TTL = 300;
 export class R2Unavailable extends Error {
@@ -18,7 +21,9 @@ export class R2Store {
     this.env = env;
     this.now = now;
     this.fetch = outbound;
+    if (signingCache.size > 4) signingCache.clear();
     this.signer = new AwsClient({
+      cache: signingCache,
       accessKeyId: env.R2_ACCESS_KEY_ID,
       secretAccessKey: env.R2_SECRET_ACCESS_KEY,
       service: "s3",

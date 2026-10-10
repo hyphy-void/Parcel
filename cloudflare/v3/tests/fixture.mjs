@@ -5,6 +5,26 @@ import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
 import { unstable_splitSqlQuery } from "wrangler";
+import { argon2idAsync } from "@noble/hashes/argon2.js";
+import { PASSWORD_PROTOCOL } from "../password.mjs";
+
+export async function passwordProof(
+  password,
+  salt = btoa(
+    String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))),
+  ).replace(/=+$/, ""),
+) {
+  const key = await argon2idAsync(
+    new TextEncoder().encode(password),
+    Uint8Array.from(atob(salt), (c) => c.charCodeAt(0)),
+    { m: 32768, t: 2, p: 1, dkLen: 32, maxmem: 80 << 20 },
+  );
+  return {
+    scheme: PASSWORD_PROTOCOL,
+    salt,
+    key: Array.from(key, (b) => b.toString(16).padStart(2, "0")).join(""),
+  };
+}
 
 export async function fixture(t, options = {}) {
   const { publicKey, privateKey } = await generateKeyPair("RS256");

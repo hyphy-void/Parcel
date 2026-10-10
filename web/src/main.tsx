@@ -38,10 +38,16 @@ import {
   type Status,
   type Upload,
 } from "./api";
+import { passwordBody, passwordSalt } from "./password";
 import "./style.css";
 import "./login.css";
 
-type Auth = { csrf: string; auth_mode?: "password" | "access"; email?: string };
+type Auth = {
+  password_protocol?: string;
+  csrf: string;
+  auth_mode?: "password" | "access";
+  email?: string;
+};
 function desktopAutofocus() {
   return matchMedia("(min-width: 768px) and (pointer: fine)").matches;
 }
@@ -474,13 +480,19 @@ function Dashboard({ auth }: { auth: Auth }) {
     setClearing(true);
     setError("");
     try {
-      const result = await api<{ removed: number }>(
-        "/admin/shares/cleaned",
-        { method: "DELETE" },
-        auth.csrf,
-      );
+      let removed = 0,
+        remaining = true;
+      while (remaining) {
+        const result = await api<{ removed: number; remaining?: boolean }>(
+          "/admin/shares/cleaned",
+          { method: "DELETE" },
+          auth.csrf,
+        );
+        removed += result.removed;
+        remaining = result.remaining === true && result.removed > 0;
+      }
       setConfirmClear(false);
-      setMessage(`已清除 ${result.removed} 条已清理记录。`);
+      setMessage(`已清除 ${removed} 条已清理记录。`);
       if (page !== 1) setPage(1);
       else await load();
     } catch (e) {
@@ -559,13 +571,16 @@ function Dashboard({ auth }: { auth: Auth }) {
           <div className="stat">
             <span>
               <ShieldCheck size={18} />
-              你的服务器
+              {status.backend_mode === "serverless" ? "云端服务" : "你的服务器"}
             </span>
             <strong>
               {status.storage_backend === "r2" ? "私有 R2 存储" : "本地存储"}
             </strong>
             <small>
-              本地磁盘可用 {bytes(status.free_bytes)} · v{status.version}
+              {status.backend_mode === "serverless"
+                ? "Cloudflare 原生后端"
+                : `本地磁盘可用 ${bytes(status.free_bytes)}`}{" "}
+              · v{status.version}
             </small>
           </div>
         </div>
@@ -710,6 +725,7 @@ function Dashboard({ auth }: { auth: Auth }) {
 }
 
 type SavedUpload = {
+  passwordSalt?: string;
   id?: string;
   key?: string;
   name: string;
@@ -1016,9 +1032,16 @@ function NewShare({ auth }: { auth: Auth }) {
           ttl,
           limit,
           protect,
+          passwordSalt: saved?.passwordSalt || passwordSalt(),
         };
         localStorage.setItem(savedKey, JSON.stringify(draft));
         setSaved(draft);
+        const protectedBody = await passwordBody(
+          protect ? password : "",
+          settings.password_protocol,
+          draft.passwordSalt,
+        );
+        if (epoch !== generation.current || !alive.current) return;
         u = await api<Upload>(
           "/uploads",
           {
@@ -1029,7 +1052,7 @@ function NewShare({ auth }: { auth: Auth }) {
               confirm_large:
                 file.size > (settings.upload_confirmation_bytes ?? 100_000_000),
               size: file.size,
-              password: protect ? password : "",
+              ...protectedBody,
               ttl_seconds: ttl,
               max_downloads: limit,
             }),
@@ -1598,7 +1621,12 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
     try {
       await api(
         `/admin/shares/${id}/password`,
-        { method: "PATCH", body: JSON.stringify({ password }) },
+        {
+          method: "PATCH",
+          body: JSON.stringify(
+            await passwordBody(password, auth.password_protocol),
+          ),
+        },
         auth.csrf,
       );
       setMessage(
@@ -1796,7 +1824,14 @@ function Receive({ id }: { id: string }) {
       setShare(
         await api<Share>(`/shares/${id}/unlock`, {
           method: "POST",
-          body: JSON.stringify({ password }),
+          body: JSON.stringify(
+            await passwordBody(
+              password,
+              share?.password_protocol,
+              share?.password_kdf?.salt,
+              share?.password_kdf,
+            ),
+          ),
         }),
       );
       setPassword("");

@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CloudflareAPI } from "./deploy-v3.mjs";
+import { CloudflareAPI, localCredentials } from "./deploy-v3.mjs";
+import {
+  restoreLegacyPassword,
+  wrapLegacyPassword,
+} from "../cloudflare/v3/password.mjs";
 
 const tables = ["uploads", "shares", "share_grants", "download_sessions"];
 export function manifest(raw) {
@@ -33,7 +37,7 @@ export function manifest(raw) {
     throw new Error("Snapshot contains unfinished uploads");
   return { ...data, fingerprint: envelope.sha256 };
 }
-export async function importSnapshot(data, query) {
+export async function importSnapshot(data, query, { sessionSecret } = {}) {
   const q = async (sql, params = []) => (await query([{ sql, params }]))[0];
   await q(
     "CREATE TABLE IF NOT EXISTS parcel_import(id INTEGER PRIMARY KEY CHECK(id=1),fingerprint TEXT NOT NULL,complete INTEGER NOT NULL DEFAULT 0)",
@@ -68,17 +72,23 @@ export async function importSnapshot(data, query) {
       (r) => r.name,
     );
     for (let offset = 0; offset < data.rows[table].length; offset += 100) {
-      const queries = data.rows[table]
-        .slice(offset, offset + 100)
-        .map((row) => {
+      const queries = await Promise.all(
+        data.rows[table].slice(offset, offset + 100).map(async (row) => {
           const keys = Object.keys(row);
           if (!keys.length || keys.some((k) => !columns.includes(k)))
             throw new Error("Unexpected snapshot column");
           return {
             sql: `INSERT OR IGNORE INTO ${table}(${keys.join(",")}) VALUES(${keys.map(() => "?").join(",")})`,
-            params: keys.map((k) => row[k]),
+            params: await Promise.all(
+              keys.map((k) =>
+                k === "password_hash" && row[k]
+                  ? wrapLegacyPassword(row[k], sessionSecret)
+                  : row[k],
+              ),
+            ),
           };
-        });
+        }),
+      );
       await query(queries);
     }
     const count = (await q(`SELECT count(*) AS n FROM ${table}`)).results[0].n;
@@ -98,9 +108,30 @@ export async function importSnapshot(data, query) {
       byId = new Map(actual.map((row) => [row[primary], row]));
     for (const expected of data.rows[table]) {
       const row = byId.get(expected[primary]);
-      if (!row || Object.entries(expected).some(([k, v]) => row[k] !== v))
+      let matches = !!row;
+      for (const [k, v] of Object.entries(expected)) {
+        if (!row) break;
+        if (k === "password_hash" && v) {
+          if (
+            (await restoreLegacyPassword(row[k], sessionSecret)) !==
+            (await restoreLegacyPassword(v, sessionSecret))
+          )
+            matches = false;
+        } else if (row[k] !== v) matches = false;
+      }
+      if (!matches)
         throw new Error(
           `Import content mismatch: ${table}; target remains in maintenance`,
+        );
+      // Convert older imports only after every source column has matched.
+      if (row.password_hash?.startsWith("$argon2id$"))
+        await q(
+          `UPDATE ${table} SET password_hash=? WHERE ${primary}=? AND password_hash=?`,
+          [
+            await wrapLegacyPassword(row.password_hash, sessionSecret),
+            row[primary],
+            row.password_hash,
+          ],
         );
     }
   }
@@ -132,11 +163,12 @@ async function main() {
     throw new Error(
       "Import requires a maintenance Worker bound to the source bucket",
     );
-  if (!process.env.CLOUDFLARE_API_TOKEN)
+  const credentials = await localCredentials(config.name);
+  if (!credentials.CLOUDFLARE_API_TOKEN)
     throw new Error("Set CLOUDFLARE_API_TOKEN locally");
   const api = new CloudflareAPI(
     config.account_id,
-    process.env.CLOUDFLARE_API_TOKEN,
+    credentials.CLOUDFLARE_API_TOKEN,
   );
   const settings = await api.request(
     `/workers/scripts/${config.name}/settings`,
@@ -148,18 +180,24 @@ async function main() {
     )
   )
     throw new Error("Remote Worker is not in maintenance; import refused");
-  const result = await importSnapshot(data, async (queries) => {
-    const results = await api.request(
-      `/d1/database/${config.d1_databases[0].database_id}/query`,
-      "POST",
-      { batch: queries },
-    );
-    if (!Array.isArray(results) || results.some((r) => !r.success))
-      throw new Error(
-        "D1 import transaction failed; resume the same snapshot while in maintenance",
+  const result = await importSnapshot(
+    data,
+    async (queries) => {
+      const results = await api.request(
+        `/d1/database/${config.d1_databases[0].database_id}/query`,
+        "POST",
+        { batch: queries },
       );
-    return results;
-  });
+      if (!Array.isArray(results) || results.some((r) => !r.success))
+        throw new Error(
+          "D1 import transaction failed; resume the same snapshot while in maintenance",
+        );
+      return results;
+    },
+    {
+      sessionSecret: credentials.SESSION_SECRET,
+    },
+  );
   console.log(JSON.stringify(result));
 }
 if (

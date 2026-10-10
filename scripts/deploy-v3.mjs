@@ -120,6 +120,7 @@ export function validate(input) {
     "DEFAULT_DOWNLOAD_LIMIT",
     "DOWNLOAD_MAX_TTL_SECONDS",
     "UPLOAD_IDLE_TTL_SECONDS",
+    "CLEANUP_BATCH_SIZE",
   ];
   if (
     c.vars &&
@@ -141,6 +142,7 @@ export function validate(input) {
     DEFAULT_DOWNLOAD_LIMIT: [1, 100],
     DOWNLOAD_MAX_TTL_SECONDS: [300, 86400],
     UPLOAD_IDLE_TTL_SECONDS: [300, 604800],
+    CLEANUP_BATCH_SIZE: [1, c.workersPaid ? 30 : 1],
   };
   for (const [key, value] of Object.entries(c.vars || {})) {
     const n = Number(value),
@@ -167,7 +169,7 @@ export function plan(c) {
       "Cloudflare account API token: Workers Scripts, D1, R2, Access Apps and Policies, Access Organizations/Identity Providers",
       "Bucket-scoped R2 S3 credentials",
       "Existing Zero Trust organization and Workers subdomain",
-      "Workers Paid for preserved Argon2id password protection",
+      "Workers Free or Paid; browser Argon2id with encrypted server verifiers",
     ],
     actions: [
       "Create/reuse D1",
@@ -188,10 +190,6 @@ export function plan(c) {
   };
 }
 export async function resources(c, api, state = {}, save = async () => {}) {
-  if (!c.workersPaid)
-    throw new Error(
-      "Workers Paid must already be enabled and workersPaid=true; bootstrap never enables billing",
-    );
   const subdomain = await api.request("/workers/subdomain");
   if (!subdomain?.subdomain)
     throw new Error("Register your Workers subdomain before bootstrap");
@@ -352,6 +350,26 @@ async function readJSON(path, fallback) {
     throw e;
   }
 }
+export async function localCredentials(name) {
+  if (!/^[a-z0-9][a-z0-9-]{2,62}$/.test(name))
+    throw new Error("Invalid Worker name");
+  const supplied = await readJSON(
+    resolve(root, ".parcel-v3/cloudflare-credentials.json"),
+    {},
+  );
+  const stored = await readJSON(
+    resolve(root, ".parcel-v3", name, "secrets.json"),
+    {},
+  );
+  return Object.fromEntries(
+    [
+      "CLOUDFLARE_API_TOKEN",
+      "SESSION_SECRET",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+    ].map((key) => [key, process.env[key] || supplied[key] || stored[key]]),
+  );
+}
 export async function runWrangler(args, { input, env = process.env } = {}) {
   // Secret contents use stdin; arguments and diagnostics contain no secret values.
   await new Promise((accept, reject) => {
@@ -502,7 +520,7 @@ async function main() {
       },
     ],
     r2_buckets: [{ binding: "FILES", bucket_name: c.bucketName }],
-    limits: { cpu_ms: 30000 },
+    ...(c.workersPaid ? { limits: { cpu_ms: 30000 } } : {}),
     vars: {
       ...template.vars,
       ...c.vars,
@@ -512,6 +530,10 @@ async function main() {
       ADMIN_EMAILS: c.adminEmails.join(","),
       R2_ENDPOINT: `https://${c.accountId}.r2.cloudflarestorage.com`,
       R2_BUCKET_NAME: c.bucketName,
+      WORKERS_PLAN: c.workersPaid ? "paid" : "free",
+      CLEANUP_BATCH_SIZE: String(
+        c.vars?.CLEANUP_BATCH_SIZE || (c.workersPaid ? 30 : 1),
+      ),
       ACTIVE: "false",
       MAINTENANCE_SINCE: String(Math.floor(Date.now() / 1000)),
     },

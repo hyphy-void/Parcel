@@ -22,6 +22,8 @@ def restore_database(snapshot_path, database_path, bucket):
         raise ValueError("Snapshot does not match V3 source/bucket")
     if any(u["state"] not in ("completed", "cleaned") for u in data["rows"]["uploads"]):
         raise ValueError("Finish or cancel all V3 uploads first")
+    if any(row.get("password_hash", "").startswith("$parcel-") for table in ("uploads", "shares") for row in data["rows"][table]):
+        raise ValueError("Export with the V3 SESSION_SECRET to restore Go-compatible password hashes first")
     database_path = Path(database_path).resolve()
     if not database_path.is_file():
         raise ValueError("Existing Go database is required to preserve administrator configuration")

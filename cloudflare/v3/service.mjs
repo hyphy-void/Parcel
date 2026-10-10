@@ -1,12 +1,10 @@
+import { equal, hash, hmac, token, utf8 } from "./crypto.mjs";
 import {
-  equal,
-  hash,
-  hashPassword,
-  hmac,
-  token,
-  utf8,
+  PASSWORD_PROTOCOL,
+  passwordParameters,
+  storePassword,
   verifyPassword,
-} from "./crypto.mjs";
+} from "./password.mjs";
 import { PART_BYTES, URL_TTL, R2Store } from "./r2.mjs";
 
 export class Problem extends Error {
@@ -84,6 +82,12 @@ export function configuration(env) {
     downloadLimit: integer(env.DEFAULT_DOWNLOAD_LIMIT, 3, 1, 100),
     downloadTTL: integer(env.DOWNLOAD_MAX_TTL_SECONDS, 28800, 300, 86400),
     uploadTTL: integer(env.UPLOAD_IDLE_TTL_SECONDS, 86400, 300, 604800),
+    cleanupBatch: integer(
+      env.CLEANUP_BATCH_SIZE,
+      1,
+      1,
+      env.WORKERS_PLAN === "paid" ? 30 : 1,
+    ),
     enabled: env.ACTIVE !== "false",
   };
 }
@@ -210,6 +214,8 @@ export class Service {
       storage_backend: "r2",
       etag: s.etag,
       password_required: !!s.password_hash,
+      password_protocol: PASSWORD_PROTOCOL,
+      password_kdf: passwordParameters(s.password_hash),
       availability: this.availability(s),
       url: this.c.PUBLIC_URL + "/s/" + s.id,
     };
@@ -310,12 +316,9 @@ export class Service {
       fail(400, "invalid_ttl", "分享有效期不合法");
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       fail(400, "invalid_limit", "下载次数应为 1–100");
-    const password = data.password ?? "";
-    if (
-      typeof password !== "string" ||
-      (password && (utf8(password).length < 4 || utf8(password).length > 256))
-    )
-      fail(400, "invalid_password", "密码长度应为 4–256 字节");
+    if (data.password !== undefined && data.password !== "")
+      fail(400, "password_derivation_required", "请使用浏览器密码处理协议");
+    const password = data.password_proof || null;
     const raw = request.headers.get("Idempotency-Key") || "";
     if (raw.length > 128 || /[\x00-\x1f]/.test(raw))
       fail(400, "invalid_idempotency_key", "幂等键不合法");
@@ -334,7 +337,7 @@ export class Service {
     };
     const found = await existing();
     if (found) return json(this.uploadJSON(found));
-    const passwordHash = password ? await hashPassword(password) : "";
+    const passwordHash = await this.passwordHash(data);
     const id = token(),
       share = token(),
       now = this.now();
@@ -555,6 +558,8 @@ export class Service {
       return json({
         id,
         password_required: true,
+        password_protocol: PASSWORD_PROTOCOL,
+        password_kdf: passwordParameters(s.password_hash),
         locked: true,
         availability: this.availability(s),
       });
@@ -566,7 +571,11 @@ export class Service {
       fail(410, "share_expired", "分享已失效");
     if (
       s.password_hash &&
-      !(await verifyPassword(data.password, s.password_hash))
+      !(await verifyPassword(
+        data.password_proof,
+        s.password_hash,
+        this.c.SESSION_SECRET,
+      ))
     )
       fail(401, "invalid_password", "分享密码不正确");
     const value = token(),
@@ -607,10 +616,20 @@ export class Service {
     ]);
     return json({ ok: true });
   }
+  async passwordHash(data) {
+    if (data.password !== undefined && data.password !== "")
+      fail(400, "password_derivation_required", "请使用浏览器密码处理协议");
+    if (data.password_proof === undefined) return "";
+    try {
+      return await storePassword(data.password_proof, this.c.SESSION_SECRET);
+    } catch {
+      fail(400, "invalid_password", "密码保护参数不正确");
+    }
+  }
   async changePassword(id, data) {
-    if (typeof data.password !== "string")
-      fail(400, "invalid_password", "密码不合法");
-    const password = data.password ? await hashPassword(data.password) : "";
+    if (data.password_proof === undefined && data.password !== "")
+      fail(400, "invalid_password", "请提供新密码或明确移除密码保护");
+    const password = await this.passwordHash(data);
     const result = await this.db.batch([
       this.stmt(
         "UPDATE shares SET password_hash=?,version=version+1 WHERE id=? AND state='active' AND expires>? RETURNING version",
@@ -799,6 +818,7 @@ export class Service {
     return json({
       storage_backend: "r2",
       backend_mode: "serverless",
+      password_protocol: PASSWORD_PROTOCOL,
       version: "3.0.0-dev",
       base_url: this.c.PUBLIC_URL,
       used_bytes: used,
@@ -826,6 +846,7 @@ export class Service {
       return json({
         authenticated: true,
         auth_mode: "access",
+        password_protocol: PASSWORD_PROTOCOL,
         email: identity.email,
         csrf: await this.csrf(identity),
       });
@@ -848,14 +869,19 @@ export class Service {
       return this.list(
         Number(new URL(request.url).searchParams.get("page") || 1),
       );
-    if (path === "/api/v1/admin/shares/cleaned")
+    if (path === "/api/v1/admin/shares/cleaned") {
+      const removed = (
+        await this.rows(
+          "DELETE FROM shares WHERE id IN (SELECT id FROM shares WHERE state='deleted' LIMIT 100) RETURNING id",
+        )
+      ).length;
       return json({
-        removed: (
-          await this.rows(
-            "DELETE FROM shares WHERE state='deleted' RETURNING id",
-          )
-        ).length,
+        removed,
+        remaining: !!(await this.first(
+          "SELECT 1 FROM shares WHERE state='deleted' LIMIT 1",
+        )),
       });
+    }
     const segments = path.split("/"),
       id = segments[4],
       action = segments.slice(5).join("/");
@@ -955,14 +981,14 @@ export class Service {
   async maintain() {
     const now = this.now();
     await this.run(
-      "UPDATE uploads SET state='failed',error='发布等待超时，任务将清理' WHERE state='finalizing' AND updated<? AND lease_until<=?",
+      "UPDATE uploads SET state='failed',error='发布等待超时，任务将清理' WHERE id IN (SELECT id FROM uploads WHERE state='finalizing' AND updated<? AND lease_until<=? LIMIT 100)",
       now - this.c.uploadTTL,
       now,
     );
     const tasks = await this.rows(
       `SELECT id,state,'upload' AS kind FROM uploads WHERE state='finalizing' AND retry_at<=? AND lease_until<=?
       UNION ALL SELECT id,state,'upload' FROM uploads WHERE state IN ('failed','canceled') AND retry_at<=? AND lease_until<=?
-      UNION ALL SELECT id,state,'upload' FROM uploads WHERE state IN ('created','uploading') AND updated<=? AND retry_at<=? AND lease_until<=? LIMIT 30`,
+      UNION ALL SELECT id,state,'upload' FROM uploads WHERE state IN ('created','uploading') AND updated<=? AND retry_at<=? AND lease_until<=? LIMIT ?`,
       now,
       now,
       now,
@@ -970,13 +996,15 @@ export class Service {
       now - this.c.uploadTTL,
       now,
       now,
+      this.c.cleanupBatch,
     );
     const shares = await this.rows(
-      "SELECT id FROM shares WHERE state!='deleted' AND (state!='active' OR expires<=? OR download_count>=max_downloads) AND signed_until<=? AND retry_at<=? AND lease_until<=? LIMIT 30",
+      "SELECT id FROM shares WHERE state!='deleted' AND (state!='active' OR expires<=? OR download_count>=max_downloads) AND signed_until<=? AND retry_at<=? AND lease_until<=? LIMIT ?",
       now,
       now,
       now,
       now,
+      this.c.cleanupBatch,
     );
     // Sequential requests keep background subrequests and memory bounded.
     for (const task of tasks) {
@@ -985,12 +1013,24 @@ export class Service {
     }
     for (const s of shares) await this.cleanupShare(s.id);
     await this.db.batch([
-      this.stmt("DELETE FROM share_grants WHERE expires<=?", now),
-      this.stmt("DELETE FROM download_sessions WHERE expires<=?", now),
-      this.stmt("DELETE FROM rate_limits WHERE expires<=?", now),
-      this.stmt("DELETE FROM audit_events WHERE created<?", now - 30 * 86400),
       this.stmt(
-        "DELETE FROM uploads WHERE state IN ('cleaned','completed') AND updated<? AND NOT EXISTS(SELECT 1 FROM shares WHERE upload_id=uploads.id)",
+        "DELETE FROM share_grants WHERE token_hash IN (SELECT token_hash FROM share_grants WHERE expires<=? LIMIT 100)",
+        now,
+      ),
+      this.stmt(
+        "DELETE FROM download_sessions WHERE token_hash IN (SELECT token_hash FROM download_sessions WHERE expires<=? LIMIT 100)",
+        now,
+      ),
+      this.stmt(
+        "DELETE FROM rate_limits WHERE key IN (SELECT key FROM rate_limits WHERE expires<=? LIMIT 100)",
+        now,
+      ),
+      this.stmt(
+        "DELETE FROM audit_events WHERE id IN (SELECT id FROM audit_events WHERE created<? LIMIT 100)",
+        now - 30 * 86400,
+      ),
+      this.stmt(
+        "DELETE FROM uploads WHERE id IN (SELECT id FROM uploads WHERE state IN ('cleaned','completed') AND updated<? AND NOT EXISTS(SELECT 1 FROM shares WHERE upload_id=uploads.id) LIMIT 100)",
         now - 7 * 86400,
       ),
     ]);

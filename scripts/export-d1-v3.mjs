@@ -3,8 +3,9 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CloudflareAPI } from "./deploy-v3.mjs";
-export async function exportSnapshot(config, api) {
+import { CloudflareAPI, localCredentials } from "./deploy-v3.mjs";
+import { restoreLegacyPassword } from "../cloudflare/v3/password.mjs";
+export async function exportSnapshot(config, api, { sessionSecret } = {}) {
   const settings = await api.request(
       `/workers/scripts/${config.name}/settings`,
     ),
@@ -62,6 +63,12 @@ export async function exportSnapshot(config, api) {
       if (items.length < 100) break;
       if (offset === 100000) throw new Error("Snapshot row limit exceeded");
     }
+    for (const row of rows[table])
+      if (row.password_hash)
+        row.password_hash = await restoreLegacyPassword(
+          row.password_hash,
+          sessionSecret,
+        );
   }
   const [usage] = await query(
     "SELECT used,reserved FROM storage_usage WHERE id=1",
@@ -84,11 +91,15 @@ async function main() {
   if (!configPath || !output)
     throw new Error("Usage: export-d1-v3.mjs GENERATED_WRANGLER_CONFIG OUTPUT");
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  if (!process.env.CLOUDFLARE_API_TOKEN)
+  const credentials = await localCredentials(config.name);
+  if (!credentials.CLOUDFLARE_API_TOKEN)
     throw new Error("Set CLOUDFLARE_API_TOKEN locally");
   const envelope = await exportSnapshot(
     config,
-    new CloudflareAPI(config.account_id, process.env.CLOUDFLARE_API_TOKEN),
+    new CloudflareAPI(config.account_id, credentials.CLOUDFLARE_API_TOKEN),
+    {
+      sessionSecret: credentials.SESSION_SECRET,
+    },
   );
   await writeFile(output, JSON.stringify(envelope), {
     mode: 0o600,

@@ -40,11 +40,15 @@ npm run test:v3:r2-live -- --live \
 
 ## 一次性账户准备
 
-账户须已启用 R2、建立 Zero Trust 组织及 Workers 子域名。完整密码保护使用与 Go 一样的 Argon2id：32 MiB、2 次迭代、并行度 1。Free Workers 每次请求 CPU 预算为 10 ms，不能据此承诺支持这套密码保护；本地 workerd 验证约 230 ms 是墙钟耗时，生产 CPU 需另外测量。V3 完整模式要求先开通 Workers Paid，工具不会代为开通账单。Worker CPU 上限配置为 30 秒，密码计算同一 isolate 同时只允许一个，敏感公共接口另有 D1 持久限流。[Workers 限制](https://developers.cloudflare.com/workers/platform/limits/)
+账户须已启用 R2、建立 Zero Trust 组织及 Workers 子域名。V3 默认支持 Workers Free，不需要订阅 Workers Paid。密码保护仍使用与 Go 一样的 Argon2id：32 MiB、2 次迭代、并行度 1；浏览器在独立 Web Worker 中计算，Cloudflare Worker 只执行原生 Web Crypto 加密和校验。Free 每次 HTTP 请求和 Cron 的 CPU 预算为 10 ms，生产环境仍须验证请求表现，不能用本地墙钟耗时代替 CPU 数据。[Workers 限制](https://developers.cloudflare.com/workers/platform/limits/)
+
+密码接口协商 `client-argon2id-v1` 协议。创建与修改密码使用随机 16 字节盐，解锁使用公开的同一盐与固定参数，提交派生结果而非明文密码。D1 中的派生结果以 AES-GCM 加密，密钥由 `SESSION_SECRET` 单独域派生；KDF 参数和盐也经过认证。数据库记录无法直接作为解锁凭据重放。派生结果在传输中具有凭据性质，必须全程 HTTPS，禁止记录请求正文、在浏览器持久存储派生结果或把密码放入 URL。管理员授权、限流、版本失效与下载会话计数仍由服务端执行。Go 模式继续使用原明文密码接口。
+
+`SESSION_SECRET` 同时保护会话与加密密码记录，必须长期保存并单独加密备份。丢失或直接替换会导致现有密码分享无法解锁；轮换前必须用旧密钥完成受控重新加密。将存储的密码哈希额外加密、密钥独立于数据库保存，符合密码存储加密的设计原则，但这里不声称整套应用获得标准认证。[NIST 密码存储指导](https://pages.nist.gov/800-63-4/sp800-63b.html)
 
 准备一个仅限目标账户的管理 API Token，权限包括 Workers Scripts Edit、D1 Edit、Workers R2 Storage Write、Access Apps and Policies Write、Access Organizations Read、Access Identity Providers Read/Write；若控制台要求读取权限，补上对应 Read。R2 S3 Token 使用目标桶的 Object Read & Write。管理 Token 与 S3 Token 分开，不能把前者当作后者。
 
-从 [deploy/v3.example.json](../deploy/v3.example.json) 复制配置到忽略目录 `.parcel-v3/deploy.json`，填写账户 ID 和管理员邮箱。`workersPaid` 只能在套餐已启用后设为 `true`。默认创建隔离的 `parcel-v3` Worker、D1 和桶，并保持维护模式。新桶可以通过账户管理 Token 自动创建；S3 凭据须能访问指定桶。只有管理 Token 时，首次命令先创建隔离资源，保存可恢复的状态后停止；此时可在 Dashboard 为刚创建的桶生成限定桶的 S3 Token，填写凭据，再执行同一条命令完成部署。不会为避免这一步而要求覆盖所有桶的 S3 权限。已有 D1 须匹配保存的数据库 ID，或明确设置 `allowExistingDatabase:true` 后复用。已有桶必须明确设置 `allowExistingBucket:true`，并保证没有另一套后端正在写入/清理其中的相同对象。
+从 [deploy/v3.example.json](../deploy/v3.example.json) 复制配置到忽略目录 `.parcel-v3/deploy.json`，填写账户 ID 和管理员邮箱。`workersPaid:false` 为 Free 默认值；只有已订阅 Paid 的账户才设为 `true`，届时工具会增加 30 秒 CPU 上限和较大的清理批次。工具不会开通或更改套餐。默认创建隔离的 `parcel-v3` Worker、D1 和桶，并保持维护模式。新桶可以通过账户管理 Token 自动创建；S3 凭据须能访问指定桶。只有管理 Token 时，首次命令先创建隔离资源，保存可恢复的状态后停止；此时可在 Dashboard 为刚创建的桶生成限定桶的 S3 Token，填写凭据，再执行同一条命令完成部署。不会为避免这一步而要求覆盖所有桶的 S3 权限。已有 D1 须匹配保存的数据库 ID，或明确设置 `allowExistingDatabase:true` 后复用。已有桶必须明确设置 `allowExistingBucket:true`，并保证没有另一套后端正在写入/清理其中的相同对象。
 
 通过本机环境或受保护的 CI Secrets 提供：
 
@@ -52,7 +56,7 @@ npm run test:v3:r2-live -- --live \
 - `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`：目标桶的 S3 凭据。
 - `SESSION_SECRET`：可选的 64 位十六进制密钥。本机首次部署自动生成并保存；CI 必须配置长期不变的值。
 
-本机也可把这四项填写到 `.parcel-v3/cloudflare-credentials.json`（0600，忽略提交）；部署工具直接解析 JSON，不执行 shell 内容。环境变量优先于此文件。不要把真实值写在命令行参数、Git 文件或聊天中。部署状态及 Secret 保存到 `.parcel-v3/<name>/`，目录权限 0700，文件权限 0600。该目录必须备份，尤其是 `secrets.json` 中的会话密钥。
+本机也可把这四项填写到 `.parcel-v3/cloudflare-credentials.json`（0600，忽略提交）；部署工具直接解析 JSON，不执行 shell 内容。环境变量优先于此文件。不要把真实值写在命令行参数、Git 文件或聊天中。部署状态及 Secret 保存到 `.parcel-v3/<name>/`，目录权限 0700，文件权限 0600。该目录必须备份，尤其是 `secrets.json` 中的会话和密码记录加密密钥。
 
 ## 单条部署命令
 
@@ -75,7 +79,7 @@ npm run deploy -- --config .parcel-v3/deploy.json --activate
 
 ## 迁移现有 Go 的 R2 分享
 
-建议先用隔离桶验收 V3，再单独安排旧分享迁移。使用同一个桶迁移时，两套数据库不能同时写入或清理同一对象。D1 导入保留分享 ID、密码哈希、授权版本、下载次数、下载会话和签名保留期；不复制文件内容。Go 的管理员会话不迁移，管理员在新 Access 应用重新登录。
+建议先用隔离桶验收 V3，再单独安排旧分享迁移。使用同一个桶迁移时，两套数据库不能同时写入或清理同一对象。D1 导入保留分享 ID、原密码的 Argon2id 盐与结果、授权版本、下载次数、下载会话和签名保留期；导入时将原 Go 哈希封装为加密记录，回滚导出时用同一密钥恢复 Go 格式。不复制文件内容。Go 的管理员会话不迁移，管理员在新 Access 应用重新登录。
 
 1. 先在旧 Go 完成或取消所有在途上传，让旧单 PUT 签名过期、暂存对象清理完成。导出会拒绝未完成任务、活跃旧 PUT、未清理暂存对象及本地文件分享。
 2. 将 V3 配置指向原 R2 桶，设置 `allowExistingBucket:true`、`active:false`，部署维护模式 Worker。保留原桶 CORS 来源，加入 V3 来源；保留当前旧域名，直到验证完毕。
@@ -91,6 +95,17 @@ node scripts/import-v3.mjs .parcel-v3/go-snapshot.json .parcel-v3/parcel-v3/wran
 
 5. 原 Go 继续停机，激活独立 V3 地址并验收旧分享、密码和已有下载会话。只有 D1 成为唯一写入/清理者后才切换正式域名。域名变更须更新 `PUBLIC_URL`、Access destinations、R2 CORS 和前端访问入口；目前工具刻意只部署隔离 workers.dev 地址，正式域名切换是另一次可审阅的操作。
 
+## 正式域名切换
+
+先完成隔离环境验收，再转移正式域名。若需要保留旧分享，必须先执行上述冻结与迁移步骤；使用独立新桶切换时，旧分享不会自动出现在 V3，旧后端仍只管理旧桶。
+
+1. 准备正式 Wrangler 配置：复用已验证的 Worker、D1、私有 R2 与 Secrets；把 `PUBLIC_URL` 改为正式 HTTPS 地址，把 `ACCESS_AUD` 改为覆盖正式域名管理员路径的 Access 应用 AUD，设置 `workers_dev:false`、`preview_urls:false`。先审阅应用的七个 destinations 与管理员邮箱策略，不能只替换地址而继续使用隔离环境 AUD。R2 CORS 加入正式来源，同时保留旧来源与无关规则。
+2. 在 Dashboard 的原 Pages 项目 → 自定义域，解除正式域名绑定；然后在 V3 Worker → 设置 → 域和路由 → 添加 → 自定义域，填写同一域名。若旧 Pages CNAME 阻止绑定，只移除该主机名的旧记录，再由 Worker 创建记录。保留 Origin 域名与其他 DNS。这两个界面之间可能短暂中断，因此应在配置和回滚方案准备好后操作。
+3. 部署已审阅的正式配置。通过 Dashboard 管理自定义域时，配置可以省略 `routes`；Wrangler 在没有 custom-domain routes 时不会重写已绑定的自定义域。由 CLI 创建/修改自定义域则还需要该 Zone 的 Workers Routes Write 权限。[Workers 权限](https://developers.cloudflare.com/workers/authorization/workers/)
+4. 验证正式域名的未登录管理路径进入 Access，公共分享保持可访问，管理员登录、分块上传、密码、下载续签、撤销、Cron 和实际 CPU 均通过。确认 `workers.dev` 已关闭，再记录切换时间与资源配置。此时才把正式切换标为完成。
+
+若切换验收失败，应先恢复 Worker 的隔离配置，再按需要恢复 Pages 自定义域。独立桶模式保留两套各自状态；同桶迁移必须使用冻结回滚快照，禁止让两套后端同时写入或清理同一对象。不要在正式切换后直接重跑只支持隔离地址的首次部署命令；它会恢复隔离配置并先进入维护。
+
 ## 回滚
 
 若 V3 尚未激活、没有任何新状态写入，可以保持 V3 维护，再恢复原 Go 的一致备份与原域名。
@@ -103,13 +118,17 @@ node scripts/export-d1-v3.mjs .parcel-v3/parcel-v3/wrangler.json .parcel-v3/d1-r
 python3 scripts/rollback-v3.py .parcel-v3/d1-rollback.json /path/to/parcel.db --bucket EXISTING_BUCKET --writers-frozen
 ```
 
+D1 回滚导出必须提供原 `SESSION_SECRET`；工具优先读取环境变量，然后读取本机凭据和已保存的部署 Secret。导出的快照包含 Go 格式密码哈希，应作为敏感备份保护。回滚工具拒绝直接写入未解密的 V3 密码记录。
+
 Go 必须停机。回滚工具取得 Go `.lock`，自动保留 SQLite backup，在一个事务中恢复最新的四张权威状态表，保留 Go 管理员配置、现有 R2 对象键与已消费下载次数。确认 Go 的 R2 配置、正式 URL 和旧 Access/Gateway 仍匹配，再恢复域名和 Go 服务。V3 保持维护，避免两套清理器同时工作。
 
 ## 清理、备份和容量
 
-Cron 每 5 分钟恢复未完成发布、处理闲置任务、清理过期/撤销/下载次数耗尽的分享。默认分享最长 7 天、下载会话最长 8 小时、签名 URL 5 分钟。对象至少保留到 `signed_until`，远程删除确认后才释放 D1 配额。没有 URL 即时撤销能力，已签发 URL 在短有效期内仍可能可用。[R2 预签名 URL](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)
+Cron 每 5 分钟恢复未完成发布、处理闲置任务、清理过期/撤销/下载次数耗尽的分享。Free 默认每次最多处理一个上传任务和一个分享，过期会话、授权和审计各表每次删除最多 100 条。积压会留待后续执行，对象删除确认前继续计入配额。Paid 可配置 `CLEANUP_BATCH_SIZE` 为 1–30，Free 固定为 1，避免一次 Cron 扫描与清理过多。默认分享最长 7 天、下载会话最长 8 小时、签名 URL 5 分钟。对象至少保留到 `signed_until`，远程删除确认后才释放 D1 配额。没有 URL 即时撤销能力，已签发 URL 在短有效期内仍可能可用。[R2 预签名 URL](https://developers.cloudflare.com/r2/api/s3/presigned-urls/)
 
-配额默认 20 GiB、单文件默认 8 GiB；只是应用保护额度，不是 Cloudflare 账单硬上限。所有状态事务走 D1 主库，下载计数及容量预留不依赖 KV 或只读副本。`batch()` 的事务和 SQL 触发器使计数、授权和额度一起提交。[D1 API](https://developers.cloudflare.com/d1/worker-api/d1-database/)
+配额默认 20 GiB、单文件默认 8 GiB；只是应用保护额度，不是 Cloudflare 账单硬上限。R2 Standard 的免费存储额度为账户共享的 10 GB-month，还受操作次数额度约束；如希望减少超额风险，可把 `STORAGE_QUOTA_BYTES` 调低并预留旧桶、未完成 Multipart 和清理积压空间。Workers Free 不代表 R2 无限制免费。[R2 价格](https://developers.cloudflare.com/r2/pricing/)
+
+所有状态事务走 D1 主库，下载计数及容量预留不依赖 KV 或只读副本。`batch()` 的事务和 SQL 触发器使计数、授权和额度一起提交。[D1 API](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 
 R2 生命周期规则只终止遗留的未完成 `parcel/v3/` Multipart，不按对象年龄删除已发布文件，避免绕过会话保留期。长时间持续上传仍须在该生命周期截止前完成；默认任务与规则时间窗口约一天。应用 Cron 和生命周期不能保证立刻回收空间，应监测失败任务和实际桶容量。
 
