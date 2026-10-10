@@ -8,9 +8,15 @@
     "dev": "wrangler pages dev ../dist/pages --port 8788",
     "test:integration": "node --test tests/origin.integration.mjs",
     "test:runtime": "node --test tests/runtime.smoke.mjs",
-    "test:browser": "node --test tests/access-ui.browser.mjs"
+    "test:browser": "node --test tests/access-ui.browser.mjs",
+    "build:v3": "node v3/build.mjs",
+    "test:v3": "node --test v3/tests/*.test.mjs",
+    "test:browser:v3": "node --test v3/tests/browser.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "aws4fetch": "^1.0.20",
+    "fast-xml-parser": "^5.11.2",
     "jose": "^6.2.12"
   },
   "devDependencies": {

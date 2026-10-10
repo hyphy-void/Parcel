@@ -20,3 +20,11 @@ __pycache__/
 /cloudflare/.wrangler/
 /cloudflare/.dev.vars*
 /cloudflare/wrangler.local.*
+
+# Generated V3 account configuration, local bindings and secrets.
+/.dev.vars
+/.dev.vars.*
+!/.dev.vars.example
+/.wrangler/
+/.parcel-v3/
+/wrangler.v3.local.json

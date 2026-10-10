@@ -1,0 +1,52 @@
+name: Deploy V3 staging Worker
+on:
+  workflow_dispatch:
+    inputs:
+      activate:
+        description: Activate isolated workers.dev deployment (leave false for migration)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: parcel-v3-deployment
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: v3
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      SESSION_SECRET: ${{ secrets.PARCEL_V3_SESSION_SECRET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.PARCEL_V3_R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.PARCEL_V3_R2_SECRET_ACCESS_KEY }}
+      DEPLOY_CONFIG: ${{ vars.PARCEL_V3_CONFIG }}
+      ACTIVATE: ${{ inputs.activate }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            cloudflare/package-lock.json
+      - name: Prepare non-secret deployment config
+        id: config
+        run: |
+          node --input-type=module <<'JS'
+          import {mkdir,writeFile,appendFile} from 'node:fs/promises';
+          import {validate} from './scripts/deploy-v3.mjs';
+          if (!process.env.SESSION_SECRET) throw new Error('Provide the persistent SESSION_SECRET in the v3 environment');
+          const c=validate(JSON.parse(process.env.DEPLOY_CONFIG));
+          c.active=process.env.ACTIVATE==='true';
+          await mkdir('.parcel-v3',{recursive:true,mode:0o700});
+          await writeFile('.parcel-v3/deploy.json',JSON.stringify(c),{mode:0o600});
+          await appendFile(process.env.GITHUB_OUTPUT,`account=${c.accountId}\nname=${c.name}\n`);
+          JS
+      - name: Restore resource identity (contains no secrets)
+        uses: actions/cache@v4
+        with:
+          path: .parcel-v3/*/state.json
+          key: parcel-v3-${{ steps.config.outputs.account }}-${{ steps.config.outputs.name }}
+      - run: npm run deploy -- --config .parcel-v3/deploy.json
