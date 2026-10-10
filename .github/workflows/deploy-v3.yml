@@ -45,8 +45,17 @@ jobs:
           await appendFile(process.env.GITHUB_OUTPUT,`account=${c.accountId}\nname=${c.name}\n`);
           JS
       - name: Restore resource identity (contains no secrets)
-        uses: actions/cache@v4
+        id: state
+        uses: actions/cache/restore@v4
         with:
           path: .parcel-v3/*/state.json
-          key: parcel-v3-${{ steps.config.outputs.account }}-${{ steps.config.outputs.name }}
+          key: parcel-v3-${{ steps.config.outputs.account }}-${{ steps.config.outputs.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            parcel-v3-${{ steps.config.outputs.account }}-${{ steps.config.outputs.name }}-
       - run: npm run deploy -- --config .parcel-v3/deploy.json
+      - name: Save partial resource identity for a safe retry
+        if: always() && steps.config.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .parcel-v3/*/state.json
+          key: parcel-v3-${{ steps.config.outputs.account }}-${{ steps.config.outputs.name }}-${{ github.run_id }}-${{ github.run_attempt }}

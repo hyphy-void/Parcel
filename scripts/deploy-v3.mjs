@@ -148,6 +148,11 @@ export function validate(input) {
     if (!Number.isSafeInteger(n) || n < min || n > max)
       throw new Error(`Invalid limit: ${key}`);
   }
+  if (
+    Number(c.vars?.DEFAULT_SHARE_TTL_SECONDS || 86400) >
+    Number(c.vars?.MAX_SHARE_TTL_SECONDS || 604800)
+  )
+    throw new Error("Default share TTL exceeds maximum TTL");
   return c;
 }
 export function plan(c) {
@@ -446,18 +451,15 @@ async function main() {
       supplied.R2_SECRET_ACCESS_KEY ||
       stored.R2_SECRET_ACCESS_KEY,
   };
+  const hasR2 = [secrets.R2_ACCESS_KEY_ID, secrets.R2_SECRET_ACCESS_KEY].every(
+    (v) =>
+      typeof v === "string" && v.length > 0 && v.length <= 256 && !/\s/.test(v),
+  );
   if (
-    ![secrets.R2_ACCESS_KEY_ID, secrets.R2_SECRET_ACCESS_KEY].every(
-      (v) =>
-        typeof v === "string" &&
-        v.length > 0 &&
-        v.length <= 256 &&
-        !/\s/.test(v),
-    )
+    [secrets.R2_ACCESS_KEY_ID, secrets.R2_SECRET_ACCESS_KEY].some(Boolean) &&
+    !hasR2
   )
-    throw new Error(
-      "Provide bucket-scoped R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
-    );
+    throw new Error("Provide both valid R2 S3 credential fields");
   if (!secrets.SESSION_SECRET) {
     if (state.deployed)
       throw new Error(
@@ -521,6 +523,10 @@ async function main() {
     });
   const generated = resolve(folder, "wrangler.json");
   await privateJSON(generated, config);
+  if (!hasR2)
+    throw new Error(
+      `Isolated D1/R2/Access resources are ready. Create an Object Read & Write S3 token scoped to bucket ${c.bucketName}, fill the local credentials JSON, then rerun the same deployment command. No Worker was deployed.`,
+    );
   await wrangle([
     "d1",
     "migrations",
