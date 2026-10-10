@@ -31,4 +31,6 @@ Workers 目前默认限制单次 PBKDF2 为 100,000 次，提高到一百万的�
 - Python 全套迁移/回滚/更新器测试：24 项通过，其中 V3 5 项；Go `go test -race ./...` 与 `go vet ./...` 通过。
 - 原 Pages 11 项网关测试、workerd runtime、真实 Go Origin integration 和两个浏览器测试通过。
 - 两套前端构建、V3 bundle 和 Wrangler dry-run 已验证；[V3 发布界面](previews/v3-published.png) 来自本地浏览器测试。
+- GitHub 两次完整 CI 通过，包含原模式 117 项浏览器回归（3 项条件跳过）以及上述 V3 验收。
+- 使用现有桶完成真实 S3 验证：V3 签名器上传 16 MiB + 3 字节，错误 Content-Length 返回 403 SignatureDoesNotMatch，ListParts 正确确认大小与 ETag，完成后的签名下载保留中文文件名、no-store 且 SHA-256 一致。临时 Multipart 和对象已清理，HEAD 为 404。这验证 S3 签名与解析；新桶 CORS、生产 Worker native binding、Access、CPU 与 Cron 仍待部署验证。
 - 当前真实部署命令在账户变更前因缺少 `CLOUDFLARE_API_TOKEN` 退出。生产域名、树莓派服务与旧文件未切换。上述本地证据不等同于 Cloudflare 线上验收。

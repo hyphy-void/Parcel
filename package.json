@@ -8,7 +8,8 @@
   "scripts": {
     "build": "./scripts/build-v3.sh",
     "deploy": "node scripts/deploy-v3.mjs",
-    "test:v3": "npm --prefix cloudflare run test:v3"
+    "test:v3": "npm --prefix cloudflare run test:v3",
+    "test:v3:r2-live": "node scripts/probe-v3-r2.mjs"
   },
   "cloudflare": {
     "bindings": {

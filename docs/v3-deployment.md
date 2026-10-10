@@ -27,6 +27,17 @@ python3 -m unittest discover -s scripts/tests -p test_export_v3.py -v
 
 前端构建在 `dist/v3-web/`；测试 Worker bundle 在 `dist/v3/`。不会覆盖 Go 内嵌的 `web/dist/` 或 Pages 产物。V3 测试运行真正的 workerd、D1 与 R2 bindings，S3 ListParts 接口和浏览器跨域传输用测试适配层连接到本地 R2；这些测试不能替代线上 R2 签名、CORS、Access 登录和 CPU 预算验收。
 
+也可以先独立验证真实 R2 S3 签名，无需部署 Worker 或提供账户管理 Token：
+
+```bash
+npm run test:v3:r2-live -- --live \
+  --endpoint https://ACCOUNT_ID.r2.cloudflarestorage.com --bucket BUCKET \
+  --credentials-file .parcel-v3/cloudflare-credentials.json \
+  --result .parcel-v3/r2-probe-result.json
+```
+
+需要先安装 `cloudflare/` 依赖。凭据文件须为 0600，支持部署用 JSON 或 Go 的 R2 凭据格式；也可省略文件参数，使用两个 R2 环境变量。工具在随机 `parcel/v3/probes/` 对象上验证 16 MiB + 3 字节上传、错误大小拒绝、ListParts、完成、中文文件名下载及 SHA-256，并在 `finally` 中终止 Multipart、删除对象和检查 HEAD 404。结果文件必须不存在，内容不含凭据或签名 URL。若清理失败，按输出的临时对象键清理遗留对象与 Multipart。这项测试使用 S3 API，不验证 Worker native binding、浏览器 CORS、Access 或 CPU。
+
 ## 一次性账户准备
 
 账户须已启用 R2、建立 Zero Trust 组织及 Workers 子域名。完整密码保护使用与 Go 一样的 Argon2id：32 MiB、2 次迭代、并行度 1。Free Workers 每次请求 CPU 预算为 10 ms，不能据此承诺支持这套密码保护；本地 workerd 验证约 230 ms 是墙钟耗时，生产 CPU 需另外测量。V3 完整模式要求先开通 Workers Paid，工具不会代为开通账单。Worker CPU 上限配置为 30 秒，密码计算同一 isolate 同时只允许一个，敏感公共接口另有 D1 持久限流。[Workers 限制](https://developers.cloudflare.com/workers/platform/limits/)
