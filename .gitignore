@@ -28,3 +28,8 @@ __pycache__/
 /.wrangler/
 /.parcel-v3/
 /wrangler.v3.local.json
+
+# Local production configuration notes and their screenshots; deployment reference.
+/docs/v3-configuration.md
+/docs/previews/v3-production-domains.jpg
+/docs/previews/v3-r2-after-v1-removal.jpg

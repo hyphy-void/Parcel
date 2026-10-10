@@ -1,6 +1,6 @@
 # V3：Cloudflare 原生后端
 
-当前正式地址已切换到 V3，代码位于 `v3/serverless` 分支，正式开源发布另行决定。Workers 承担 API 和 Access 身份验证，D1 是唯一权威状态源，R2 保持私有、16 MiB Multipart 和浏览器直传/直下载。新模式不依赖树莓派、Tunnel 或内部 Origin 服务令牌。原 Go 模式代码继续保留；旧实例服务已停用、旧 R2 桶已删除，实际配置与退役记录见 [V3 配置记录](v3-configuration.md)。
+当前正式地址已切换到 V3，代码位于 `v3/serverless` 分支，正式开源发布另行决定。Workers 承担 API 和 Access 身份验证，D1 是唯一权威状态源，R2 保持私有、16 MiB Multipart 和浏览器直传/直下载。新模式不依赖树莓派、Tunnel 或内部 Origin 服务令牌。原 Go 模式代码继续保留；旧实例服务已停用、旧 R2 桶已删除。
 
 ## 完成条件
 
