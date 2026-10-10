@@ -1,6 +1,6 @@
 # V3：Workers + D1 + 私有 R2
 
-V3 的页面和 API 由一个带 Static Assets 的 Worker 托管；D1 是分享、上传任务、下载会话和配额的唯一权威数据库。浏览器用 16 MiB Multipart 直接上传 R2，用短期签名 URL 直接下载。Cloudflare Access 认证管理员，Worker 验证 Access JWT、白名单、Origin 和 CSRF。树莓派、Go、SQLite、Tunnel 和内部 Origin 服务令牌退出这条请求链路。Go 部署模式继续保留，当前生产域名在切换前继续运行旧模式。
+V3 的页面和 API 由一个带 Static Assets 的 Worker 托管；D1 是分享、上传任务、下载会话和配额的唯一权威数据库。浏览器用 16 MiB Multipart 直接上传 R2，用短期签名 URL 直接下载。Cloudflare Access 认证管理员，Worker 验证 Access JWT、白名单、Origin 和 CSRF。树莓派、Go、SQLite、Tunnel 和内部 Origin 服务令牌退出这条请求链路。Go 部署模式继续保留；正式实例已切换 V3，线上验收与切换记录见 [V3 计划](v3-plan.md)。
 
 ```mermaid
 flowchart LR

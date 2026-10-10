@@ -1,6 +1,6 @@
 # V3：Cloudflare 原生后端
 
-当前生产版本仍是 Pages + Go/SQLite；V3 在 `v3/serverless` 分支开发，正式开源发布另行决定。Workers 承担 API 和 Access 身份验证，D1 是唯一权威状态源，R2 保持私有、16 MiB Multipart 和浏览器直传/直下载。新模式不依赖树莓派、Tunnel 或内部 Origin 服务令牌。原 Go 模式继续保留。
+当前正式地址已切换到 V3，代码位于 `v3/serverless` 分支，正式开源发布另行决定。Workers 承担 API 和 Access 身份验证，D1 是唯一权威状态源，R2 保持私有、16 MiB Multipart 和浏览器直传/直下载。新模式不依赖树莓派、Tunnel 或内部 Origin 服务令牌。原 Go 模式继续保留。
 
 ## 完成条件
 
@@ -14,7 +14,7 @@
 - [x] Miniflare/workerd 真正的 D1/R2 测试、浏览器闭环、并发与崩溃恢复测试、Go 兼容回归通过。
 - [x] 完成部署、备份、切换、回滚和资源预算文档。
 - [x] 使用已配置的账户管理 Token 与 S3 凭据，在 Workers Free 上部署隔离 V3 环境并验收 CPU、Access、签名/CORS、Cron。
-- [ ] 验收隔离环境后切换正式域名；正式开源发布仍另行决定。
+- [x] 验收隔离环境后切换正式域名；正式开源发布仍另行决定。
 
 ## 已核实的平台约束
 
@@ -33,7 +33,7 @@ Workers 目前默认限制单次 PBKDF2 为 100,000 次，提高到一百万的�
 - 两套前端构建、V3 bundle 和 Wrangler dry-run 已验证；[V3 发布界面](previews/v3-published.png) 来自本地浏览器测试。
 - GitHub 两次完整 CI 通过，包含原模式 117 项浏览器回归（3 项条件跳过）以及上述 V3 验收。
 - 使用现有桶完成真实 S3 验证：V3 签名器上传 16 MiB + 3 字节，错误 Content-Length 返回 403 SignatureDoesNotMatch，ListParts 正确确认大小与 ETag，完成后的签名下载保留中文文件名、no-store 且 SHA-256 一致。临时 Multipart 和对象已清理，HEAD 为 404。这验证 S3 签名与解析；新桶 CORS、生产 Worker native binding、Access、CPU 与 Cron 仍待部署验证。
-- 账户管理 Token 与目标桶 S3 凭据保存在本机忽略目录。生产域名、树莓派服务与旧文件未切换；以下单独记录 Cloudflare 线上证据。
+- 账户管理 Token 与目标桶 S3 凭据保存在本机忽略目录。以下单独记录 Cloudflare 线上验收和后续正式域名切换。
 
 ## Workers Free 验收（2026-10-10）
 
@@ -41,7 +41,7 @@ Workers 目前默认限制单次 PBKDF2 为 100,000 次，提高到一百万的�
 
 真实 Free 账户的临时探测 Worker 连续 20 次完成加密、正确/错误派生结果校验、CSRF HMAC 和 D1 查询，全部 HTTP 200，无 CPU 超限响应；原生 R2 put/head/delete 也通过。该探测不使用完整业务路由，不能替代管理员 Access 登录和业务请求的线上验收，也未取得 CPU 指标。临时 Worker 已删除，未开通付费套餐。独立 V3 桶的真实 S3 上传、ListParts、完成和 SHA-256 下载校验通过，临时对象清理后 HEAD 404。
 
-独立环境已在 Workers Free 部署并激活：[V3 实例](https://parcel-v3.haozhengli893-5cf.workers.dev)。使用独立 D1 和私有 R2 桶，管理员 Access 仅允许配置邮箱；没有开通 Paid 或切换正式域名。
+隔离环境先在 Workers Free 部署并激活，用独立 D1 和私有 R2 桶完成以下验收；管理员 Access 仅允许配置邮箱，未开通 Paid。随后切换到[正式实例](https://parcel.playereconlab.com)，关闭隔离 workers.dev 地址。
 
 - Chrome 实际通过 Access 登录；浏览器直传 16 MiB + 3 字节，R2 ETag 确认两块 Multipart，D1 保存加密密码记录。错误密码被拒绝，正确密码解锁；两次实际下载的 SHA-256 都与本机合成文件一致，续签后计数仍是 1/1。撤销后分享立即失效，已有签名的对象按会话保留期等待清理。
 - 另一份 16 MiB + 3 字节文件在真实上传中暂停，界面显示暂停状态；恢复后完成发布。
@@ -51,4 +51,12 @@ Workers 目前默认限制单次 PBKDF2 为 100,000 次，提高到一百万的�
 
 ![真实 Free 浏览器下载与续签](previews/v3-free-live-download.jpg)
 
-正式切换尚需将 `parcel.playereconlab.com` 从 Pages 转移到 V3 Worker。现有账户 Token 无 Pages 项目域名管理权限（API 403）；Dashboard 操作由用户完成。已审阅正式管理员 Access 的七个路径和邮箱策略，并准备正式 Worker 配置与新桶 CORS，尚未部署正式配置。
+## 正式域名切换（2026-10-10）
+
+用户授权后，通过 Dashboard 将 `parcel.playereconlab.com` 绑定到 `parcel-v3` Worker；旧 Pages 项目已经没有自定义域。部署正式配置后，远程 API 核实正式 `PUBLIC_URL`、对应管理员 Access AUD、独立 D1/R2 与 Free 设置，关闭 workers.dev 和预览地址。正式 Access 七个管理路径及邮箱策略复用已审阅的原应用，R2 CORS 保留隔离来源并加入正式来源。
+
+未登录 `/admin` 与管理 API 返回 302 到 Access，公共页面 200、未知分享 404，隔离 workers.dev 返回 404。Chrome 在正式域名通过既有 Access 登录，管理面板显示 Cloudflare 原生后端。原 Go、SQLite、配置及旧桶保留；V3 独立桶由 D1 唯一管理，旧模式不会写入新桶。正式开源、合并和发布 Release 仍另行决定。
+
+正式域名重新完成 16 MiB + 3 字节密码保护 Multipart 上传，错误密码拒绝、正确密码解锁，两次真实下载的 SHA-256 与原文件一致，续签后 D1 计数保持 1/1。未授权请求无法获得文件名。正式配置下的实际 Cron 为 `outcome:ok`，CPU 3 ms、无异常；撤销测试分享立即失效，未签发会话的对象进入后台清理流程。
+
+![正式 V3 管理面板](previews/v3-production-dashboard.jpg)
