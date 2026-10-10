@@ -145,3 +145,19 @@ D1 快照不是 R2 文件备份；对象删除与数据库恢复必须一起考�
 普通 CI 运行 V3 构建、Wrangler dry-run、workerd/D1/R2、迁移和浏览器测试。`Deploy V3 staging Worker` 工作流只通过手动触发部署，使用 GitHub `v3` Environment 的 `PARCEL_V3_CONFIG` JSON 变量及上述四个 Secrets（会话密钥名为 `PARCEL_V3_SESSION_SECRET`，S3 凭据名为 `PARCEL_V3_R2_ACCESS_KEY_ID`、`PARCEL_V3_R2_SECRET_ACCESS_KEY`）。资源 ID 缓存只含非 Secret 状态；设置 Environment 分支限制和审批以控制真正部署。
 
 当前 V3 分支用于实现和验收，不改变仓库可见性，不发布 Release，不创建正式开源 Deploy 按钮。准备正式开源时再决定许可证、公开仓库、模板与发布版本。Cloudflare Deploy 按钮可自动准备 D1/R2，但 Access 和账单前置条件须在可公开模板中明确说明。[Deploy 按钮](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
+## 正式 Worker 的 Git 自动部署
+
+正式 Worker 可连接当前 V3 生产分支 `v3/serverless`。在 Workers 的 Settings > Builds 中选择仓库、生产分支，关闭其他分支自动构建，根目录保持仓库根目录，使用 Node 24：
+
+- 构建命令：`npm run build:production`
+- 部署命令：`npm run deploy:production`
+- 构建变量：`PARCEL_WORKER_BUILD_CONFIG`，JSON 对象，仅包含 `accountId`、`workerName`、`databaseId`、`databaseName`、`bucketName`，填写已上线实例的资源标识。
+- 构建变量：`NODE_VERSION=24`。
+
+`build:production` 先验证资源标识、生成忽略目录中的 `.parcel-v3/wrangler.builds.json`，然后安装锁定依赖并构建 Access 模式前端与 Worker。部署保留现有运行时变量与 Secrets，关闭 workers.dev 和预览地址，不上传仓库示例变量，不自动创建数据库或存储桶，不更改 Access、域名及 R2 CORS。账户配置与凭据继续留在本机或 Cloudflare，不提交到 Git。
+
+Cloudflare 构建的 API Token 使用已拥有的部署 Token，或另行配置受限用户 Token。可从当前账户的 Workers 脚本编辑、D1 读取、Workers R2 存储读取及账户设置读取开始配置，避免默认创建包含其他产品写入权限的令牌。Workers 脚本权限覆盖所选账户的 Workers，不能按单个 Worker 限定。
+
+只有所选生产分支触发正式部署；其他分支继续由 GitHub CI 检查。Cloudflare 构建与 GitHub CI 分别运行；推送生产分支前应完成相关测试。部署命令不会自动执行 D1 schema 迁移。包含 schema 变化时，先按迁移说明完成兼容性审阅和必要迁移，再推送生产分支。
+
+推送后确认 Cloudflare 构建与部署成功，并检查正式 `/readyz`、管理员 Access 跳转与网页资源。需要回滚时可在 Workers Deployments 回退上一版本，随后回退对应 Git 提交，避免下次推送重新发布故障版本。

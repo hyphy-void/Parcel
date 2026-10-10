@@ -9,7 +9,9 @@
     "build": "./scripts/build-v3.sh",
     "deploy": "node scripts/deploy-v3.mjs",
     "test:v3": "npm --prefix cloudflare run test:v3",
-    "test:v3:r2-live": "node scripts/probe-v3-r2.mjs"
+    "test:v3:r2-live": "node scripts/probe-v3-r2.mjs",
+    "build:production": "node scripts/prepare-worker-build.mjs && ./scripts/build-v3.sh",
+    "deploy:production": "node cloudflare/node_modules/wrangler/bin/wrangler.js deploy --config .parcel-v3/wrangler.builds.json --keep-vars --no-x-auto-create"
   },
   "cloudflare": {
     "bindings": {
