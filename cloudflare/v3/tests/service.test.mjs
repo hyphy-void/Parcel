@@ -288,10 +288,11 @@ test("cleanup retains signed downloads, retries expired leases, releases quota a
     await f.db.prepare("SELECT used,reserved FROM storage_usage").first(),
     { used: 0, reserved: 0 },
   );
-  await f.api("/api/v1/admin/shares/cleaned", {
+  const cleared = await f.api("/api/v1/admin/shares/cleaned", {
     method: "DELETE",
     expected: 200,
   });
+  assert.equal((await cleared.json()).removed, 1);
   assert.equal(
     (await f.db.prepare("SELECT count(*) AS n FROM shares").first()).n,
     0,

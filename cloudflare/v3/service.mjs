@@ -850,8 +850,11 @@ export class Service {
       );
     if (path === "/api/v1/admin/shares/cleaned")
       return json({
-        removed: (await this.run("DELETE FROM shares WHERE state='deleted'"))
-          .meta.changes,
+        removed: (
+          await this.rows(
+            "DELETE FROM shares WHERE state='deleted' RETURNING id",
+          )
+        ).length,
       });
     const segments = path.split("/"),
       id = segments[4],
