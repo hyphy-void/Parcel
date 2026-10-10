@@ -162,4 +162,4 @@ Cloudflare 构建的 API Token 使用已拥有的部署 Token，或另行配置�
 
 只有所选生产分支触发正式部署；其他分支继续由 GitHub CI 检查。Cloudflare 构建与 GitHub CI 分别运行；推送生产分支前应完成相关测试。部署命令不会自动执行 D1 schema 迁移。包含 schema 变化时，先按迁移说明完成兼容性审阅和必要迁移，再推送生产分支。
 
-推送后确认 Cloudflare 构建与部署成功，并检查正式 `/readyz`、管理员 Access 跳转与网页资源。需要回滚时可在 Workers Deployments 回退上一版本，随后回退对应 Git 提交，避免下次推送重新发布故障版本。
+推送后确认 Cloudflare 构建与部署成功，并检查网页资源、管理员 Access 跳转，以及登录后的 `/api/v1/admin/status`。V3 Worker 没有 Go 服务的 `/readyz` 路由。需要回滚时可在 Workers Deployments 回退上一版本，随后回退对应 Git 提交，避免下次推送重新发布故障版本。
