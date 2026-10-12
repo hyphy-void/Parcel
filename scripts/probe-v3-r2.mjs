@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { AwsClient } from "../cloudflare/node_modules/aws4fetch/dist/aws4fetch.esm.mjs";
 import { XMLParser } from "../cloudflare/node_modules/fast-xml-parser/src/fxp.js";
 import { R2Store, PART_BYTES } from "../cloudflare/v3/r2.mjs";
+import { loadCredentials } from "./v3-credentials.mjs";
 
 // Explicit opt-in: this performs real S3 requests and creates a temporary object.
 const args = process.argv.slice(2);
@@ -25,62 +26,20 @@ if (
   );
   process.exit(2);
 }
-let accessKeyId = process.env.R2_ACCESS_KEY_ID,
-  secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
 const path = value("--credentials-file");
-if (path) {
-  try {
-    const st = fs.statSync(path);
-    assert.ok(st.isFile() && !(st.mode & 0o077) && st.size < 16384);
-    const raw = fs.readFileSync(path, "utf8");
-    if (raw.trim().startsWith("{")) {
-      const credentials = JSON.parse(raw);
-      accessKeyId = credentials.R2_ACCESS_KEY_ID;
-      secretAccessKey = credentials.R2_SECRET_ACCESS_KEY;
-    } else {
-      let pending;
-      for (let line of raw.split("\n")) {
-        line = line.trim();
-        if (!line) continue;
-        const label = [
-          "Access Key ID",
-          "Secret Access Key",
-          "ACCESS_KEY_ID",
-          "SECRET_ACCESS_KEY",
-        ].find((v) => line.startsWith(v));
-        if (label) {
-          pending = label;
-          line = line
-            .slice(label.length)
-            .trim()
-            .replace(/^[:：=]+/, "")
-            .trim();
-          if (!line) continue;
-        }
-        if (!pending) continue;
-        if (["Access Key ID", "ACCESS_KEY_ID"].includes(pending))
-          accessKeyId = line;
-        else secretAccessKey = line;
-        pending = undefined;
-      }
-    }
-  } catch {
-    console.error(
-      "Cannot read credentials: use a small regular private file with mode 0600 and valid fields",
-    );
-    process.exit(2);
-  }
-}
-if (
-  typeof accessKeyId !== "string" ||
-  typeof secretAccessKey !== "string" ||
-  !accessKeyId ||
-  !secretAccessKey ||
-  /\s/.test(accessKeyId + secretAccessKey)
-) {
-  console.error("Missing valid R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY");
+let credentials;
+try {
+  credentials = await loadCredentials({
+    path,
+    allowLegacyR2: Boolean(path),
+    required: ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"],
+  });
+} catch (error) {
+  console.error(error.message);
   process.exit(2);
 }
+const accessKeyId = credentials.R2_ACCESS_KEY_ID,
+  secretAccessKey = credentials.R2_SECRET_ACCESS_KEY;
 const resultPath = value("--result");
 // Create result file exclusively before any account mutation: never overwrite an existing secret.
 let resultFile;

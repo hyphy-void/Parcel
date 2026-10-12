@@ -56,7 +56,9 @@ npm run test:v3:r2-live -- --live \
 - `R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`：目标桶的 S3 凭据。
 - `SESSION_SECRET`：可选的 64 位十六进制密钥。本机首次部署自动生成并保存；CI 必须配置长期不变的值。
 
-本机也可把这四项填写到 `.parcel-v3/cloudflare-credentials.json`（0600，忽略提交）；部署工具直接解析 JSON，不执行 shell 内容。环境变量优先于此文件。不要把真实值写在命令行参数、Git 文件或聊天中。部署状态及 Secret 保存到 `.parcel-v3/<name>/`，目录权限 0700，文件权限 0600。该目录必须备份，尤其是 `secrets.json` 中的会话和密码记录加密密钥。
+本机四项密钥统一保存在 `.parcel-v3/cloudflare-credentials.json`（0600，目录 0700，忽略提交）。部署、导入、导出和 R2 探测通过 `scripts/v3-credentials.mjs` 读取；环境变量优先于文件，覆盖 R2 凭据时须同时提供两个字段。首次部署生成的 `SESSION_SECRET` 也写入此文件，不再生成 `.parcel-v3/<name>/secrets.json`；环境变量提供的密钥不会被写回文件。已有实例缺少原 `SESSION_SECRET` 时拒绝自动生成替代密钥。旧 `secrets.json` 必须先将原值收拢至统一文件，确认一致后再删除。
+
+不要把真实值写在命令行参数、Git 文件或聊天中。部署资源状态保存在 `.parcel-v3/<name>/state.json`，与密钥分开。换开发机器时通过 SSH 或加密备份迁移统一密钥文件、所用的正式 Wrangler 配置及状态；实例私有记录 `docs/v3-configuration.md` 被 Git 忽略，也须单独迁移。截图按需迁移，构建产物和依赖在新机器重新生成。迁移开发机器不需要复制远程 D1/R2 数据，也不需要重建 Cloudflare 资源。
 
 ## 单条部署命令
 
@@ -118,7 +120,7 @@ node scripts/export-d1-v3.mjs .parcel-v3/parcel-v3/wrangler.json .parcel-v3/d1-r
 python3 scripts/rollback-v3.py .parcel-v3/d1-rollback.json /path/to/parcel.db --bucket EXISTING_BUCKET --writers-frozen
 ```
 
-D1 回滚导出必须提供原 `SESSION_SECRET`；工具优先读取环境变量，然后读取本机凭据和已保存的部署 Secret。导出的快照包含 Go 格式密码哈希，应作为敏感备份保护。回滚工具拒绝直接写入未解密的 V3 密码记录。
+D1 回滚导出必须提供原 `SESSION_SECRET`；工具优先读取环境变量，然后读取统一的 `.parcel-v3/cloudflare-credentials.json`，不再读取旧 `secrets.json`。导出的快照包含 Go 格式密码哈希，应作为敏感备份保护。回滚工具拒绝直接写入未解密的 V3 密码记录。
 
 Go 必须停机。回滚工具取得 Go `.lock`，自动保留 SQLite backup，在一个事务中恢复最新的四张权威状态表，保留 Go 管理员配置、现有 R2 对象键与已消费下载次数。确认 Go 的 R2 配置、正式 URL 和旧 Access/Gateway 仍匹配，再恢复域名和 Go 服务。V3 保持维护，避免两套清理器同时工作。
 

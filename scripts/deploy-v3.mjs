@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { readFile, writeFile, mkdir, rename, chmod } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadCredentials, deploymentCredentials } from "./v3-credentials.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export class CloudflareAPI {
@@ -353,22 +353,7 @@ async function readJSON(path, fallback) {
 export async function localCredentials(name) {
   if (!/^[a-z0-9][a-z0-9-]{2,62}$/.test(name))
     throw new Error("Invalid Worker name");
-  const supplied = await readJSON(
-    resolve(root, ".parcel-v3/cloudflare-credentials.json"),
-    {},
-  );
-  const stored = await readJSON(
-    resolve(root, ".parcel-v3", name, "secrets.json"),
-    {},
-  );
-  return Object.fromEntries(
-    [
-      "CLOUDFLARE_API_TOKEN",
-      "SESSION_SECRET",
-      "R2_ACCESS_KEY_ID",
-      "R2_SECRET_ACCESS_KEY",
-    ].map((key) => [key, process.env[key] || supplied[key] || stored[key]]),
-  );
+  return loadCredentials();
 }
 export async function runWrangler(args, { input, env = process.env } = {}) {
   // Secret contents use stdin; arguments and diagnostics contain no secret values.
@@ -437,57 +422,25 @@ async function main() {
     console.log(JSON.stringify(plan(c), null, 2));
     return;
   }
-  const supplied = await readJSON(
-    resolve(root, ".parcel-v3/cloudflare-credentials.json"),
-    {},
-  );
-  const token =
-    process.env.CLOUDFLARE_API_TOKEN || supplied.CLOUDFLARE_API_TOKEN;
-  if (!token)
-    throw new Error(
-      "Set CLOUDFLARE_API_TOKEN locally or in CI; do not paste it into chat",
-    );
   const folder = resolve(root, ".parcel-v3", c.name),
-    statePath = resolve(folder, "state.json"),
-    secretPath = resolve(folder, "secrets.json");
-  const state = await readJSON(statePath, {}),
-    stored = await readJSON(secretPath, {});
+    statePath = resolve(folder, "state.json");
+  const state = await readJSON(statePath, {});
   if (state.accountId && state.accountId !== c.accountId)
     throw new Error("State belongs to another Cloudflare account");
   state.accountId = c.accountId;
-  const secrets = {
-    SESSION_SECRET:
-      process.env.SESSION_SECRET ||
-      supplied.SESSION_SECRET ||
-      stored.SESSION_SECRET,
-    R2_ACCESS_KEY_ID:
-      process.env.R2_ACCESS_KEY_ID ||
-      supplied.R2_ACCESS_KEY_ID ||
-      stored.R2_ACCESS_KEY_ID,
-    R2_SECRET_ACCESS_KEY:
-      process.env.R2_SECRET_ACCESS_KEY ||
-      supplied.R2_SECRET_ACCESS_KEY ||
-      stored.R2_SECRET_ACCESS_KEY,
-  };
-  const hasR2 = [secrets.R2_ACCESS_KEY_ID, secrets.R2_SECRET_ACCESS_KEY].every(
-    (v) =>
-      typeof v === "string" && v.length > 0 && v.length <= 256 && !/\s/.test(v),
+  const credentials = await deploymentCredentials(c.name, {
+    deployed: state.deployed,
+  });
+  const token = credentials.CLOUDFLARE_API_TOKEN;
+  // The account management token must never become a Worker runtime binding.
+  const secrets = Object.fromEntries(
+    ["SESSION_SECRET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].map(
+      (key) => [key, credentials[key]],
+    ),
   );
-  if (
-    [secrets.R2_ACCESS_KEY_ID, secrets.R2_SECRET_ACCESS_KEY].some(Boolean) &&
-    !hasR2
-  )
-    throw new Error("Provide both valid R2 S3 credential fields");
-  if (!secrets.SESSION_SECRET) {
-    if (state.deployed)
-      throw new Error(
-        "Existing deployment needs its original SESSION_SECRET; refusing implicit session rotation",
-      );
-    secrets.SESSION_SECRET = randomBytes(32).toString("hex");
-  }
-  if (!/^[a-fA-F0-9]{64}$/.test(secrets.SESSION_SECRET))
-    throw new Error("SESSION_SECRET must be 64 hex characters");
-  await privateJSON(secretPath, secrets);
+  const hasR2 = Boolean(
+    secrets.R2_ACCESS_KEY_ID && secrets.R2_SECRET_ACCESS_KEY,
+  );
   await new Promise((accept, reject) => {
     const child = spawn("bash", [resolve(root, "scripts/build-v3.sh")], {
       cwd: root,
@@ -505,18 +458,20 @@ async function main() {
   const api = new CloudflareAPI(c.accountId, token),
     r = await resources(c, api, state, (s) => privateJSON(statePath, s));
   const template = await readJSON(resolve(root, "wrangler.json"));
+  const localPath = (path) =>
+    relative(folder, resolve(root, path)).split(sep).join("/");
   const config = {
     ...template,
     name: c.name,
     account_id: c.accountId,
-    main: resolve(root, "cloudflare/v3/worker.mjs"),
-    assets: { ...template.assets, directory: resolve(root, "dist/v3-web") },
+    main: localPath("cloudflare/v3/worker.mjs"),
+    assets: { ...template.assets, directory: localPath("dist/v3-web") },
     d1_databases: [
       {
         binding: "DB",
         database_name: c.databaseName,
         database_id: r.databaseId,
-        migrations_dir: resolve(root, "cloudflare/v3/migrations"),
+        migrations_dir: localPath("cloudflare/v3/migrations"),
       },
     ],
     r2_buckets: [{ binding: "FILES", bucket_name: c.bucketName }],
