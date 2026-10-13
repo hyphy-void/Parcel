@@ -130,7 +130,7 @@ export function route(path, method) {
   return rule ? { allowed: rule[1].includes(method), admin: rule[2] } : null;
 }
 
-function security(response, config, api = false) {
+export function security(response, config, api = false) {
   const headers = new Headers(response.headers);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "no-referrer");
@@ -146,7 +146,7 @@ function security(response, config, api = false) {
     headers,
   });
 }
-function problem(status, code, message) {
+export function problem(status, code, message) {
   return new Response(JSON.stringify({ code, message }), {
     status,
     headers: {
@@ -156,7 +156,7 @@ function problem(status, code, message) {
   });
 }
 
-async function readBody(request, timeoutMs = 15000) {
+export async function readBody(request, timeoutMs = 15000) {
   if (!request.body) return new Uint8Array();
   const reader = request.body.getReader();
   let timer;

@@ -1,0 +1,38 @@
+{
+  "name": "parcel",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "./scripts/build-v3.sh",
+    "deploy": "node scripts/deploy-v3.mjs",
+    "test:v3": "npm --prefix cloudflare run test:v3",
+    "test:v3:r2-live": "node scripts/probe-v3-r2.mjs",
+    "build:production": "node scripts/prepare-worker-build.mjs && ./scripts/build-v3.sh",
+    "deploy:production": "node cloudflare/node_modules/wrangler/bin/wrangler.js deploy --config .parcel-v3/wrangler.builds.json --keep-vars --no-x-auto-create"
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "Parcel V3 的唯一权威状态数据库。不要与正在写入的 Go SQLite 部署混用。"
+      },
+      "FILES": {
+        "description": "私有 R2 存储，文件直接上传/下载。"
+      },
+      "PUBLIC_URL": {
+        "description": "正式 HTTPS 地址，无结尾斜杠；须为此地址配置管理员 Access 应用及 R2 CORS。"
+      },
+      "SESSION_SECRET": {
+        "description": "64 位十六进制随机密钥；CLI 首次部署自动生成，重复部署保持不变。"
+      },
+      "R2_ACCESS_KEY_ID": {
+        "description": "仅限所选桶的 Object Read & Write S3 Access Key ID。"
+      },
+      "R2_SECRET_ACCESS_KEY": {
+        "description": "配套 R2 S3 Secret Access Key，仅保存到 Workers Secret。"
+      }
+    }
+  }
+}

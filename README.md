@@ -4,7 +4,10 @@
 
 自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
 
-v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。当前公网部署通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。下一部署模式已实现 Pages 静态前端 + API Gateway + Access 身份验证，接入步骤见 [Pages 部署说明](docs/pages-deployment.md)。
+v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。Go 模式可通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。Pages 模式采用静态前端 + API Gateway + Access 身份验证，接入步骤见 [Pages 部署说明](docs/pages-deployment.md)。
+
+
+V3 已加入支持 Workers Free 的 Cloudflare 原生部署模式：Workers 托管前端与 API，D1 负责权威状态和原子事务，R2 继续文件直传/直下载，核心链路不依赖树莓派。构建、自动部署、迁移和回滚见 [V3 部署说明](docs/v3-deployment.md)。当前正式地址已切换到 V3；正式开源发布另行决定。
 
 管理员登录后上传单个文件，设置可选密码、有效期与下载次数，生成一个分享链接。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
 
@@ -55,7 +58,7 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 
 ### 私有 R2 存储
 
-可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，≤100 MB 使用单分块 Multipart（浏览器一次 PUT），更大文件二次确认并分块续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。
+可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，所有文件统一使用 16 MiB Multipart 分块（最后一块按实际大小），更大文件二次确认并支持分块续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。
 
 ### Pages / Access 网关
 

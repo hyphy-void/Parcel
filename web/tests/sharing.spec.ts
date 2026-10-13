@@ -5,6 +5,12 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
   page,
   browser,
 }, testInfo) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => {},
+    }),
+  );
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/login");
@@ -39,18 +45,60 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
     });
     const probe = document.createElement("textarea");
     probe.id = "protected-copy-probe";
+    probe.style.cssText =
+      "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0";
     document.querySelector("main")!.appendChild(probe);
   });
   await page.getByRole("button", { name: "复制分享链接" }).click();
   const copyProbe = page.locator("#protected-copy-probe");
   await copyProbe.focus();
   await page.keyboard.press("Control+V");
-  await expect(copyProbe).toHaveValue(`链接：${url}\n提取码：${code}`);
+  await expect(copyProbe).toHaveValue(url);
+  await expect(page.getByRole("button", { name: "复制分享链接" })).toHaveText(
+    "",
+  );
+  await page.getByRole("button", { name: "分享", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "分享文件" });
+  const message = `我用 Parcel 分享了「${filename}」\n链接：${url}\n提取码：${code}`;
+  await expect(dialog.getByLabel("分享文案")).toHaveValue(message);
+  await dialog.getByRole("button", { name: "复制分享文案" }).click();
+  await expect(dialog.getByRole("status")).toContainText("分享文案已复制");
+  await page.screenshot({
+    path: testInfo.outputPath("share-message-light.png"),
+  });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.waitForFunction(
+    () =>
+      getComputedStyle(document.querySelector(".share-dialog .secondary")!)
+        .backgroundColor ===
+      getComputedStyle(document.querySelector(".share-dialog")!)
+        .backgroundColor,
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("share-message-dark.png"),
+  });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "分享", exact: true }),
+  ).toBeFocused();
+  await copyProbe.fill("");
+  await copyProbe.focus();
+  await page.keyboard.press("Control+V");
+  await expect(copyProbe).toHaveValue(message);
+  await copyProbe.evaluate((node) => node.remove());
   await page.screenshot({
     path: testInfo.outputPath("published.png"),
     fullPage: true,
   });
   await page.getByRole("link", { name: "查看分享详情" }).click();
+  await page.getByRole("button", { name: "分享", exact: true }).click();
+  await expect(dialog.getByText(/无法读取原提取码/)).toBeVisible();
+  await expect(dialog.getByLabel("分享文案")).toHaveValue(
+    `我用 Parcel 分享了「${filename}」\n链接：${url}\n提取码：请向分享者获取`,
+  );
+  await page.keyboard.press("Escape");
   const recipient = await browser.newContext(
     testInfo.project.name === "mobile-chromium"
       ? { viewport: { width: 390, height: 844 }, isMobile: true }
@@ -90,6 +138,49 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
     path: testInfo.outputPath("receive.png"),
     fullPage: true,
   });
+  await page.getByLabel("修改分享密码").fill("updated7");
+  await page.getByRole("button", { name: "保存密码" }).click();
+  await expect(
+    page.getByText("密码已更新，旧授权已失效。分享文案会附上新提取码。"),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) => {
+        (window as any).__shared = data;
+      },
+    }),
+  );
+  await page.getByRole("button", { name: "分享", exact: true }).click();
+  await expect(dialog.getByLabel("分享文案")).toHaveValue(
+    `我用 Parcel 分享了「${filename}」\n链接：${url}\n提取码：updated7`,
+  );
+  await dialog.getByRole("button", { name: "系统分享" }).click();
+  expect(await page.evaluate(() => (window as any).__shared)).toEqual({
+    title: filename,
+    text: `我用 Parcel 分享了「${filename}」\n链接：${url}\n提取码：updated7`,
+  });
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => {
+        throw new DOMException("Canceled", "AbortError");
+      },
+    }),
+  );
+  await dialog.getByRole("button", { name: "系统分享" }).click();
+  await expect(dialog.getByRole("status")).toBeEmpty();
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async () => {
+        throw new DOMException("Denied", "NotAllowedError");
+      },
+    }),
+  );
+  await dialog.getByRole("button", { name: "系统分享" }).click();
+  await expect(dialog.getByRole("status")).toContainText("请复制文案后发送");
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "撤销分享", exact: true }).click();
   await page.getByRole("button", { name: "确认撤销", exact: true }).click();
   await receive.reload();
@@ -131,10 +222,10 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
   const probe = page.locator("#clipboard-paste-probe");
   const copy = page.getByRole("button", { name: "复制分享链接" });
   await copy.click();
-  await expect(copy).toContainText("已复制");
+  await expect(copy).toHaveText("");
   await probe.focus();
   await page.keyboard.press("Control+V");
-  await expect(probe).toHaveValue(`链接：${link}`);
+  await expect(probe).toHaveValue(link);
   await expect(page.getByRole("status")).toHaveText("分享链接已复制。");
 
   // A denied modern API must also fall back to an actual clipboard write.
@@ -149,10 +240,10 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
   );
   await probe.fill("");
   await copy.click();
-  await expect(copy).toContainText("已复制");
+  await expect(copy).toHaveText("");
   await probe.focus();
   await page.keyboard.press("Control+V");
-  await expect(probe).toHaveValue(`链接：${link}`);
+  await expect(probe).toHaveValue(link);
 
   await page.evaluate(() => {
     Object.defineProperty(navigator, "clipboard", {
@@ -162,14 +253,27 @@ test("HTTP 兼容复制写入真实剪贴板，全部被拒时才提示手动复
     document.execCommand = () => false;
   });
   await page.getByRole("button", { name: "复制分享链接" }).click();
-  await expect(page.getByRole("status")).toContainText("分享内容已选中");
-  await expect(copy).toHaveText("复制");
+  await expect(page.getByRole("status")).toContainText("链接已选中");
+  await expect(copy).toHaveText("");
   expect(
-    await page.getByLabel("分享内容", { exact: true }).evaluate((node) => {
-      const input = node as HTMLTextAreaElement;
+    await page.getByLabel("分享链接", { exact: true }).evaluate((node) => {
+      const input = node as HTMLInputElement;
       return [input.selectionStart, input.selectionEnd];
     }),
-  ).toEqual([0, `链接：${link}`.length]);
+  ).toEqual([0, link.length]);
+  await page.getByRole("button", { name: "分享", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "分享文件" });
+  await expect(dialog.getByLabel("分享文案")).toHaveValue(
+    `我用 Parcel 分享了「empty.txt」\n链接：${link}`,
+  );
+  await dialog.getByRole("button", { name: "复制分享文案" }).click();
+  await expect(dialog.getByRole("status")).toContainText("分享文案已选中");
+  expect(
+    await dialog.getByLabel("分享文案").evaluate((node) => {
+      const input = node as HTMLTextAreaElement;
+      return input.selectionEnd - input.selectionStart === input.value.length;
+    }),
+  ).toBe(true);
 });
 
 test("创建回复丢失后刷新可以找回原上传，不重复预留空间", async ({ page }) => {

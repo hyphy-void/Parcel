@@ -1,0 +1,5 @@
+# Production secrets are never compiled into the frontend.
+# Generate a unique SESSION_SECRET with: openssl rand -hex 32
+SESSION_SECRET=replace-with-64-hexadecimal-characters
+R2_ACCESS_KEY_ID=replace-with-bucket-scoped-s3-access-key-id
+R2_SECRET_ACCESS_KEY=replace-with-bucket-scoped-s3-secret-access-key

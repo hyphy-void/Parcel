@@ -1,0 +1,14 @@
+{
+  "accountId": "00000000000000000000000000000000",
+  "name": "parcel-v3",
+  "databaseName": "parcel-v3",
+  "bucketName": "parcel-v3",
+  "adminEmails": ["admin@example.com"],
+  "workersPaid": false,
+  "active": false,
+  "allowExistingBucket": false,
+  "vars": {
+    "STORAGE_QUOTA_BYTES": "21474836480",
+    "MAX_FILE_BYTES": "8589934592"
+  }
+}

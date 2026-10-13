@@ -1,7 +1,7 @@
 name: Parcel checks
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
   pull_request:
 permissions:
   contents: read
@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - uses: actions/setup-go@v5
@@ -30,6 +30,12 @@ jobs:
           VITE_ADMIN_AUTH=access npm --prefix web run build -- --outDir ../dist/pages-web --emptyOutDir
           npm --prefix cloudflare run build
           npm --prefix cloudflare run test:runtime
+      - name: Verify V3 Worker, real D1/R2 and deployment/migration tools
+        run: |
+          ./scripts/build-v3.sh --skip-install
+          npm --prefix cloudflare run test:v3
+          node --test scripts/tests/worker-build.test.mjs scripts/tests/v3-credentials.test.mjs
+          WRANGLER_SEND_METRICS=false node cloudflare/node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.json
       - run: ./scripts/release.sh --skip-web
       - name: Use AMD64 release binary for integration and browser tests
         run: |
@@ -42,6 +48,7 @@ jobs:
       - run: npm run test:e2e
         working-directory: web
       - run: npm --prefix cloudflare run test:browser
+      - run: npm --prefix cloudflare run test:browser:v3
       - uses: actions/upload-artifact@v4
         with:
           name: parcel-linux

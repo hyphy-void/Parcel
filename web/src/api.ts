@@ -1,3 +1,4 @@
+import type { PasswordParameters } from "./password";
 export type Upload = {
   storage_backend: "local" | "r2";
   part_bytes: number;
@@ -27,11 +28,15 @@ export type Share = {
   state: string;
   error: string;
   password_required: boolean;
+  password_protocol?: string;
+  password_kdf?: PasswordParameters;
   locked?: boolean;
   availability: string;
   url: string;
 };
 export type Status = {
+  backend_mode?: "serverless";
+  password_protocol?: string;
   r2_used_bytes: number;
   r2_reserved_bytes: number;
   r2_quota_bytes: number;
