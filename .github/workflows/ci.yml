@@ -35,6 +35,7 @@ jobs:
           ./scripts/build-v3.sh --skip-install
           npm --prefix cloudflare run test:v3
           node --test scripts/tests/worker-build.test.mjs scripts/tests/v3-credentials.test.mjs
+          node --test scripts/tests/guide.test.mjs
           WRANGLER_SEND_METRICS=false node cloudflare/node_modules/wrangler/bin/wrangler.js deploy --dry-run --config wrangler.json
       - run: ./scripts/release.sh --skip-web
       - name: Use AMD64 release binary for integration and browser tests
