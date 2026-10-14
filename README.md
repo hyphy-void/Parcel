@@ -4,10 +4,16 @@
 
 自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
+
+推荐新用户使用 **Workers + D1 + 私有 R2**。按 [图文部署手册](https://parcel-guide.pages.dev) 完成 Access、R2 凭据、CORS 和运行时配置，再启用实例。教程截图已脱敏并以 WebP 随仓库保存。按钮自动准备资源与 D1 schema；首次部署保持维护模式。Workers Free 不代表 R2 无限免费，新实例默认 9 GB 应用配额，免费额度与账单按账户计算。
+
+CLI 自动准备部署：`npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`，完整步骤见 [V3 部署说明](docs/v3-deployment.md)。源码按 [MIT](LICENSE) 许可发布。
+
 v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。Go 模式可通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。Pages 模式采用静态前端 + API Gateway + Access 身份验证，接入步骤见 [Pages 部署说明](docs/pages-deployment.md)。
 
 
-V3 已加入支持 Workers Free 的 Cloudflare 原生部署模式：Workers 托管前端与 API，D1 负责权威状态和原子事务，R2 继续文件直传/直下载，核心链路不依赖树莓派。构建、自动部署、迁移和回滚见 [V3 部署说明](docs/v3-deployment.md)。当前正式地址已切换到 V3；正式开源发布另行决定。
+V3 支持 Workers Free 的 Cloudflare 原生部署模式：Workers 托管前端与 API，D1 负责权威状态和原子事务，R2 继续文件直传/直下载，核心链路不依赖树莓派。构建、自动部署、迁移和回滚见 [V3 部署说明](docs/v3-deployment.md)。
 
 管理员登录后上传单个文件，设置可选密码、有效期与下载次数，生成一个分享链接。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
 

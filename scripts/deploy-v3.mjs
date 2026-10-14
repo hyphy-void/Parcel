@@ -395,7 +395,7 @@ export async function runWrangler(args, { input, env = process.env } = {}) {
     }
   });
 }
-async function main() {
+export async function main() {
   const args = process.argv.slice(2),
     configIndex = args.indexOf("--config");
   if (

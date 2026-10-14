@@ -35,9 +35,9 @@
     "ADMIN_EMAILS": "admin@example.com",
     "R2_ENDPOINT": "https://your-account.r2.cloudflarestorage.com",
     "R2_BUCKET_NAME": "parcel-v3",
-    "STORAGE_QUOTA_BYTES": "21474836480",
+    "STORAGE_QUOTA_BYTES": "9000000000",
     "MAX_FILE_BYTES": "8589934592",
-    "ACTIVE": "true",
+    "ACTIVE": "false",
     "WORKERS_PLAN": "free",
     "CLEANUP_BATCH_SIZE": "1"
   },

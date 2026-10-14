@@ -146,12 +146,14 @@ D1 快照不是 R2 文件备份；对象删除与数据库恢复必须一起考�
 
 普通 CI 运行 V3 构建、Wrangler dry-run、workerd/D1/R2、迁移和浏览器测试。`Deploy V3 staging Worker` 工作流只通过手动触发部署，使用 GitHub `v3` Environment 的 `PARCEL_V3_CONFIG` JSON 变量及上述四个 Secrets（会话密钥名为 `PARCEL_V3_SESSION_SECRET`，S3 凭据名为 `PARCEL_V3_R2_ACCESS_KEY_ID`、`PARCEL_V3_R2_SECRET_ACCESS_KEY`）。资源 ID 缓存只含非 Secret 状态；设置 Environment 分支限制和审批以控制真正部署。
 
-当前 V3 分支用于实现和验收，不改变仓库可见性，不发布 Release，不创建正式开源 Deploy 按钮。准备正式开源时再决定许可证、公开仓库、模板与发布版本。Cloudflare Deploy 按钮可自动准备 D1/R2，但 Access 和账单前置条件须在可公开模板中明确说明。[Deploy 按钮](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
+main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图文部署手册](https://parcel-guide.pages.dev) 配置，静态源文件位于 `docs/site/`，实际控制台截图脱敏后保存为 WebP。Cloudflare 自动创建 D1/R2，`npm run deploy` 按 DB binding 执行 migrations，并保留控制台运行时变量。首次模板为 `ACTIVE=false`，须完成 Access、三项密钥、PUBLIC_URL 和 R2 CORS 后手动启用。新模板配额为 9 GB，不是账单硬上限。[Deploy 按钮](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
+
+原 CLI bootstrap 独立入口为 `npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`；旧的带 `--config` 的 `npm run deploy` 命令继续兼容。生产实例继续使用下述专用生产命令；模板按钮不会复用生产实例标识或凭据。
 ## 正式 Worker 的 Git 自动部署
 
 正式 Worker 可连接当前 V3 生产分支 `v3/serverless`。在 Workers 的 Settings > Builds 中选择仓库、生产分支，关闭其他分支自动构建，根目录保持仓库根目录，使用 Node 24：
 
-当前正式实例已配置为 `hyphy-void/Parcel` 的 `v3/serverless` 分支；生产构建已启用，预览分支构建已关闭。后续推送此分支时，Cloudflare Builds 使用下述命令更新正式 Worker。
+2026-10-14 控制台核对：正式实例已配置为 `hyphy-void/Parcel` 的 `main` 分支；生产构建已启用。后续推送 main 时，Cloudflare Builds 使用下述命令更新正式 Worker。
 
 - 构建命令：`npm run build:production`
 - 部署命令：`npm run deploy:production`

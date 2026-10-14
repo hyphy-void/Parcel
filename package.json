@@ -7,7 +7,8 @@
   },
   "scripts": {
     "build": "./scripts/build-v3.sh",
-    "deploy": "node scripts/deploy-v3.mjs",
+    "deploy": "node scripts/deploy-template.mjs",
+    "deploy:bootstrap": "node scripts/deploy-v3.mjs",
     "test:v3": "npm --prefix cloudflare run test:v3",
     "test:v3:r2-live": "node scripts/probe-v3-r2.mjs",
     "build:production": "node scripts/prepare-worker-build.mjs && ./scripts/build-v3.sh",
@@ -23,6 +24,21 @@
       },
       "PUBLIC_URL": {
         "description": "正式 HTTPS 地址，无结尾斜杠；须为此地址配置管理员 Access 应用及 R2 CORS。"
+      },
+      "ACCESS_TEAM_DOMAIN": {
+        "description": "Zero Trust 组织的 https://your-team.cloudflareaccess.com 地址；见图文部署手册。"
+      },
+      "ACCESS_AUD": {
+        "description": "只覆盖管理员路径的 Access 应用 AUD；须同时保护 /api/v1/auth/*。"
+      },
+      "ADMIN_EMAILS": {
+        "description": "显式管理员邮箱白名单，逗号分隔，与 Access Allow 策略保持一致。"
+      },
+      "R2_ENDPOINT": {
+        "description": "R2 的账户 S3 API 地址，不带桶名或尾部斜杠。"
+      },
+      "ACTIVE": {
+        "description": "首次保持 false，完成 Access、密钥、CORS 与访问地址配置后再改为 true。"
       },
       "SESSION_SECRET": {
         "description": "64 位十六进制随机密钥；CLI 首次部署自动生成，重复部署保持不变。"
