@@ -74,6 +74,7 @@ test("创建结果不确定时可通过取消入口查询并丢弃不存在的�
   expect(
     await page.evaluate(() => localStorage.getItem("parcel.upload")),
   ).not.toBeNull();
+  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "取消这次上传" }).click();
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("parcel.upload")))
@@ -149,6 +150,7 @@ for (const status of [409, 503]) {
     await expect(
       page.getByRole("button", { name: "正在完成上传", exact: true }),
     ).toBeDisabled();
+    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "取消这次上传" }).click();
     if (status === 409) {
       await expect(

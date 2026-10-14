@@ -381,7 +381,9 @@ footer > span:last-child {
   height: 100%;
   background: var(--meter-fill);
   border-radius: 6px;
-  transition: width 0.3s;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform 0.3s;
 }
 .panel {
   background: var(--paper);
@@ -565,13 +567,14 @@ footer > span:last-child {
 .story-copy {
   width: 100%;
 }
-.story-copy h2 {
+.story-copy .story-title {
+  color: var(--ink);
   font-size: 38px;
   letter-spacing: -1.8px;
   line-height: 1.45;
   font-weight: 600;
 }
-.story-copy p {
+.story-copy p:not(.story-title) {
   color: var(--muted);
   font-size: 15px;
   line-height: 1.9;
@@ -1237,7 +1240,7 @@ footer > span:last-child {
   .login-story {
     padding: 36px 28px 28px;
   }
-  .story-copy h2 {
+  .story-copy .story-title {
     font-size: 30px;
   }
   .auth-card {
@@ -1323,11 +1326,11 @@ footer > span:last-child {
   .story-copy {
     width: 65%;
   }
-  .story-copy h2 {
+  .story-copy .story-title {
     font-size: 25px;
     letter-spacing: -0.9px;
   }
-  .story-copy p {
+  .story-copy p:not(.story-title) {
     font-size: 12px;
     margin-top: 10px;
   }
@@ -1470,7 +1473,7 @@ footer > span:last-child {
   .login-story {
     padding: 24px 20px;
   }
-  .story-copy h2 {
+  .story-copy .story-title {
     font-size: 23px;
   }
   .auth-card {
@@ -1771,4 +1774,24 @@ footer > span:last-child {
   .share-dialog-actions {
     flex-direction: column;
   }
+}
+
+/* Keep edge content clear of notches after responsive padding overrides. */
+.app {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+:is(button, a, input, select, textarea) {
+  touch-action: manipulation;
+}
+.share-dialog {
+  overscroll-behavior: contain;
+}
+.pagination [aria-disabled="true"] {
+  opacity: 0.55;
+}
+.story-copy .story-title {
+  text-wrap: balance;
 }

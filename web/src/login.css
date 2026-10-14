@@ -45,13 +45,13 @@
   width: 100%;
   padding: 0;
 }
-.login-app .story-copy h2 {
+.login-app .story-copy .story-title {
   font-size: 36px;
   line-height: 1.45;
   letter-spacing: -1.4px;
   font-weight: 600;
 }
-.login-app .story-copy p {
+.login-app .story-copy p:not(.story-title) {
   margin-top: 16px;
   font-size: 14px;
   line-height: 1.9;
@@ -175,7 +175,7 @@
   .login-app .auth-card h1 {
     font-size: 24px;
   }
-  .login-app .story-copy h2 {
+  .login-app .story-copy .story-title {
     font-size: 29px;
   }
 }
@@ -200,11 +200,11 @@
   .login-app .story-copy {
     width: 63%;
   }
-  .login-app .story-copy h2 {
+  .login-app .story-copy .story-title {
     font-size: 24px;
     letter-spacing: -0.9px;
   }
-  .login-app .story-copy p {
+  .login-app .story-copy p:not(.story-title) {
     font-size: 12px;
     margin-top: 10px;
   }
@@ -243,10 +243,10 @@
     padding: 24px 20px;
     min-height: 180px;
   }
-  .login-app .story-copy h2 {
+  .login-app .story-copy .story-title {
     font-size: 20px;
   }
-  .login-app .story-copy p {
+  .login-app .story-copy p:not(.story-title) {
     font-size: 11px;
   }
   .login-envelope-display {
@@ -272,7 +272,7 @@
   .login-app .login-story {
     padding-top: 28px;
   }
-  .login-app .story-copy h2 {
+  .login-app .story-copy .story-title {
     font-size: 30px;
   }
   .login-envelope-display {

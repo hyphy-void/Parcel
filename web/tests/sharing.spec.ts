@@ -114,6 +114,15 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
   await receive.getByLabel("分享密码").fill("wrong-password");
   await receive.getByRole("button", { name: "解锁文件" }).click();
   await expect(receive.getByRole("alert")).toContainText("分享密码不正确");
+  await expect(receive.getByLabel("分享密码")).toBeFocused();
+  await expect(receive.getByLabel("分享密码")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(receive.getByLabel("分享密码")).toHaveAttribute(
+    "aria-describedby",
+    "receive-password-error",
+  );
   await receive.getByLabel("分享密码").fill(code);
   await receive.getByRole("button", { name: "解锁文件" }).click();
   await expect(receive.getByRole("heading", { name: filename })).toBeVisible();
@@ -389,6 +398,7 @@ test("分块上传暂停后从确认位置继续，取消后不被旧请求恢�
   const canceled = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("parcel.upload")!),
   );
+  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "取消这次上传" }).click();
   await expect(
     page.getByRole("button", { name: "上传并创建分享" }),

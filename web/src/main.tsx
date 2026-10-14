@@ -52,6 +52,17 @@ type Auth = {
 function desktopAutofocus() {
   return matchMedia("(min-width: 768px) and (pointer: fine)").matches;
 }
+function useLeaveWarning(dirty: boolean) {
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+}
 function ErrorMessage({ message }: { message: string }) {
   return message ? (
     <div className="alert" role="alert">
@@ -62,7 +73,7 @@ function ErrorMessage({ message }: { message: string }) {
 function Loading({ text = "正在加载…" }: { text?: string }) {
   return (
     <div className="loading">
-      <Loader2 className="spin" size={20} />
+      <Loader2 className="spin" size={20} aria-hidden="true" />
       {text}
     </div>
   );
@@ -74,16 +85,16 @@ function ParcelEnvelope({ compact = false }: { compact?: boolean }) {
       aria-hidden="true"
     >
       <div className="envelope-sheet">
-        <File size={30} strokeWidth={1.5} />
+        <File size={30} strokeWidth={1.5} aria-hidden="true" />
         <span className="sheet-line" />
         <span className="sheet-line short" />
       </div>
       <div className="envelope-pocket">
-        <Package size={24} strokeWidth={1.5} />
+        <Package size={24} strokeWidth={1.5} aria-hidden="true" />
         <span>Parcel</span>
       </div>
       <span className="envelope-seal">
-        <Check size={18} />
+        <Check size={18} aria-hidden="true" />
       </span>
     </div>
   );
@@ -122,7 +133,7 @@ function Shell({
       <header>
         <a href={auth ? "/admin" : "/"} className="brand">
           <span className="brand-icon">
-            <Package size={23} />
+            <Package size={23} aria-hidden="true" />
           </span>
           <span className="brand-wordmark">
             <strong>Parcel</strong>
@@ -150,13 +161,13 @@ function Shell({
               onClick={logout}
               aria-label="退出登录"
             >
-              <LogOut size={17} />
+              <LogOut size={17} aria-hidden="true" />
               <span>退出</span>
             </button>
           </nav>
         ) : (
           <a href="/login" className="text-button">
-            管理入口 <ArrowRight size={15} />
+            管理入口 <ArrowRight size={15} aria-hidden="true" />
           </a>
         )}
         <a
@@ -280,7 +291,14 @@ function CopyField({
     <div className="copy-wrapper">
       <label htmlFor={`${id}-link`}>分享链接</label>
       <div className="copy-field">
-        <input id={`${id}-link`} ref={linkRef} readOnly value={value} />
+        <input
+          id={`${id}-link`}
+          name="share-link"
+          autoComplete="off"
+          ref={linkRef}
+          readOnly
+          value={value}
+        />
         <button type="button" onClick={copyLink} aria-label="复制分享链接">
           {copied === "link" ? (
             <Check size={18} aria-hidden="true" />
@@ -335,6 +353,9 @@ function CopyField({
         <label htmlFor={`${id}-message`}>分享文案</label>
         <textarea
           id={`${id}-message`}
+          name="share-message"
+          autoComplete="off"
+          spellCheck={false}
           ref={messageRef}
           readOnly
           value={content}
@@ -404,11 +425,11 @@ const LoginVisual = React.memo(
           data-busy={busy}
         >
           <div className="story-copy">
-            <h2>
+            <p className="story-title">
               分享一份文件，
               <br />
               少一份牵挂。
-            </h2>
+            </p>
             <p>
               上传，发出链接。
               <br />
@@ -421,7 +442,7 @@ const LoginVisual = React.memo(
             </div>
           </div>
           <div className="login-visual-status" aria-hidden="true">
-            <ShieldCheck size={16} />
+            <ShieldCheck size={16} aria-hidden="true" />
             <span>文件分享，从这里开始。</span>
           </div>
         </section>
@@ -478,13 +499,13 @@ function Login() {
           <LoginVisual ref={visual} focused={false} busy={false} />
           <div className="auth-card">
             <span className="auth-caption">
-              <ShieldCheck size={16} />
+              <ShieldCheck size={16} aria-hidden="true" />
               管理员登录
             </span>
             <h1>让文件轻装上路。</h1>
             <p className="muted">验证管理员身份后，上传文件并管理分享。</p>
             <a className="button primary full" href="/admin">
-              进入管理页面 <ArrowRight size={18} />
+              进入管理页面 <ArrowRight size={18} aria-hidden="true" />
             </a>
           </div>
         </div>
@@ -529,9 +550,9 @@ function Login() {
             </div>
             <button className="button primary full" disabled={busy}>
               {busy ? (
-                <Loader2 size={18} className="spin" />
+                <Loader2 size={18} className="spin" aria-hidden="true" />
               ) : (
-                <ArrowRight size={18} />
+                <ArrowRight size={18} aria-hidden="true" />
               )}
               {busy ? "正在登录" : "登录 Parcel"}
             </button>
@@ -553,9 +574,12 @@ function Dashboard({ auth }: { auth: Auth }) {
     [confirmClear, setConfirmClear] = useState(false),
     [clearing, setClearing] = useState(false),
     [message, setMessage] = useState(""),
-    [page, setPage] = useState(1),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(() => {
+    const requested = Number(new URLSearchParams(location.search).get("page"));
+    return Number.isSafeInteger(requested) && requested > 0 ? requested : 1;
+  });
   async function load() {
     try {
       const [s, list] = await Promise.all([
@@ -592,8 +616,12 @@ function Dashboard({ auth }: { auth: Auth }) {
       }
       setConfirmClear(false);
       setMessage(`已清除 ${removed} 条已清理记录。`);
-      if (page !== 1) setPage(1);
-      else await load();
+      if (page !== 1) {
+        const url = new URL(location.href);
+        url.searchParams.set("page", "1");
+        history.replaceState(null, "", url);
+        setPage(1);
+      } else await load();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -613,7 +641,7 @@ function Dashboard({ auth }: { auth: Auth }) {
           <p className="muted">把文件交给对方，把收尾交给 Parcel。</p>
         </div>
         <a className="button primary" href="/admin/new">
-          <Plus size={19} />
+          <Plus size={19} aria-hidden="true" />
           新建分享
         </a>
       </section>
@@ -622,7 +650,7 @@ function Dashboard({ auth }: { auth: Auth }) {
         <div className="stats">
           <div className="stat">
             <span>
-              <HardDrive size={18} />
+              <HardDrive size={18} aria-hidden="true" />
               {status.storage_backend === "r2" ? "R2 存储额度" : "存储用量"}
             </span>
             <strong>
@@ -640,7 +668,7 @@ function Dashboard({ auth }: { auth: Auth }) {
             <div className="meter">
               <span
                 style={{
-                  width: `${Math.min(100, (status.storage_backend === "r2" ? ((status.r2_used_bytes ?? 0) + (status.r2_reserved_bytes ?? 0)) / (status.r2_quota_bytes ?? 9e9) : (status.used_bytes + status.reserved_bytes) / status.quota_bytes) * 100)}%`,
+                  transform: `scaleX(${Math.min(1, Math.max(0, status.storage_backend === "r2" ? ((status.r2_used_bytes ?? 0) + (status.r2_reserved_bytes ?? 0)) / (status.r2_quota_bytes ?? 9e9) : (status.used_bytes + status.reserved_bytes) / status.quota_bytes))})`,
                 }}
               />
             </div>
@@ -658,7 +686,7 @@ function Dashboard({ auth }: { auth: Auth }) {
           </div>
           <div className="stat">
             <span>
-              <FolderOpen size={18} />
+              <FolderOpen size={18} aria-hidden="true" />
               分享记录
             </span>
             <strong>
@@ -669,7 +697,7 @@ function Dashboard({ auth }: { auth: Auth }) {
           </div>
           <div className="stat">
             <span>
-              <ShieldCheck size={18} />
+              <ShieldCheck size={18} aria-hidden="true" />
               {status.backend_mode === "serverless" ? "云端服务" : "你的服务器"}
             </span>
             <strong>
@@ -699,7 +727,7 @@ function Dashboard({ auth }: { auth: Auth }) {
           </div>
           <div className="list-actions">
             <button className="text-button" onClick={load} disabled={clearing}>
-              <RefreshCw size={15} />
+              <RefreshCw size={15} aria-hidden="true" />
               刷新
             </button>
             <button
@@ -710,7 +738,7 @@ function Dashboard({ auth }: { auth: Auth }) {
                 setConfirmClear(true);
               }}
             >
-              <Trash2 size={15} />
+              <Trash2 size={15} aria-hidden="true" />
               清除已清理
             </button>
           </div>
@@ -760,14 +788,16 @@ function Dashboard({ auth }: { auth: Auth }) {
                 key={s.id}
               >
                 <div className="file-icon" aria-hidden="true">
-                  <File size={23} strokeWidth={1.5} />
+                  <File size={23} strokeWidth={1.5} aria-hidden="true" />
                 </div>
                 <div className="file-info">
                   <strong>{s.name}</strong>
                   <span>
                     <span>{bytes(s.size)}</span>
                     <span>
-                      {s.password_required && <LockKeyhole size={12} />}
+                      {s.password_required && (
+                        <LockKeyhole size={12} aria-hidden="true" />
+                      )}
                       {s.password_required ? "密码保护" : "无密码"}
                     </span>
                     <span>{date(s.created)}</span>
@@ -784,7 +814,11 @@ function Dashboard({ auth }: { auth: Auth }) {
                 >
                   {availability[s.availability] || s.availability}
                 </span>
-                <ArrowRight size={17} className="row-arrow" />
+                <ArrowRight
+                  size={17}
+                  className="row-arrow"
+                  aria-hidden="true"
+                />
               </a>
             ))}
           </div>
@@ -794,28 +828,32 @@ function Dashboard({ auth }: { auth: Auth }) {
             <h3>这里，留给你要分享的文件。</h3>
             <p>上传文件，设置规则，把链接交给需要的人。</p>
             <a className="button secondary" href="/admin/new">
-              <Plus size={17} />
+              <Plus size={17} aria-hidden="true" />
               上传文件
             </a>
           </div>
         )}
         {total > 20 && (
           <div className="pagination">
-            <button
-              className="button secondary"
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
-            >
-              上一页
-            </button>
+            {page > 1 ? (
+              <a className="button secondary" href={`/admin?page=${page - 1}`}>
+                上一页
+              </a>
+            ) : (
+              <span className="button secondary" aria-disabled="true">
+                上一页
+              </span>
+            )}
             <span>第 {page} 页</span>
-            <button
-              className="button secondary"
-              disabled={page * 20 >= total}
-              onClick={() => setPage(page + 1)}
-            >
-              下一页
-            </button>
+            {page * 20 < total ? (
+              <a className="button secondary" href={`/admin?page=${page + 1}`}>
+                下一页
+              </a>
+            ) : (
+              <span className="button secondary" aria-disabled="true">
+                下一页
+              </span>
+            )}
           </div>
         )}
       </section>
@@ -857,7 +895,15 @@ function NewShare({ auth }: { auth: Auth }) {
     [saved, setSaved] = useState(initialSaved),
     [result, setResult] = useState<Share>(),
     [drag, setDrag] = useState(false),
-    [sending, setSending] = useState<{ offset: number; loaded: number }>();
+    [sending, setSending] = useState<{ offset: number; loaded: number }>(),
+    [rulesDirty, setRulesDirty] = useState(false),
+    [validation, setValidation] = useState<{
+      limit?: string;
+      password?: string;
+    }>({});
+  const limitInput = useRef<HTMLInputElement>(null);
+  const sharePasswordInput = useRef<HTMLInputElement>(null);
+  useLeaveWarning(!result && (!!file || !!saved || rulesDirty));
   const input = useRef<HTMLInputElement>(null),
     pause = useRef(false),
     xhr = useRef<XMLHttpRequest | undefined>(undefined),
@@ -925,6 +971,8 @@ function NewShare({ auth }: { auth: Auth }) {
     setFile(undefined);
     setPhase("idle");
     setError("");
+    setRulesDirty(false);
+    setValidation({});
   }
   function choose(f?: File) {
     if (!f) return;
@@ -1106,6 +1154,23 @@ function NewShare({ auth }: { auth: Auth }) {
       return;
     }
     if (!file) return;
+    if (!upload) {
+      const errors = {
+        limit:
+          !Number.isInteger(limit) || limit < 1 || limit > 100
+            ? "请输入 1 到 100 之间的整数。"
+            : undefined,
+        password:
+          protect && new TextEncoder().encode(password).length < 4
+            ? "分享密码至少需要 4 字节，例如 abcd。"
+            : undefined,
+      };
+      setValidation(errors);
+      if (errors.limit || errors.password) {
+        (errors.limit ? limitInput : sharePasswordInput).current?.focus();
+        return;
+      }
+    }
     if (
       !upload &&
       file.size > (settings.upload_confirmation_bytes ?? 100_000_000) &&
@@ -1280,6 +1345,12 @@ function NewShare({ auth }: { auth: Auth }) {
     }
   }
   async function cancel() {
+    if (
+      !window.confirm(
+        "取消这次上传？已上传的数据和续传记录将被删除，无法恢复。",
+      )
+    )
+      return;
     const epoch = ++generation.current;
     pause.current = true;
     xhr.current?.abort();
@@ -1364,7 +1435,7 @@ function NewShare({ auth }: { auth: Auth }) {
       <Shell auth={auth}>
         <div className="success-card">
           <div className="symbol success">
-            <CheckCircle2 size={35} />
+            <CheckCircle2 size={35} aria-hidden="true" />
           </div>
           <h1>文件已装好，交给对方吧。</h1>
           <p className="muted">
@@ -1378,19 +1449,19 @@ function NewShare({ auth }: { auth: Auth }) {
           >
             {protect && password && (
               <div className="password-display">
-                <LockKeyhole size={17} />
+                <LockKeyhole size={17} aria-hidden="true" />
                 <span>分享密码</span>
                 <code>{password}</code>
               </div>
             )}
             <div className="rule-grid">
               <div>
-                <Clock3 size={18} />
+                <Clock3 size={18} aria-hidden="true" />
                 <strong>{date(result.expires)}</strong>
                 <span>到期自动失效</span>
               </div>
               <div>
-                <ArrowDown size={18} />
+                <ArrowDown size={18} aria-hidden="true" />
                 <strong>{result.max_downloads} 次</strong>
                 <span>新下载资格</span>
               </div>
@@ -1400,7 +1471,7 @@ function NewShare({ auth }: { auth: Auth }) {
             className="button secondary full"
             href={`/admin/shares/${result.id}`}
           >
-            查看分享详情 <ArrowRight size={17} />
+            查看分享详情 <ArrowRight size={17} aria-hidden="true" />
           </a>
           <a className="back-link" href="/admin">
             返回我的分享
@@ -1411,7 +1482,7 @@ function NewShare({ auth }: { auth: Auth }) {
   return (
     <Shell auth={auth}>
       <a className="back-link" href="/admin">
-        <ArrowLeft size={16} />
+        <ArrowLeft size={16} aria-hidden="true" />
         我的分享
       </a>
       <section className="page-heading compact">
@@ -1432,6 +1503,7 @@ function NewShare({ auth }: { auth: Auth }) {
           <input
             ref={input}
             type="file"
+            name="share-file"
             className="sr-only"
             tabIndex={-1}
             aria-label="选择文件"
@@ -1471,7 +1543,7 @@ function NewShare({ auth }: { auth: Auth }) {
                   : "正在读取服务器配置"}
             </span>
             <span className="choose-file-label">
-              <Plus size={16} />
+              <Plus size={16} aria-hidden="true" />
               {file ? "重新选择文件" : "点击选择，或拖入文件"}
             </span>
           </button>
@@ -1490,7 +1562,7 @@ function NewShare({ auth }: { auth: Auth }) {
           {upload && (
             <div className="progress-card">
               <div>
-                <strong>
+                <strong role="status" aria-live="polite" aria-atomic="true">
                   {phase === "checking"
                     ? "传输完成，正在发布…"
                     : phase === "pending"
@@ -1517,7 +1589,7 @@ function NewShare({ auth }: { auth: Auth }) {
               >
                 <span
                   style={{
-                    width: `${ratio * 100}%`,
+                    transform: `scaleX(${ratio})`,
                     transition: ratio === 1 ? "none" : undefined,
                   }}
                 />
@@ -1527,14 +1599,14 @@ function NewShare({ auth }: { auth: Auth }) {
               </small>
               {phase === "checking" && (
                 <p className="note">
-                  <Loader2 size={15} className="spin" />
+                  <Loader2 size={15} className="spin" aria-hidden="true" />
                   正在核对文件并生成分享链接，无需重新上传。
                 </p>
               )}
             </div>
           )}
           <div className="upload-bottom">
-            <ShieldCheck size={18} />
+            <ShieldCheck size={18} aria-hidden="true" />
             <p>
               {backend === "r2"
                 ? "文件直传到私有 R2 存储。分享失效后，Parcel 会自动回收空间。"
@@ -1552,8 +1624,13 @@ function NewShare({ auth }: { auth: Auth }) {
             <label htmlFor="share-ttl">有效期</label>
             <select
               id="share-ttl"
+              name="share-ttl"
+              autoComplete="off"
               value={ttl}
-              onChange={(e) => setTTL(Number(e.target.value))}
+              onChange={(e) => {
+                setTTL(Number(e.target.value));
+                setRulesDirty(true);
+              }}
             >
               {Array.from(
                 new Set([
@@ -1579,26 +1656,43 @@ function NewShare({ auth }: { auth: Auth }) {
             <small>从文件校验并发布成功时开始计算。</small>
             <label htmlFor="share-limit">下载次数</label>
             <input
+              ref={limitInput}
               id="share-limit"
+              name="share-limit"
+              autoComplete="off"
+              aria-invalid={!!validation.limit}
+              aria-describedby={
+                validation.limit ? "share-limit-error" : undefined
+              }
               type="number"
               min={1}
               max={100}
               value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setRulesDirty(true);
+                setValidation((v) => ({ ...v, limit: undefined }));
+              }}
             />
             <small>
               {backend === "r2"
                 ? "获取下载地址消耗一次，同一会话续签不重复计数。"
                 : "首次准许传输消耗一次，同一会话续传不重复计数。"}
             </small>
+            <div id="share-limit-error">
+              <ErrorMessage message={validation.limit || ""} />
+            </div>
             <div className="toggle-row">
               <label htmlFor="protect">密码保护</label>
               <input
                 id="protect"
+                name="protect"
                 type="checkbox"
                 checked={protect}
                 onChange={(e) => {
                   setProtect(e.target.checked);
+                  setRulesDirty(true);
+                  setValidation((v) => ({ ...v, password: undefined }));
                   if (e.target.checked && !password)
                     setPassword(randomShareCode());
                 }}
@@ -1607,22 +1701,40 @@ function NewShare({ auth }: { auth: Auth }) {
             {protect && (
               <div className="password-field">
                 <input
+                  ref={sharePasswordInput}
+                  name="share-password"
+                  spellCheck={false}
+                  aria-invalid={!!validation.password}
+                  aria-describedby={
+                    validation.password ? "share-password-error" : undefined
+                  }
                   aria-label="分享密码"
                   type="text"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="至少 4 位"
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setRulesDirty(true);
+                    setValidation((v) => ({ ...v, password: undefined }));
+                  }}
+                  placeholder="例如 abcd…"
                   autoComplete="off"
                 />
                 <button
                   className="text-button"
-                  onClick={() => setPassword(randomShareCode())}
+                  onClick={() => {
+                    setPassword(randomShareCode());
+                    setRulesDirty(true);
+                    setValidation((v) => ({ ...v, password: undefined }));
+                  }}
                   type="button"
                 >
                   换一个
                 </button>
               </div>
             )}
+            <div id="share-password-error">
+              <ErrorMessage message={validation.password || ""} />
+            </div>
           </fieldset>
           <div className="actions">
             {["uploading", "retrying"].includes(phase) ? (
@@ -1633,7 +1745,7 @@ function NewShare({ auth }: { auth: Auth }) {
                   xhr.current?.abort();
                 }}
               >
-                <Pause size={17} />
+                <Pause size={17} aria-hidden="true" />
                 暂停上传
               </button>
             ) : (
@@ -1643,18 +1755,13 @@ function NewShare({ auth }: { auth: Auth }) {
                 disabled={
                   (!file && upload?.state !== "finalizing") ||
                   !settings ||
-                  ["checking", "canceling", "recovering"].includes(phase) ||
-                  (!upload &&
-                    (limit < 1 ||
-                      limit > 100 ||
-                      (protect &&
-                        new TextEncoder().encode(password).length < 4)))
+                  ["checking", "canceling", "recovering"].includes(phase)
                 }
               >
                 {phase === "checking" ? (
-                  <Loader2 className="spin" size={18} />
+                  <Loader2 className="spin" size={18} aria-hidden="true" />
                 ) : (
-                  <UploadCloud size={18} />
+                  <UploadCloud size={18} aria-hidden="true" />
                 )}
                 {phase === "checking"
                   ? backend === "r2"
@@ -1673,7 +1780,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 onClick={cancel}
                 disabled={phase === "canceling" || phase === "recovering"}
               >
-                <X size={16} />
+                <X size={16} aria-hidden="true" />
                 取消这次上传
               </button>
             )}
@@ -1690,7 +1797,10 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
     [password, setPassword] = useState(""),
     [message, setMessage] = useState(""),
     [confirm, setConfirm] = useState(false),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [passwordError, setPasswordError] = useState("");
+  const passwordInput = useRef<HTMLInputElement>(null);
+  useLeaveWarning(!!password);
   async function load() {
     try {
       setShare(await api<Share>(`/admin/shares/${id}`));
@@ -1717,6 +1827,13 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
   }
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
+    setPasswordError("");
+    if (password && new TextEncoder().encode(password).length < 4) {
+      setPasswordError("分享密码至少需要 4 字节，例如 abcd。");
+      passwordInput.current?.focus();
+      return;
+    }
+    setError("");
     setBusy(true);
     setMessage("");
     try {
@@ -1739,7 +1856,8 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
       setPassword("");
       await load();
     } catch (e) {
-      setError((e as Error).message);
+      setPasswordError((e as Error).message);
+      passwordInput.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -1747,7 +1865,7 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
   return (
     <Shell auth={auth}>
       <a className="back-link" href="/admin">
-        <ArrowLeft size={16} />
+        <ArrowLeft size={16} aria-hidden="true" />
         我的分享
       </a>
       <ErrorMessage message={error} />
@@ -1777,19 +1895,19 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
               />
               <div className="rule-grid">
                 <div>
-                  <Clock3 size={20} />
+                  <Clock3 size={20} aria-hidden="true" />
                   <strong>{date(share.expires)}</strong>
                   <span>到期时间</span>
                 </div>
                 <div>
-                  <ArrowDown size={20} />
+                  <ArrowDown size={20} aria-hidden="true" />
                   <strong>
                     {share.download_count} / {share.max_downloads}
                   </strong>
                   <span>已用下载资格</span>
                 </div>
                 <div>
-                  <LockKeyhole size={20} />
+                  <LockKeyhole size={20} aria-hidden="true" />
                   <strong>
                     {share.password_required ? "已启用" : "未启用"}
                   </strong>
@@ -1817,7 +1935,7 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
                 target="_blank"
                 rel="noreferrer"
               >
-                打开接收页 <ArrowRight size={16} />
+                打开接收页 <ArrowRight size={16} aria-hidden="true" />
               </a>
             </section>
             <section className="panel detail-tools">
@@ -1827,22 +1945,35 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
                   <form onSubmit={changePassword}>
                     <label htmlFor="new-password">修改分享密码</label>
                     <input
+                      ref={passwordInput}
                       id="new-password"
+                      name="new-password"
+                      spellCheck={false}
+                      aria-invalid={!!passwordError}
+                      aria-describedby={
+                        passwordError ? "new-password-error" : undefined
+                      }
                       type="text"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="留空以关闭密码保护"
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setPasswordError("");
+                      }}
+                      placeholder="例如 abcd；留空关闭密码保护…"
                       autoComplete="off"
                     />
-                    <button
-                      className="button secondary full"
-                      disabled={
-                        busy ||
-                        (!!password &&
-                          new TextEncoder().encode(password).length < 4)
-                      }
-                    >
-                      保存密码设置
+                    <div id="new-password-error">
+                      <ErrorMessage message={passwordError} />
+                    </div>
+                    <button className="button secondary full" disabled={busy}>
+                      {busy && (
+                        <Loader2
+                          className="spin"
+                          size={18}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {busy ? "正在保存…" : "保存密码设置"}
                     </button>
                     {message && (
                       <p className="note" role="status">
@@ -1873,7 +2004,7 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
                       className="button danger-outline full"
                       onClick={() => setConfirm(true)}
                     >
-                      <Trash2 size={17} />
+                      <Trash2 size={17} aria-hidden="true" />
                       撤销分享
                     </button>
                   )}
@@ -1893,6 +2024,8 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
   );
 }
 function Receive({ id }: { id: string }) {
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const [unlockError, setUnlockError] = useState("");
   const [share, setShare] = useState<Share>(),
     [password, setPassword] = useState(""),
     [error, setError] = useState(""),
@@ -1922,6 +2055,7 @@ function Receive({ id }: { id: string }) {
     e.preventDefault();
     setBusy(true);
     setError("");
+    setUnlockError("");
     try {
       setShare(
         await api<Share>(`/shares/${id}/unlock`, {
@@ -1938,7 +2072,8 @@ function Receive({ id }: { id: string }) {
       );
       setPassword("");
     } catch (e) {
-      setError((e as Error).message);
+      setUnlockError((e as Error).message);
+      passwordInput.current?.focus();
     } finally {
       setBusy(false);
     }
@@ -2034,14 +2169,14 @@ function Receive({ id }: { id: string }) {
         {!share ? (
           <>
             <div className="symbol">
-              <Package size={34} />
+              <Package size={34} aria-hidden="true" />
             </div>
             {!error && <Loading />}
           </>
         ) : inactive ? (
           <>
             <div className="symbol">
-              <Clock3 size={32} />
+              <Clock3 size={32} aria-hidden="true" />
             </div>
             <h1>{availability[share.availability] || "分享已失效"}</h1>
             <p className="muted">文件无法继续下载，请联系分享者重新发送。</p>
@@ -2049,27 +2184,38 @@ function Receive({ id }: { id: string }) {
         ) : share.locked ? (
           <>
             <div className="symbol">
-              <LockKeyhole size={32} />
+              <LockKeyhole size={32} aria-hidden="true" />
             </div>
             <h1>输入密码，打开这份分享。</h1>
             <p className="muted">这份文件设置了密码保护。</p>
             <form onSubmit={unlock}>
               <label htmlFor="receive-password">分享密码</label>
               <input
+                ref={passwordInput}
                 id="receive-password"
+                aria-invalid={!!unlockError}
+                aria-describedby={
+                  unlockError ? "receive-password-error" : undefined
+                }
                 name="share-password"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setUnlockError("");
+                }}
                 autoComplete="off"
                 required
                 autoFocus={desktopAutofocus()}
               />
+              <div id="receive-password-error">
+                <ErrorMessage message={unlockError} />
+              </div>
               <button className="button primary full" disabled={busy}>
                 {busy ? (
-                  <Loader2 className="spin" size={18} />
+                  <Loader2 className="spin" size={18} aria-hidden="true" />
                 ) : (
-                  <KeyRound size={18} />
+                  <KeyRound size={18} aria-hidden="true" />
                 )}
                 {busy ? "正在验证" : "解锁文件"}
               </button>
@@ -2078,18 +2224,18 @@ function Receive({ id }: { id: string }) {
         ) : (
           <>
             <div className="symbol">
-              <File size={34} />
+              <File size={34} aria-hidden="true" />
             </div>
             <h1 className="filename-title">{share.name}</h1>
             <p className="file-size">{bytes(share.size)}</p>
             <div className="rule-grid">
               <div>
-                <Clock3 size={19} />
+                <Clock3 size={19} aria-hidden="true" />
                 <strong>{date(share.expires)}</strong>
                 <span>有效期至</span>
               </div>
               <div>
-                <ArrowDown size={19} />
+                <ArrowDown size={19} aria-hidden="true" />
                 <strong>
                   {Math.max(0, share.max_downloads - share.download_count)} 次
                 </strong>
@@ -2102,9 +2248,9 @@ function Receive({ id }: { id: string }) {
               disabled={busy || !canDownload}
             >
               {busy ? (
-                <Loader2 className="spin" size={20} />
+                <Loader2 className="spin" size={20} aria-hidden="true" />
               ) : (
-                <ArrowDown size={20} />
+                <ArrowDown size={20} aria-hidden="true" />
               )}
               {busy ? "正在准备" : ticket ? "再次下载 / 继续" : "下载文件"}
             </button>
@@ -2145,7 +2291,7 @@ function Receive({ id }: { id: string }) {
         )}
         <ErrorMessage message={error} />
         <div className="receive-foot">
-          <ShieldCheck size={15} />
+          <ShieldCheck size={15} aria-hidden="true" />
           由分享者的 Parcel 服务器交付
         </div>
       </div>

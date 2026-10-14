@@ -249,6 +249,7 @@ test("失败重试和暂停恢复清除未确认发送量，忽略旧请求进�
   await expect(bar).toHaveAttribute("aria-valuenow", "50");
   await page.getByRole("button", { name: "暂停上传" }).click();
   await expect(page.getByText("上传已暂停", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("上传已暂停");
   await expect(bar).toHaveAttribute("aria-valuenow", "40");
   await page.getByRole("button", { name: "继续上传" }).click();
   await waitRequest(page, 4);
