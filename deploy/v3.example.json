@@ -1,8 +1,8 @@
 {
   "accountId": "00000000000000000000000000000000",
-  "name": "parcel-v3",
-  "databaseName": "parcel-v3",
-  "bucketName": "parcel-v3",
+  "name": "parcel",
+  "databaseName": "parcel",
+  "bucketName": "parcel",
   "adminEmails": ["admin@example.com"],
   "workersPaid": false,
   "active": false,

@@ -67,9 +67,9 @@ export class CloudflareAPI {
 }
 export function validate(input) {
   const c = {
-    name: "parcel-v3",
-    databaseName: "parcel-v3",
-    bucketName: "parcel-v3",
+    name: "parcel",
+    databaseName: "parcel",
+    bucketName: "parcel",
     adminEmails: [],
     workersPaid: false,
     active: false,
@@ -244,7 +244,7 @@ export async function resources(c, api, state = {}, save = async () => {}) {
     [
       "cors",
       {
-        id: "parcel-v3-browser",
+        id: `${c.name}-browser`,
         allowed: {
           origins: [publicUrl],
           methods: ["GET", "HEAD", "PUT"],
@@ -262,7 +262,7 @@ export async function resources(c, api, state = {}, save = async () => {}) {
     [
       "lifecycle",
       {
-        id: "parcel-v3-abort-multipart",
+        id: `${c.name}-abort-multipart`,
         enabled: true,
         conditions: { prefix: "parcel/v3/" },
         abortMultipartUploadsTransition: {

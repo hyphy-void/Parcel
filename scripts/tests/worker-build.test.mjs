@@ -22,7 +22,7 @@ test("production builds retain runtime configuration and use only existing resou
   assert.equal(config.preview_urls, false);
   assert.equal(config.d1_databases[0].database_id, settings.databaseId);
   assert.equal(config.r2_buckets[0].bucket_name, settings.bucketName);
-  assert.ok(config.assets.directory.endsWith("/dist/v3-web"));
+  assert.ok(config.assets.directory.replaceAll("\\", "/").endsWith("/dist/v3-web"));
   assert.ok(template.vars.PUBLIC_URL.includes("example.com"));
   assert.deepEqual(config.ratelimits, template.ratelimits);
   assert.deepEqual(config.triggers, template.triggers);

@@ -17,7 +17,7 @@
   "cloudflare": {
     "bindings": {
       "DB": {
-        "description": "Parcel V3 的唯一权威状态数据库。不要与正在写入的 Go SQLite 部署混用。"
+        "description": "Parcel 的状态数据库，保存分享、上传任务和下载会话。"
       },
       "FILES": {
         "description": "私有 R2 存储，文件直接上传/下载。"

@@ -1,6 +1,6 @@
 {
   "$schema": "./cloudflare/node_modules/wrangler/config-schema.json",
-  "name": "parcel-v3",
+  "name": "parcel",
   "main": "cloudflare/v3/worker.mjs",
   "compatibility_date": "2026-10-10",
   "workers_dev": true,
@@ -14,7 +14,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "parcel-v3",
+      "database_name": "parcel",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "cloudflare/v3/migrations"
     }
@@ -22,7 +22,7 @@
   "r2_buckets": [
     {
       "binding": "FILES",
-      "bucket_name": "parcel-v3"
+      "bucket_name": "parcel"
     }
   ],
   "triggers": {
@@ -34,7 +34,7 @@
     "ACCESS_AUD": "configure-administrator-application-audience",
     "ADMIN_EMAILS": "admin@example.com",
     "R2_ENDPOINT": "https://your-account.r2.cloudflarestorage.com",
-    "R2_BUCKET_NAME": "parcel-v3",
+    "R2_BUCKET_NAME": "parcel",
     "STORAGE_QUOTA_BYTES": "9000000000",
     "MAX_FILE_BYTES": "8589934592",
     "ACTIVE": "false",

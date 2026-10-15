@@ -46,7 +46,7 @@ function mock() {
       }
       return data.db;
     }
-    if (key === "/r2/buckets/parcel-v3") return data.bucket;
+    if (key === "/r2/buckets/parcel") return data.bucket;
     if (key === "/r2/buckets") {
       data.bucket = { name: body.name };
       return data.bucket;
@@ -103,7 +103,7 @@ test("bootstrap retries reuse D1/R2, preserve other rules, only protect administ
   assert.equal(m.data.cors.rules[0].id, "unrelated-cors");
   assert.equal(m.data.lifecycle.rules[0].id, "unrelated-lifecycle");
   const abort = m.data.lifecycle.rules.find(
-    (r) => r.id === "parcel-v3-abort-multipart",
+    (r) => r.id === "parcel-abort-multipart",
   );
   assert.equal(abort.conditions.prefix, "parcel/v3/");
   assert.equal(abort.deleteObjectsTransition, undefined);
@@ -122,7 +122,7 @@ test("bootstrap refuses unmanaged existing resources and never enables paid bill
   await resources({ ...config(), workersPaid: false }, m.api);
   assert.ok(!m.calls.some((c) => /subscription|billing/.test(c.key)));
   const fresh = mock();
-  fresh.data.bucket = { name: "parcel-v3" };
+  fresh.data.bucket = { name: "parcel" };
   await assert.rejects(resources(config(), fresh.api), /Existing bucket/);
   assert.equal(fresh.calls.filter((c) => c.method === "PUT").length, 0);
 });

@@ -48,7 +48,7 @@ npm run test:v3:r2-live -- --live \
 
 准备一个仅限目标账户的管理 API Token，权限包括 Workers Scripts Edit、D1 Edit、Workers R2 Storage Write、Access Apps and Policies Write、Access Organizations Read、Access Identity Providers Read/Write；若控制台要求读取权限，补上对应 Read。R2 S3 Token 使用目标桶的 Object Read & Write。管理 Token 与 S3 Token 分开，不能把前者当作后者。
 
-从 [deploy/v3.example.json](../deploy/v3.example.json) 复制配置到忽略目录 `.parcel-v3/deploy.json`，填写账户 ID 和管理员邮箱。`workersPaid:false` 为 Free 默认值；只有已订阅 Paid 的账户才设为 `true`，届时工具会增加 30 秒 CPU 上限和较大的清理批次。工具不会开通或更改套餐。默认创建隔离的 `parcel-v3` Worker、D1 和桶，并保持维护模式。新桶可以通过账户管理 Token 自动创建；S3 凭据须能访问指定桶。只有管理 Token 时，首次命令先创建隔离资源，保存可恢复的状态后停止；此时可在 Dashboard 为刚创建的桶生成限定桶的 S3 Token，填写凭据，再执行同一条命令完成部署。不会为避免这一步而要求覆盖所有桶的 S3 权限。已有 D1 须匹配保存的数据库 ID，或明确设置 `allowExistingDatabase:true` 后复用。已有桶必须明确设置 `allowExistingBucket:true`，并保证没有另一套后端正在写入/清理其中的相同对象。
+从 [deploy/v3.example.json](../deploy/v3.example.json) 复制配置到忽略目录 `.parcel-v3/deploy.json`，填写账户 ID 和管理员邮箱。`workersPaid:false` 为 Free 默认值；只有已订阅 Paid 的账户才设为 `true`，届时工具会增加 30 秒 CPU 上限和较大的清理批次。工具不会开通或更改套餐。默认创建名为 `parcel` 的 Worker、D1 和私有桶，并保持维护模式。新桶可以通过账户管理 Token 自动创建；S3 凭据须能访问指定桶。只有管理 Token 时，首次命令先创建隔离资源，保存可恢复的状态后停止；此时可在 Dashboard 为刚创建的桶生成限定桶的 S3 Token，填写凭据，再执行同一条命令完成部署。不会为避免这一步而要求覆盖所有桶的 S3 权限。已有 D1 须匹配保存的数据库 ID，或明确设置 `allowExistingDatabase:true` 后复用。已有桶必须明确设置 `allowExistingBucket:true`，并保证没有另一套后端正在写入/清理其中的相同对象。
 
 通过本机环境或受保护的 CI Secrets 提供：
 
@@ -90,7 +90,7 @@ npm run deploy -- --config .parcel-v3/deploy.json --activate
 
 ```bash
 python3 scripts/export-v3.py /path/to/parcel.db .parcel-v3/go-snapshot.json --bucket EXISTING_BUCKET --writers-frozen
-node scripts/import-v3.mjs .parcel-v3/go-snapshot.json .parcel-v3/parcel-v3/wrangler.json --writers-frozen
+node scripts/import-v3.mjs .parcel-v3/go-snapshot.json .parcel-v3/parcel/wrangler.json --writers-frozen
 ```
 
 目标 D1 必须空白或属于同一份快照。每批写入可恢复；全部内容、数量和配额验证后才标记导入完成。导入期间 Worker 保持维护。若目标 Worker 曾激活过，应先维护并等待 16 分钟，使旧请求与 Cron 完成，再导入。不要在正在服务的 D1 上导入。旧上传的幂等键仍保留，但重建请求缺少明文密码指纹时会拒绝旧键重用；新上传使用新键。
@@ -116,7 +116,7 @@ V3 激活后，不能直接恢复旧 SQLite：这样会丢掉新增分享、下�
 
 ```bash
 npm run deploy -- --config .parcel-v3/deploy.json
-node scripts/export-d1-v3.mjs .parcel-v3/parcel-v3/wrangler.json .parcel-v3/d1-rollback.json
+node scripts/export-d1-v3.mjs .parcel-v3/parcel/wrangler.json .parcel-v3/d1-rollback.json
 python3 scripts/rollback-v3.py .parcel-v3/d1-rollback.json /path/to/parcel.db --bucket EXISTING_BUCKET --writers-frozen
 ```
 
@@ -137,7 +137,7 @@ R2 生命周期规则只终止遗留的未完成 `parcel/v3/` Multipart，不按
 定期执行 D1 远程导出备份（无需维护，但仅作数据库备份；业务切换仍用冻结快照）：
 
 ```bash
-node cloudflare/node_modules/wrangler/bin/wrangler.js d1 export DB --remote --config .parcel-v3/parcel-v3/wrangler.json --output .parcel-v3/backup.sql
+node cloudflare/node_modules/wrangler/bin/wrangler.js d1 export DB --remote --config .parcel-v3/parcel/wrangler.json --output .parcel-v3/backup.sql
 ```
 
 D1 快照不是 R2 文件备份；对象删除与数据库恢复必须一起考虑。保留对象备份或明确可接受的临时文件丢失窗口。审计元数据保留 30 天，过期会话/授权/限流计数由 Cron 清理。部署状态和 Secrets 另行加密备份。
@@ -148,10 +148,12 @@ D1 快照不是 R2 文件备份；对象删除与数据库恢复必须一起考�
 
 main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图文部署手册](https://parcel-guide.pages.dev) 配置，静态源文件位于 `docs/site/`，实际控制台截图脱敏后保存为 WebP。Cloudflare 自动创建 D1/R2，`npm run deploy` 按 DB binding 执行 migrations，并保留控制台运行时变量。首次模板为 `ACTIVE=false`，须完成 Access、三项密钥、PUBLIC_URL 和 R2 CORS 后手动启用。新模板配额为 9 GB，不是账单硬上限。[Deploy 按钮](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
 
+新部署的 Worker、D1 数据库和私有 R2 桶默认统一命名为 `parcel`，CLI bootstrap 也使用相同默认名称。已有实例仍须填写自己的实际资源标识；修改模板默认名称不会替已有实例迁移数据。本地 `.parcel-v3/` 目录、源码目录和 `parcel/v3/` 对象前缀继续保留兼容用途，不代表需要创建另一套服务。
+
 原 CLI bootstrap 独立入口为 `npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`；旧的带 `--config` 的 `npm run deploy` 命令继续兼容。生产实例继续使用下述专用生产命令；模板按钮不会复用生产实例标识或凭据。
 ## 正式 Worker 的 Git 自动部署
 
-正式 Worker 可连接当前 V3 生产分支 `v3/serverless`。在 Workers 的 Settings > Builds 中选择仓库、生产分支，关闭其他分支自动构建，根目录保持仓库根目录，使用 Node 24：
+正式 Worker 连接 `main` 生产分支。在 Workers 的 Settings > Builds 中选择仓库、生产分支，关闭其他分支自动构建，根目录保持仓库根目录，使用 Node 24：
 
 2026-10-14 控制台核对：正式实例已配置为 `hyphy-void/Parcel` 的 `main` 分支；生产构建已启用。后续推送 main 时，Cloudflare Builds 使用下述命令更新正式 Worker。
 
