@@ -82,9 +82,14 @@ func (a *App) availability(s Share) string {
 	if a.now().Unix() >= s.Expires {
 		return "expired"
 	}
-	if s.DownloadCount >= s.MaxDownloads {
+	if s.downloadsExhausted() {
 		return "exhausted"
 	}
 	return "available"
+}
+
+// A limit of -1 means unlimited downloads; zero remains the upload API default.
+func (s Share) downloadsExhausted() bool {
+	return s.MaxDownloads != -1 && s.DownloadCount >= s.MaxDownloads
 }
 func missing(e error) bool { return errors.Is(e, sql.ErrNoRows) }

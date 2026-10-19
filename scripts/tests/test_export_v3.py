@@ -106,3 +106,24 @@ class ExportV3Tests(unittest.TestCase):
                 EXPORT.export_database(self.path, "parcel-test")
         finally:
             os.close(fd)
+
+    def test_schema4_unlimited_export_and_rollback_preserve_counts(self):
+        import hashlib
+        self.db.executescript((ROOT / "internal/parcel/migrations/004.sql").read_text())
+        self.db.execute("UPDATE uploads SET max_downloads=-1")
+        self.db.execute("UPDATE shares SET max_downloads=-1,download_count=105")
+        self.db.commit()
+        data = json.loads(EXPORT.export_database(self.path, "parcel-test", now=100)["payload"])
+        self.assertEqual(data["source"], "go-sqlite-schema4")
+        self.assertEqual(data["rows"]["shares"][0]["max_downloads"], -1)
+        self.assertEqual(data["rows"]["shares"][0]["download_count"], 105)
+        data["source"] = "d1-v3"
+        data["rows"]["shares"][0]["download_count"] = 106
+        payload = json.dumps(data)
+        snapshot = Path(self.temp.name) / "unlimited-rollback.json"
+        snapshot.write_text(json.dumps({"payload": payload, "sha256": hashlib.sha256(payload.encode()).hexdigest()}))
+        spec = importlib.util.spec_from_file_location("rollback_v3", ROOT / "scripts/rollback-v3.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.restore_database(snapshot, self.path, "parcel-test")
+        self.assertEqual(self.db.execute("SELECT max_downloads,download_count FROM shares").fetchone(), (-1, 106))

@@ -25,7 +25,7 @@ func (a *App) issueR2(w http.ResponseWriter, r *http.Request, s Share) {
 		return
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec("UPDATE shares SET download_count=download_count+1,signed_until=max(signed_until,?) WHERE id=? AND state='active' AND expires>? AND download_count<max_downloads", max(expires, signed), s.ID, now)
+	result, err := tx.Exec("UPDATE shares SET download_count=download_count+1,signed_until=max(signed_until,?) WHERE id=? AND state='active' AND expires>? AND (max_downloads=-1 OR download_count<max_downloads)", max(expires, signed), s.ID, now)
 	if err != nil {
 		a.internal(w, r, err)
 		return

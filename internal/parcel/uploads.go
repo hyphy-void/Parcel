@@ -100,8 +100,8 @@ func (a *App) createUpload(w http.ResponseWriter, r *http.Request) {
 	if req.MaxDownloads == 0 {
 		req.MaxDownloads = a.C.DownloadLimit
 	}
-	if req.MaxDownloads < 1 || req.MaxDownloads > 100 {
-		a.problem(w, r, 400, "invalid_limit", "下载次数应为 1–100")
+	if req.MaxDownloads != -1 && (req.MaxDownloads < 1 || req.MaxDownloads > 100) {
+		a.problem(w, r, 400, "invalid_limit", "下载次数应为 1–100，或选择不限次数")
 		return
 	}
 	idem := r.Header.Get("Idempotency-Key")

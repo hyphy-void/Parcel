@@ -1,6 +1,6 @@
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
-import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { readFile, readdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
@@ -117,10 +117,16 @@ export async function fixture(t, options = {}) {
   });
   let db = await mf.getD1Database("DB"),
     bucket = await mf.getR2Bucket("FILES");
-  const statements = unstable_splitSqlQuery(
-    await readFile(resolve("v3/migrations/0001.sql"), "utf8"),
-  );
-  await db.batch(statements.map((sql) => db.prepare(sql)));
+  const migrations = (await readdir(resolve("v3/migrations")))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  for (const name of migrations) {
+    if (options.migrationsThrough && name > options.migrationsThrough) break;
+    const statements = unstable_splitSqlQuery(
+      await readFile(resolve("v3/migrations", name), "utf8"),
+    );
+    await db.batch(statements.map((sql) => db.prepare(sql)));
+  }
   let csrf = "";
   async function api(
     path,

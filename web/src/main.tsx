@@ -805,7 +805,8 @@ function Dashboard({ auth }: { auth: Auth }) {
                 </div>
                 <div className="row-count">
                   <strong>
-                    {s.download_count} / {s.max_downloads}
+                    {s.download_count} /{" "}
+                    {s.max_downloads === -1 ? "不限次数" : s.max_downloads}
                   </strong>
                   <span className="mobile-count-label">下载资格</span>
                 </div>
@@ -902,6 +903,7 @@ function NewShare({ auth }: { auth: Auth }) {
       password?: string;
     }>({});
   const limitInput = useRef<HTMLInputElement>(null);
+  const previousLimit = useRef(3);
   const sharePasswordInput = useRef<HTMLInputElement>(null);
   useLeaveWarning(!result && (!!file || !!saved || rulesDirty));
   const input = useRef<HTMLInputElement>(null),
@@ -917,6 +919,7 @@ function NewShare({ auth }: { auth: Auth }) {
         setSettings(s);
         setTTL(initialSaved?.ttl || s.default_ttl_seconds);
         setLimit(initialSaved?.limit || s.default_download_limit);
+        previousLimit.current = s.default_download_limit;
       })
       .catch((e) => setError(e.message));
     if (saved)
@@ -1157,7 +1160,8 @@ function NewShare({ auth }: { auth: Auth }) {
     if (!upload) {
       const errors = {
         limit:
-          !Number.isInteger(limit) || limit < 1 || limit > 100
+          !Number.isInteger(limit) ||
+          (limit !== -1 && (limit < 1 || limit > 100))
             ? "请输入 1 到 100 之间的整数。"
             : undefined,
         password:
@@ -1462,7 +1466,11 @@ function NewShare({ auth }: { auth: Auth }) {
               </div>
               <div>
                 <ArrowDown size={18} aria-hidden="true" />
-                <strong>{result.max_downloads} 次</strong>
+                <strong>
+                  {result.max_downloads === -1
+                    ? "不限次数"
+                    : `${result.max_downloads} 次`}
+                </strong>
                 <span>新下载资格</span>
               </div>
             </div>
@@ -1620,7 +1628,7 @@ function NewShare({ auth }: { auth: Auth }) {
               <span className="step-number">2</span>分享规则
             </h2>
           </div>
-          <fieldset disabled={busy || !!upload}>
+          <fieldset disabled={busy || !!upload || !settings}>
             <label htmlFor="share-ttl">有效期</label>
             <select
               id="share-ttl"
@@ -1667,17 +1675,36 @@ function NewShare({ auth }: { auth: Auth }) {
               type="number"
               min={1}
               max={100}
-              value={limit}
+              disabled={limit === -1}
+              value={limit === -1 ? "" : limit}
+              placeholder={limit === -1 ? "不限次数" : undefined}
               onChange={(e) => {
                 setLimit(Number(e.target.value));
                 setRulesDirty(true);
                 setValidation((v) => ({ ...v, limit: undefined }));
               }}
             />
+            <div className="toggle-row">
+              <label htmlFor="unlimited-downloads">不限下载次数</label>
+              <input
+                id="unlimited-downloads"
+                name="unlimited-downloads"
+                type="checkbox"
+                checked={limit === -1}
+                onChange={(e) => {
+                  if (e.target.checked) previousLimit.current = limit;
+                  setLimit(e.target.checked ? -1 : previousLimit.current);
+                  setRulesDirty(true);
+                  setValidation((v) => ({ ...v, limit: undefined }));
+                }}
+              />
+            </div>
             <small>
-              {backend === "r2"
-                ? "获取下载地址消耗一次，同一会话续签不重复计数。"
-                : "首次准许传输消耗一次，同一会话续传不重复计数。"}
+              {limit === -1
+                ? "有效期内可不限次数下载，密码保护仍然生效。"
+                : backend === "r2"
+                  ? "获取下载地址消耗一次，同一会话续签不重复计数。"
+                  : "首次准许传输消耗一次，同一会话续传不重复计数。"}
             </small>
             <div id="share-limit-error">
               <ErrorMessage message={validation.limit || ""} />
@@ -1902,7 +1929,10 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
                 <div>
                   <ArrowDown size={20} aria-hidden="true" />
                   <strong>
-                    {share.download_count} / {share.max_downloads}
+                    {share.download_count} /{" "}
+                    {share.max_downloads === -1
+                      ? "不限次数"
+                      : share.max_downloads}
                   </strong>
                   <span>已用下载资格</span>
                 </div>
@@ -2237,7 +2267,9 @@ function Receive({ id }: { id: string }) {
               <div>
                 <ArrowDown size={19} aria-hidden="true" />
                 <strong>
-                  {Math.max(0, share.max_downloads - share.download_count)} 次
+                  {share.max_downloads === -1
+                    ? "不限次数"
+                    : `${Math.max(0, share.max_downloads - share.download_count)} 次`}
                 </strong>
                 <span>剩余新下载资格</span>
               </div>

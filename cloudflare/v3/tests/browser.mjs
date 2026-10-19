@@ -139,6 +139,20 @@ for (const [name, engine, viewport] of [
         page.getByText("本地磁盘可用", { exact: false }),
       ).toHaveCount(0);
       await page.goto(f.config.PUBLIC_URL + "/admin/new");
+      const unlimited = name !== "firefox";
+      if (unlimited) {
+        await page.getByLabel("下载次数", { exact: true }).fill("7");
+        await page.getByLabel("不限下载次数", { exact: true }).check();
+        await expect(
+          page.getByLabel("下载次数", { exact: true }),
+        ).toBeDisabled();
+        await page.getByLabel("不限下载次数", { exact: true }).uncheck();
+        await expect(page.getByLabel("下载次数", { exact: true })).toHaveValue(
+          "7",
+        );
+        await page.getByLabel("不限下载次数", { exact: true }).check();
+        await page.getByLabel("有效期", { exact: true }).selectOption("3600");
+      }
       const bytes = (source = Buffer.concat([
         Buffer.alloc(16 << 20, 0x61),
         Buffer.from("xyz"),
@@ -150,6 +164,13 @@ for (const [name, engine, viewport] of [
       });
       await page.getByLabel("密码保护", { exact: true }).check();
       await page.getByLabel("分享密码", { exact: true }).fill("v3-password");
+      if (unlimited) {
+        await mkdir(resolve("../dist/previews"), { recursive: true });
+        await page.screenshot({
+          path: resolve(`../dist/previews/v3-unlimited-${name}.png`),
+          fullPage: true,
+        });
+      }
       await page.getByRole("button", { name: "上传并创建分享" }).click();
       await expect(
         page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
@@ -158,6 +179,11 @@ for (const [name, engine, viewport] of [
       const share = await f.db.prepare("SELECT * FROM shares").first();
       assert.equal(share.size, bytes.length);
       assert.equal(share.download_count, 0);
+      assert.equal(share.max_downloads, unlimited ? -1 : 3);
+      if (unlimited) {
+        assert.equal(share.expires - share.created, 3600);
+        await expect(page.getByText("不限次数", { exact: true })).toBeVisible();
+      }
       if (name === "chromium") {
         await mkdir(resolve("../dist/previews"), { recursive: true });
         await page.screenshot({
@@ -174,6 +200,8 @@ for (const [name, engine, viewport] of [
       await expect(
         page.getByRole("button", { name: "下载文件", exact: true }),
       ).toBeVisible();
+      if (unlimited)
+        await expect(page.getByText("不限次数", { exact: true })).toBeVisible();
       assert.equal(passwordRequests.length, 2);
       assert.deepEqual(passwordRequests[0], passwordRequests[1]);
       const browserStorage = await page.evaluate(() =>
@@ -208,6 +236,10 @@ for (const [name, engine, viewport] of [
         1,
       );
       await page.goto(f.config.PUBLIC_URL + "/admin/shares/" + share.id);
+      if (unlimited)
+        await expect(
+          page.getByText("1 / 不限次数", { exact: true }),
+        ).toBeVisible();
       await page.getByRole("button", { name: "撤销分享", exact: true }).click();
       await page.getByRole("button", { name: "确认撤销", exact: true }).click();
       await expect(

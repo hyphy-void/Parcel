@@ -23,7 +23,7 @@ export function manifest(raw) {
   const data = JSON.parse(envelope.payload);
   if (
     data.format !== 1 ||
-    data.source !== "go-sqlite-schema3" ||
+    !["go-sqlite-schema3", "go-sqlite-schema4"].includes(data.source) ||
     !data.bucket ||
     !data.rows ||
     !tables.every((k) => Array.isArray(data.rows[k]))

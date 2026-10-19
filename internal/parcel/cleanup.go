@@ -130,7 +130,7 @@ func (a *App) Cleanup() {
 			continue
 		}
 		eligible := s.State != "active" || now >= s.Expires
-		if !eligible && s.DownloadCount >= s.MaxDownloads {
+		if !eligible && s.downloadsExhausted() {
 			var n int
 			e = a.db.QueryRow("SELECT count(*) FROM download_sessions WHERE share_id=? AND version=? AND state='active' AND expires>? AND last_activity>?", s.ID, s.Version, now, now-int64(a.C.DownloadIdle.Seconds())).Scan(&n)
 			if e != nil {

@@ -164,8 +164,10 @@ main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图�
 
 `build:production` 先验证资源标识、生成忽略目录中的 `.parcel-v3/wrangler.builds.json`，然后安装锁定依赖并构建 Access 模式前端与 Worker。部署保留现有运行时变量与 Secrets，关闭 workers.dev 和预览地址，不上传仓库示例变量，不自动创建数据库或存储桶，不更改 Access、域名及 R2 CORS。账户配置与凭据继续留在本机或 Cloudflare，不提交到 Git。
 
-Cloudflare 构建的 API Token 使用已拥有的部署 Token，或另行配置受限用户 Token。可从当前账户的 Workers 脚本编辑、D1 读取、Workers R2 存储读取及账户设置读取开始配置，避免默认创建包含其他产品写入权限的令牌。Workers 脚本权限覆盖所选账户的 Workers，不能按单个 Worker 限定。
+Cloudflare 构建的 API Token 使用已拥有的部署 Token，或另行配置受限用户 Token。自动数据库迁移需要当前账户的 D1 编辑权限；还需要 Workers 脚本编辑、Workers R2 存储读取及账户设置读取。若原 Token 只有 D1 读取权限，需一次性补充 D1 编辑权限；构建与部署命令、资源标识和运行时变量无需改动。Workers 脚本权限覆盖所选账户的 Workers，不能按单个 Worker 限定。
 
-只有所选生产分支触发正式部署；其他分支继续由 GitHub CI 检查。Cloudflare 构建与 GitHub CI 分别运行；推送生产分支前应完成相关测试。部署命令不会自动执行 D1 schema 迁移。包含 schema 变化时，先按迁移说明完成兼容性审阅和必要迁移，再推送生产分支。
+只有所选生产分支触发正式部署；其他分支继续由 GitHub CI 检查。Cloudflare 构建与 GitHub CI 分别运行；推送生产分支前应完成相关测试。`deploy:production` 现在先对现有 DB binding 执行未应用的 D1 migrations，成功后才发布 Worker；迁移失败会阻止发布，修复后可重试同一命令，已完成的迁移不会重复执行。新增迁移须兼容部署期间仍运行的旧 Worker，并在推送前审阅数据与回滚影响。
+
+“不限下载次数”使用 `max_downloads=-1`，`1–100` 保持原有次数限制，省略或传 `0` 仍使用默认次数。无需新增环境变量，`DEFAULT_DOWNLOAD_LIMIT` 保持原值。`0002_unlimited_downloads.sql` 通过事务内重建相关表放宽约束，保留现有分享、密码、授权、下载会话、在途上传和配额账本，重新安装外键、索引及配额触发器。有效期、密码保护、撤销与签名地址保留期仍照常生效，无需清空 D1 或 R2。迁移后 Worker 发布失败可重试；一旦创建了不限次数的分享，不应回退到不支持该选项的 Worker。包含不限次数分享的 D1 快照回滚到 Go 时，目标须先升级到 schema 4。
 
 推送后确认 Cloudflare 构建与部署成功，并检查网页资源、管理员 Access 跳转，以及登录后的 `/api/v1/admin/status`。V3 Worker 没有 Go 服务的 `/readyz` 路由。需要回滚时可在 Workers Deployments 回退上一版本，随后回退对应 Git 提交，避免下次推送重新发布故障版本。

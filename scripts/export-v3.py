@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export a quiesced Go schema-3 R2 database. Never transfers or removes objects."""
+"""Export a quiesced Go schema-3/4 R2 database. Never transfers or removes objects."""
 import argparse
 import hashlib
 import fcntl
@@ -25,8 +25,8 @@ def _export_database(path, bucket, now=None):
         source.close()
     snapshot.row_factory = sqlite3.Row
     schema = snapshot.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
-    if schema != 3:
-        raise ValueError("Only verified Go schema 3 can be exported")
+    if schema not in (3, 4):
+        raise ValueError("Only verified Go schema 3 or 4 can be exported")
     if snapshot.execute("SELECT count(*) FROM uploads WHERE state NOT IN ('completed','cleaned')").fetchone()[0]:
         raise ValueError("Finish or cancel all uploads, then freeze Go writers and cleanup")
     if snapshot.execute("SELECT count(*) FROM uploads WHERE backend='r2' AND (put_expires>? OR (state='completed' AND part_bytes=0 AND staging_cleaned=0))", (now,)).fetchone()[0]:
@@ -34,7 +34,8 @@ def _export_database(path, bucket, now=None):
     if snapshot.execute("SELECT count(*) FROM shares WHERE backend!='r2'").fetchone()[0]:
         raise ValueError("Local-file shares need separate object migration; no silent data loss")
     target = sqlite3.connect(":memory:")
-    target.executescript((ROOT / "cloudflare/v3/migrations/0001.sql").read_text())
+    for migration in sorted((ROOT / "cloudflare/v3/migrations").glob("*.sql")):
+        target.executescript(migration.read_text())
     rows = {}
     for table in TABLES:
         columns = {r[1] for r in target.execute(f"PRAGMA table_info({table})")}
@@ -57,7 +58,7 @@ def _export_database(path, bucket, now=None):
             columns = list(item)
             target.execute(f"INSERT INTO {table}({','.join(columns)}) VALUES({','.join('?' for _ in columns)})", list(item.values()))
     usage = target.execute("SELECT used,reserved FROM storage_usage").fetchone()
-    payload = json.dumps({"format": 1, "source": "go-sqlite-schema3", "bucket": bucket, "exported": now, "rows": rows, "usage": {"used": usage[0], "reserved": usage[1]}}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    payload = json.dumps({"format": 1, "source": f"go-sqlite-schema{schema}", "bucket": bucket, "exported": now, "rows": rows, "usage": {"used": usage[0], "reserved": usage[1]}}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     snapshot.close()
     target.close()
     return {"sha256": hashlib.sha256(payload.encode()).hexdigest(), "payload": payload}

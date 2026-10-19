@@ -154,10 +154,10 @@ func New(c config.Config, static fs.FS, logger *slog.Logger) (*App, error) {
 		}
 	}
 	var version int
-	if e = db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version); e != nil || version < 1 || version > 3 {
+	if e = db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version); e != nil || version < 1 || version > 4 {
 		return fail(fmt.Errorf("不支持的数据库 schema 版本 %d", version))
 	}
-	for next := version + 1; next <= 3; next++ {
+	for next := version + 1; next <= 4; next++ {
 		schema, err := migrations.ReadFile(fmt.Sprintf("migrations/%03d.sql", next))
 		if err != nil {
 			return fail(err)

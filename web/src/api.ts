@@ -11,7 +11,7 @@ export type Upload = {
   state: string;
   share_id: string;
   ttl_seconds: number;
-  max_downloads: number;
+  max_downloads: number; // -1 means unlimited downloads.
   error: string;
 };
 export type Share = {
@@ -23,7 +23,7 @@ export type Share = {
   sha256?: string;
   created: number;
   expires: number;
-  max_downloads: number;
+  max_downloads: number; // -1 means unlimited downloads.
   download_count: number;
   state: string;
   error: string;

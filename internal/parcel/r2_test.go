@@ -415,7 +415,7 @@ func TestSchemaOneMigrationPreservesLocalRecords(t *testing.T) {
 	}
 	var version int
 	_ = a.db.QueryRow("SELECT max(version) FROM schema_migrations").Scan(&version)
-	if version != 3 {
+	if version != 4 {
 		t.Fatal("migration not applied")
 	}
 }

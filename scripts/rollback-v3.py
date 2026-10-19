@@ -32,8 +32,11 @@ def restore_database(snapshot_path, database_path, bucket):
         fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         db = sqlite3.connect(database_path)
         db.execute("PRAGMA foreign_keys=ON")
-        if db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] != 3:
-            raise ValueError("Go target must use schema 3")
+        schema = db.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+        if schema not in (3, 4):
+            raise ValueError("Go target must use schema 3 or 4")
+        if schema == 3 and any(row["max_downloads"] == -1 for table in ("uploads", "shares") for row in data["rows"][table]):
+            raise ValueError("Unlimited downloads require Go schema 4; start the new Go binary once before restoring")
         if db.execute("SELECT count(*) FROM shares WHERE backend!='r2'").fetchone()[0]:
             raise ValueError("Go target has local shares; do not discard another authority")
         backup_path = database_path.with_name(f"{database_path.name}.before-v3-rollback-{time.time_ns()}")

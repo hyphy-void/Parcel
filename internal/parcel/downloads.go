@@ -47,7 +47,7 @@ func (a *App) activate(hash string) error {
 	defer tx.Rollback()
 	now := a.now().Unix()
 	if d.State == "issued" {
-		result, e := tx.Exec("UPDATE shares SET download_count=download_count+1 WHERE id=? AND state='active' AND version=? AND expires>? AND download_count<max_downloads", s.ID, s.Version, now)
+		result, e := tx.Exec("UPDATE shares SET download_count=download_count+1 WHERE id=? AND state='active' AND version=? AND expires>? AND (max_downloads=-1 OR download_count<max_downloads)", s.ID, s.Version, now)
 		if e != nil {
 			return e
 		}
@@ -169,7 +169,7 @@ func (a *App) download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s, e := a.share(d.ShareID)
-	if e != nil || !a.validSession(d, s) || (d.State == "issued" && s.DownloadCount >= s.MaxDownloads) {
+	if e != nil || !a.validSession(d, s) || (d.State == "issued" && s.downloadsExhausted()) {
 		a.mu.Unlock()
 		a.problem(w, r, 410, "download_unavailable", "下载凭证或分享已失效")
 		return

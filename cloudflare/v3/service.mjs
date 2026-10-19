@@ -194,7 +194,7 @@ export class Service {
       ? s.state
       : s.expires <= this.now()
         ? "expired"
-        : s.download_count >= s.max_downloads
+        : s.max_downloads !== -1 && s.download_count >= s.max_downloads
           ? "exhausted"
           : "available";
   }
@@ -314,8 +314,11 @@ export class Service {
       limit = data.max_downloads || this.c.downloadLimit;
     if (!Number.isSafeInteger(ttl) || ttl < 1 || ttl > this.c.maxTTL)
       fail(400, "invalid_ttl", "分享有效期不合法");
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
-      fail(400, "invalid_limit", "下载次数应为 1–100");
+    if (
+      !Number.isSafeInteger(limit) ||
+      (limit !== -1 && (limit < 1 || limit > 100))
+    )
+      fail(400, "invalid_limit", "下载次数应为 1–100，或选择不限次数");
     if (data.password !== undefined && data.password !== "")
       fail(400, "password_derivation_required", "请使用浏览器密码处理协议");
     const password = data.password_proof || null;
@@ -746,7 +749,7 @@ export class Service {
         this.stmt(
           `INSERT INTO download_sessions(token_hash,share_id,version,state,created,activated,last_activity,expires)
           SELECT ?,id,version,'active',?,?,?,? FROM shares WHERE id=? AND state='active' AND expires>max(?,unixepoch()) AND version=?
-          AND download_count<max_downloads AND ${this.grantPredicate()} RETURNING token_hash`,
+          AND (max_downloads=-1 OR download_count<max_downloads) AND ${this.grantPredicate()} RETURNING token_hash`,
           sessionHash,
           now,
           now,
@@ -912,7 +915,7 @@ export class Service {
         now = this.now();
       s = await this.first(
         `UPDATE shares SET state='deleting',lease_token=?,lease_until=? WHERE id=? AND state!='deleted' AND signed_until<=? AND retry_at<=? AND lease_until<=?
-        AND (state!='active' OR expires<=? OR download_count>=max_downloads) RETURNING *`,
+        AND (state!='active' OR expires<=? OR (max_downloads!=-1 AND download_count>=max_downloads)) RETURNING *`,
         lease,
         now + 90,
         id,
@@ -999,7 +1002,7 @@ export class Service {
       this.c.cleanupBatch,
     );
     const shares = await this.rows(
-      "SELECT id FROM shares WHERE state!='deleted' AND (state!='active' OR expires<=? OR download_count>=max_downloads) AND signed_until<=? AND retry_at<=? AND lease_until<=? LIMIT ?",
+      "SELECT id FROM shares WHERE state!='deleted' AND (state!='active' OR expires<=? OR (max_downloads!=-1 AND download_count>=max_downloads)) AND signed_until<=? AND retry_at<=? AND lease_until<=? LIMIT ?",
       now,
       now,
       now,
