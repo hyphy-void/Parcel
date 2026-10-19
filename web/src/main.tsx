@@ -2046,6 +2046,11 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
             </section>
           </div>
         </>
+      ) : error ? (
+        <section className="panel detail-main">
+          <h1>无法读取分享</h1>
+          <p className="note">请检查链接，或返回我的分享重新选择。</p>
+        </section>
       ) : (
         <Loading />
       )}
@@ -2199,7 +2204,14 @@ function Receive({ id }: { id: string }) {
             <div className="symbol">
               <Package size={34} aria-hidden="true" />
             </div>
-            {!error && <Loading />}
+            {error ? (
+              <>
+                <h1>无法打开分享</h1>
+                <p className="muted">请检查链接，或联系分享者重新发送。</p>
+              </>
+            ) : (
+              <Loading />
+            )}
           </>
         ) : inactive ? (
           <>
@@ -2367,6 +2379,8 @@ function App() {
   if (error)
     return (
       <Shell>
+        <h1>暂时无法连接</h1>
+        <p className="note">请刷新页面重试，或稍后再次打开。</p>
         <ErrorMessage message={error} />
       </Shell>
     );
