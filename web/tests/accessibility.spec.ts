@@ -89,7 +89,7 @@ for (const scheme of ["light", "dark"] as const) {
             ),
           ].find((el) => matchMedia(el.media).matches)?.content,
       );
-      expect(matchingMeta).toBe(scheme === "dark" ? "#201d27" : "#f6f5fa");
+      expect(matchingMeta).toBe(scheme === "dark" ? "#181b18" : "#f5f5f2");
       for (const panel of await page
         .locator(".panel, .success-card, .receive-card")
         .all()) {

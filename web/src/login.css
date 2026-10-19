@@ -1,66 +1,50 @@
-/* Login-only envelope interactions. Radius scale: shell 24px; controls 10px. */
+/* The application's login shares the guide's orange stage and typographic scale. */
 .login-app {
-  --login-background: var(--background);
-  --login-surface: var(--paper);
-  --login-story: var(--lavender);
-  --login-text: var(--ink);
-  --login-secondary: var(--muted);
-  --login-border: var(--line);
-  --login-accent: var(--accent);
-  --login-button-text: var(--on-accent);
-  --login-error: var(--error-text);
-  --login-error-background: var(--error-bg);
-  background: var(--login-background);
-  color: var(--login-text);
-  min-height: 100dvh;
-}
-.login-app header {
-  min-height: 76px;
-}
-.login-app header > .text-button {
-  visibility: hidden;
+  background: var(--background);
 }
 .login-app main {
-  padding-top: 32px;
-  padding-bottom: 40px;
+  max-width: none;
+  padding: 0;
+  display: flex;
 }
-.login-app .login-layout {
-  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr);
-  min-height: 580px;
-  max-width: 1040px;
-  margin-top: 0;
-  background: var(--login-surface);
-  border-color: var(--login-border);
+.login-layout {
+  background: var(--background);
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  width: 100%;
+  min-height: 650px;
 }
-.login-app .login-story {
+.login-story {
+  background: var(--orange);
+  color: var(--stage-ink);
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: space-between;
-  padding: 42px 40px 26px;
-  background: var(--login-story);
+  align-items: flex-start;
+  padding: 52px var(--space) 36px;
   min-width: 0;
+  position: relative;
 }
-.login-app .story-copy {
+.story-copy {
   width: 100%;
-  padding: 0;
 }
-.login-app .story-copy .story-title {
-  font-size: 36px;
-  line-height: 1.45;
-  letter-spacing: -1.4px;
-  font-weight: 600;
+.story-title {
+  font-size: var(--display);
+  font-weight: 800;
+  line-height: 1.14;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
 }
-.login-app .story-copy p:not(.story-title) {
-  margin-top: 16px;
-  font-size: 14px;
-  line-height: 1.9;
-  color: var(--login-secondary);
+.story-copy p:not(.story-title) {
+  margin-top: 28px;
+  font-size: var(--body);
+  line-height: 1.65;
+  max-width: 36ch;
 }
 .login-envelope-display {
   width: 260px;
   height: 220px;
-  margin: 22px auto;
+  margin: 32px auto;
   flex-shrink: 0;
 }
 .login-envelope-motion {
@@ -71,7 +55,7 @@
   margin: 0;
 }
 .login-envelope-motion .envelope-sheet {
-  transition: transform 550ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 550ms var(--ease);
 }
 .login-story[data-focused="true"] .envelope-sheet {
   transform: translateY(-18px) rotate(-3deg);
@@ -82,214 +66,110 @@
 .login-visual-status {
   display: flex;
   align-items: center;
-  gap: 7px;
-  color: var(--login-secondary);
-  font-size: 12px;
+  gap: 8px;
+  font-size: var(--small);
   min-height: 24px;
-  width: 100%;
 }
 .login-visual-status svg {
   flex-shrink: 0;
 }
-/* Center the Chinese text line, then optically align the icon to its glyphs. */
-.login-app .login-visual-status,
-.login-app .auth-caption,
-.login-app .auth-card .note {
-  display: flex;
-  align-items: center;
-  line-height: 20px;
-}
-.login-app .login-visual-status > svg,
-.login-app .auth-caption > svg,
-.login-app .auth-card .note > svg {
-  display: block;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  margin: 0;
-  translate: 0 -1.5px;
-}
-.login-app .auth-card {
-  padding: 44px 38px;
+.auth-card {
+  padding: 64px clamp(28px, 4vw, 64px);
+  align-self: center;
   width: 100%;
+  max-width: 640px;
+  justify-self: center;
+  min-width: 0;
 }
-.login-app .auth-card h1 {
-  font-size: 28px;
+.auth-card h1 {
+  font-size: clamp(28px, 2.8vw, 40px);
+  line-height: 1.25;
+  margin-bottom: 20px;
 }
-.login-app .auth-caption,
-.login-app .muted,
-.login-app .note,
+.auth-card form {
+  margin-top: 36px;
+}
+.auth-card form .button,
+.auth-card > .button {
+  margin-top: 24px;
+}
+.auth-card .note {
+  margin-top: 24px;
+}
+.login-app header > .text-button {
+  display: none;
+}
 .login-app footer {
-  color: var(--login-secondary);
+  background: var(--background);
 }
-.login-app input {
-  background: var(--login-surface);
-  color: var(--login-text);
-  border-color: var(--control-border);
-  border-radius: 10px;
-}
-.login-app input:focus {
-  outline-color: var(--login-accent);
-  border-color: var(--login-accent);
-}
-.login-app input[aria-invalid="true"] {
-  border-color: var(--login-error);
-}
-.login-app .primary,
-.login-app .brand-icon {
-  background: var(--login-accent);
-  color: var(--login-button-text);
-}
-.login-app .primary {
-  white-space: nowrap;
-  transition: transform 160ms ease;
-}
-.login-app .primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-.login-app .primary:active:not(:disabled) {
-  transform: scale(0.98);
-}
-.login-app .alert {
-  color: var(--login-error);
-  background: var(--login-error-background);
-  border-color: var(--login-border);
-}
-.login-app .skip-link {
-  background: var(--login-surface);
-  color: var(--login-accent);
-}
-.login-app :focus-visible {
-  outline-color: var(--login-accent);
-}
-@media (max-width: 900px) {
-  .login-app .login-layout {
-    min-height: 530px;
+@media (min-width: 768px) and (max-width: 1100px) {
+  .story-title {
+    font-size: clamp(36px, 5vw, 54px);
   }
-  .login-app .login-story {
-    padding: 32px 28px 24px;
+  .login-story {
+    padding-top: 44px;
   }
-  .login-app .auth-card {
-    padding: 32px 26px;
-  }
-  .login-app .auth-card h1 {
-    font-size: 24px;
-  }
-  .login-app .story-copy .story-title {
-    font-size: 29px;
+  .auth-card {
+    padding-inline: 28px;
   }
 }
 @media (max-width: 767px) {
-  .login-app main {
-    padding-top: 14px;
-    padding-bottom: 24px;
-  }
-  .login-app .login-layout {
-    display: grid;
+  .login-layout {
     grid-template-columns: 1fr;
-    max-width: 480px;
-    min-height: auto;
-    border-radius: 20px;
+    min-height: 0;
   }
-  .login-app .login-story {
-    min-height: 190px;
-    padding: 26px 24px;
-    justify-content: center;
-    align-items: flex-start;
+  .login-story {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 124px;
+    padding: 28px var(--space) 32px;
+    gap: 24px 12px;
   }
-  .login-app .story-copy {
-    width: 63%;
+  .story-copy {
+    display: contents;
   }
-  .login-app .story-copy .story-title {
-    font-size: 24px;
-    letter-spacing: -0.9px;
+  .story-title {
+    grid-column: 1 / -1;
+    font-size: clamp(36px, 7.8vw, 56px);
+    line-height: 1.15;
   }
-  .login-app .story-copy p:not(.story-title) {
-    font-size: 12px;
-    margin-top: 10px;
+  .story-copy p:not(.story-title) {
+    margin-top: 0;
+    max-width: none;
   }
   .login-envelope-display {
-    position: absolute;
-    right: -48px;
-    top: -6px;
-    transform: scale(0.52);
+    width: 124px;
+    height: 110px;
     margin: 0;
+    grid-column: 2;
+    grid-row: 2;
+    align-self: center;
   }
-  .login-app .login-story .parcel-envelope {
-    display: block;
-    transform: none;
-    position: relative;
-    right: auto;
-    bottom: auto;
+  .login-envelope-motion .parcel-envelope {
+    transform: scale(0.47);
+    transform-origin: top left;
   }
   .login-visual-status {
     display: none;
   }
-  .login-app .auth-card {
-    padding: 26px 24px 28px;
+  .auth-card {
+    padding: 36px var(--space) 32px;
+    max-width: none;
   }
-  .login-app .auth-card h1 {
-    font-size: 25px;
+  .auth-card h1 {
+    font-size: 28px;
   }
-  .login-app .auth-card form {
-    margin-top: 24px;
-  }
-  .login-app .auth-card .note {
-    margin-top: 18px;
-  }
-}
-@media (max-width: 360px) {
-  .login-app .login-story {
-    padding: 24px 20px;
-    min-height: 180px;
-  }
-  .login-app .story-copy .story-title {
-    font-size: 20px;
-  }
-  .login-app .story-copy p:not(.story-title) {
-    font-size: 11px;
-  }
-  .login-envelope-display {
-    right: -67px;
-    top: -10px;
-    transform: scale(0.38);
-  }
-  .login-app .auth-card {
-    padding: 22px 20px 24px;
-  }
-  .login-app .auth-card h1 {
-    font-size: 23px;
-  }
-}
-@media (max-height: 760px) and (min-width: 768px) {
-  .login-app main {
-    padding-top: 18px;
-    padding-bottom: 22px;
-  }
-  .login-app .login-layout {
-    min-height: 490px;
-  }
-  .login-app .login-story {
-    padding-top: 28px;
-  }
-  .login-app .story-copy .story-title {
-    font-size: 30px;
-  }
-  .login-envelope-display {
-    margin: 12px auto;
+  .auth-card form {
+    margin-top: 28px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .login-app .login-envelope-motion {
+  .login-envelope-motion {
     transform: none;
   }
-  .login-app .login-envelope-motion .envelope-sheet,
-  .login-app .login-story[data-focused="true"] .envelope-sheet,
-  .login-app .login-story[data-busy="true"] .envelope-sheet {
+  .login-envelope-motion .envelope-sheet,
+  .login-story[data-focused="true"] .envelope-sheet,
+  .login-story[data-busy="true"] .envelope-sheet {
     transform: rotate(-7deg);
     transition: none;
-  }
-  .login-app .primary:active:not(:disabled) {
-    transform: none;
   }
 }

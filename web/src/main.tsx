@@ -31,6 +31,7 @@ import {
   type DownloadTicket,
   availability,
   bytes,
+  decimal,
   date,
   randomPassword,
   randomShareCode,
@@ -72,7 +73,7 @@ function ErrorMessage({ message }: { message: string }) {
 }
 function Loading({ text = "正在加载…" }: { text?: string }) {
   return (
-    <div className="loading">
+    <div className="loading" role="status" aria-live="polite">
       <Loader2 className="spin" size={20} aria-hidden="true" />
       {text}
     </div>
@@ -91,7 +92,7 @@ function ParcelEnvelope({ compact = false }: { compact?: boolean }) {
       </div>
       <div className="envelope-pocket">
         <Package size={24} strokeWidth={1.5} aria-hidden="true" />
-        <span>Parcel</span>
+        <span translate="no">Parcel</span>
       </div>
       <span className="envelope-seal">
         <Check size={18} aria-hidden="true" />
@@ -131,7 +132,7 @@ function Shell({
         跳到主要内容
       </a>
       <header>
-        <a href={auth ? "/admin" : "/"} className="brand">
+        <a href={auth ? "/admin" : "/"} className="brand" translate="no">
           <span className="brand-icon">
             <Package size={23} aria-hidden="true" />
           </span>
@@ -141,7 +142,7 @@ function Shell({
           </span>
         </a>
         {auth ? (
-          <nav>
+          <nav aria-label="主导航">
             <a
               href="/admin"
               aria-current={location.pathname === "/admin" ? "page" : undefined}
@@ -186,10 +187,16 @@ function Shell({
         {children}
       </main>
       <footer>
-        <span>Parcel，让文件轻装上路。</span>
+        <span>
+          <span className="footer-brand" translate="no">
+            Parcel
+          </span>
+          让文件轻装上路。
+        </span>
         <span>
           <ShieldCheck size={16} aria-hidden="true" />
           <span>自托管存储，到期自动清理</span>
+          <a href="https://parcel-guide.pages.dev/zh.html">部署手册</a>
         </span>
       </footer>
     </div>
@@ -295,6 +302,8 @@ function CopyField({
           id={`${id}-link`}
           name="share-link"
           autoComplete="off"
+          spellCheck={false}
+          translate="no"
           ref={linkRef}
           readOnly
           value={value}
@@ -433,7 +442,7 @@ const LoginVisual = React.memo(
             <p>
               上传，发出链接。
               <br />
-              到期之后，Parcel 帮你收好尾。
+              到期自动清理。
             </p>
           </div>
           <div className="login-envelope-display">
@@ -498,10 +507,6 @@ function Login() {
         <div className="login-layout">
           <LoginVisual ref={visual} focused={false} busy={false} />
           <div className="auth-card">
-            <span className="auth-caption">
-              <ShieldCheck size={16} aria-hidden="true" />
-              管理员登录
-            </span>
             <h1>让文件轻装上路。</h1>
             <p className="muted">验证管理员身份后，上传文件并管理分享。</p>
             <a className="button primary full" href="/admin">
@@ -517,10 +522,6 @@ function Login() {
       <div className="login-layout">
         <LoginVisual ref={visual} focused={focused} busy={busy} />
         <div className="auth-card">
-          <span className="auth-caption">
-            <KeyRound size={16} aria-hidden="true" />
-            <span>管理员登录</span>
-          </span>
           <h1>让文件轻装上路。</h1>
           <p className="muted">登录后上传文件，创建你的临时分享。</p>
           <form ref={form} onSubmit={submit} aria-busy={busy}>
@@ -554,7 +555,7 @@ function Login() {
               ) : (
                 <ArrowRight size={18} aria-hidden="true" />
               )}
-              {busy ? "正在登录" : "登录 Parcel"}
+              {busy ? "正在登录…" : "登录 Parcel"}
             </button>
           </form>
           <p className="note">
@@ -655,13 +656,13 @@ function Dashboard({ auth }: { auth: Auth }) {
             </span>
             <strong>
               {status.storage_backend === "r2"
-                ? `${((status.r2_used_bytes ?? 0) / 1e9).toFixed(2)} GB`
+                ? `${decimal((status.r2_used_bytes ?? 0) / 1e9)}\u00a0GB`
                 : bytes(status.used_bytes)}
               <small>
                 {" "}
                 /{" "}
                 {status.storage_backend === "r2"
-                  ? `${((status.r2_quota_bytes ?? 9e9) / 1e9).toFixed(2)} GB`
+                  ? `${decimal((status.r2_quota_bytes ?? 9e9) / 1e9)}\u00a0GB`
                   : bytes(status.quota_bytes)}
               </small>
             </strong>
@@ -674,7 +675,7 @@ function Dashboard({ auth }: { auth: Auth }) {
             </div>
             <small>
               {status.storage_backend === "r2"
-                ? `上传及临时预留 ${bytes(status.r2_reserved_bytes)} · 剩余 ${((status.r2_available_bytes ?? 0) / 1e9).toFixed(2)} GB`
+                ? `上传及临时预留 ${bytes(status.r2_reserved_bytes)} · 剩余 ${decimal((status.r2_available_bytes ?? 0) / 1e9)}\u00a0GB`
                 : `上传预留 ${bytes(status.reserved_bytes)} · 待清理 ${bytes(status.pending_bytes)}`}
             </small>
             <small className="budget-state">
@@ -690,7 +691,7 @@ function Dashboard({ auth }: { auth: Auth }) {
               分享记录
             </span>
             <strong>
-              {total}
+              {new Intl.NumberFormat("zh-CN").format(total)}
               <small> 个分享</small>
             </strong>
             <small>到期、撤销或次数用完后自动回收文件</small>
@@ -826,7 +827,7 @@ function Dashboard({ auth }: { auth: Auth }) {
         ) : (
           <div className="empty">
             <ParcelEnvelope compact />
-            <h3>这里，留给你要分享的文件。</h3>
+            <p className="empty-title">这里，留给你要分享的文件。</p>
             <p>上传文件，设置规则，把链接交给需要的人。</p>
             <a className="button secondary" href="/admin/new">
               <Plus size={17} aria-hidden="true" />
@@ -1503,9 +1504,7 @@ function NewShare({ auth }: { auth: Auth }) {
       <div className="new-grid">
         <section className="panel upload-panel">
           <div className="panel-title">
-            <h2>
-              <span className="step-number">1</span>选择文件
-            </h2>
+            <h2>选择文件</h2>
             <span className="muted">单文件分享</span>
           </div>
           <input
@@ -1548,7 +1547,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 ? bytes(file.size)
                 : settings
                   ? `支持单个文件，最大 ${bytes(settings.max_file_bytes)}`
-                  : "正在读取服务器配置"}
+                  : "正在读取服务器配置…"}
             </span>
             <span className="choose-file-label">
               <Plus size={16} aria-hidden="true" />
@@ -1624,9 +1623,7 @@ function NewShare({ auth }: { auth: Auth }) {
         </section>
         <section className="panel rules-panel">
           <div className="panel-title">
-            <h2>
-              <span className="step-number">2</span>分享规则
-            </h2>
+            <h2>分享规则</h2>
           </div>
           <fieldset disabled={busy || !!upload || !settings}>
             <label htmlFor="share-ttl">有效期</label>
@@ -1677,15 +1674,15 @@ function NewShare({ auth }: { auth: Auth }) {
               max={100}
               disabled={limit === -1}
               value={limit === -1 ? "" : limit}
-              placeholder={limit === -1 ? "不限次数" : undefined}
+              placeholder={limit === -1 ? "不限次数…" : undefined}
               onChange={(e) => {
                 setLimit(Number(e.target.value));
                 setRulesDirty(true);
                 setValidation((v) => ({ ...v, limit: undefined }));
               }}
             />
-            <div className="toggle-row">
-              <label htmlFor="unlimited-downloads">不限下载次数</label>
+            <label className="toggle-row" htmlFor="unlimited-downloads">
+              <span>不限下载次数</span>
               <input
                 id="unlimited-downloads"
                 name="unlimited-downloads"
@@ -1698,7 +1695,7 @@ function NewShare({ auth }: { auth: Auth }) {
                   setValidation((v) => ({ ...v, limit: undefined }));
                 }}
               />
-            </div>
+            </label>
             <small>
               {limit === -1
                 ? "有效期内可不限次数下载，密码保护仍然生效。"
@@ -1709,8 +1706,8 @@ function NewShare({ auth }: { auth: Auth }) {
             <div id="share-limit-error">
               <ErrorMessage message={validation.limit || ""} />
             </div>
-            <div className="toggle-row">
-              <label htmlFor="protect">密码保护</label>
+            <label className="toggle-row" htmlFor="protect">
+              <span>密码保护</span>
               <input
                 id="protect"
                 name="protect"
@@ -1724,7 +1721,7 @@ function NewShare({ auth }: { auth: Auth }) {
                     setPassword(randomShareCode());
                 }}
               />
-            </div>
+            </label>
             {protect && (
               <div className="password-field">
                 <input
@@ -1792,8 +1789,8 @@ function NewShare({ auth }: { auth: Auth }) {
                 )}
                 {phase === "checking"
                   ? backend === "r2"
-                    ? "正在完成上传"
-                    : "正在校验"
+                    ? "正在完成上传…"
+                    : "正在校验…"
                   : upload?.state === "finalizing"
                     ? "查询发布结果"
                     : upload
@@ -1900,8 +1897,10 @@ function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
         <>
           <section className="page-heading compact">
             <div>
-              <p className="eyebrow">分享详情</p>
-              <h1 className="filename-title">{share.name}</h1>
+              <h1>分享详情</h1>
+              <p className="filename-title" translate="no">
+                {share.name}
+              </p>
               <p className="muted">
                 {bytes(share.size)} · 创建于 {date(share.created)}
               </p>
@@ -2195,7 +2194,6 @@ function Receive({ id }: { id: string }) {
   return (
     <Shell>
       <div className="receive-card">
-        <p className="eyebrow">有人给你寄来了一份文件</p>
         {!share ? (
           <>
             <div className="symbol">
@@ -2247,7 +2245,7 @@ function Receive({ id }: { id: string }) {
                 ) : (
                   <KeyRound size={18} aria-hidden="true" />
                 )}
-                {busy ? "正在验证" : "解锁文件"}
+                {busy ? "正在验证…" : "解锁文件"}
               </button>
             </form>
           </>
@@ -2256,7 +2254,10 @@ function Receive({ id }: { id: string }) {
             <div className="symbol">
               <File size={34} aria-hidden="true" />
             </div>
-            <h1 className="filename-title">{share.name}</h1>
+            <h1>接收文件</h1>
+            <p className="filename-title" translate="no">
+              {share.name}
+            </p>
             <p className="file-size">{bytes(share.size)}</p>
             <div className="rule-grid">
               <div>
@@ -2284,7 +2285,7 @@ function Receive({ id }: { id: string }) {
               ) : (
                 <ArrowDown size={20} aria-hidden="true" />
               )}
-              {busy ? "正在准备" : ticket ? "再次下载 / 继续" : "下载文件"}
+              {busy ? "正在准备…" : ticket ? "再次下载 / 继续" : "下载文件"}
             </button>
             {ticket && (
               <a

@@ -148,7 +148,7 @@ for (const status of [409, 503]) {
     );
     await page.reload();
     await expect(
-      page.getByRole("button", { name: "正在完成上传", exact: true }),
+      page.getByRole("button", { name: "正在完成上传…", exact: true }),
     ).toBeDisabled();
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "取消这次上传" }).click();

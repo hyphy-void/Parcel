@@ -125,7 +125,10 @@ test("上传、密码解锁、原生下载与撤销形成完整闭环", async ({
   );
   await receive.getByLabel("分享密码").fill(code);
   await receive.getByRole("button", { name: "解锁文件" }).click();
-  await expect(receive.getByRole("heading", { name: filename })).toBeVisible();
+  await expect(
+    receive.getByRole("heading", { name: "接收文件" }),
+  ).toBeVisible();
+  await expect(receive.getByText(filename, { exact: true })).toBeVisible();
   const [download] = await Promise.all([
     receive.waitForEvent("download"),
     receive.getByRole("button", { name: "下载文件", exact: true }).click(),

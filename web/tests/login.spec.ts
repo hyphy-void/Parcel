@@ -22,7 +22,7 @@ test("密码输入反馈、验证中状态与错误恢复", async ({ page }) => 
     });
   });
   await page.getByRole("button", { name: "登录 Parcel" }).click();
-  await expect(page.getByRole("button", { name: "正在登录" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "正在登录…" })).toBeDisabled();
   await expect(password).toBeDisabled();
   await expect(storyCaption).toHaveText("文件分享，从这里开始。");
   await expect(page.getByRole("alert")).toHaveText("管理员密码不正确");
@@ -54,5 +54,5 @@ test("减少动态效果时保持静止，深色模式仍可使用", async ({ pa
     await page
       .locator(".login-app")
       .evaluate((el) => getComputedStyle(el).backgroundColor),
-  ).toBe("rgb(32, 29, 39)");
+  ).toBe("rgb(24, 27, 24)");
 });

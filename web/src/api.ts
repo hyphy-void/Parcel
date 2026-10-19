@@ -111,7 +111,7 @@ export async function api<T>(
   return data as T;
 }
 export function bytes(n = 0): string {
-  if (n < 1024) return `${n} B`;
+  if (n < 1024) return `${new Intl.NumberFormat("zh-CN").format(n)}\u00a0B`;
   const units = ["KiB", "MiB", "GiB", "TiB"];
   let x = n / 1024,
     i = 0;
@@ -119,15 +119,21 @@ export function bytes(n = 0): string {
     x /= 1024;
     i++;
   }
-  return `${x.toFixed(x >= 10 ? 1 : 2)} ${units[i]}`;
+  return `${decimal(x, x >= 10 ? 1 : 2)}\u00a0${units[i]}`;
+}
+export function decimal(n: number, digits = 2): string {
+  return new Intl.NumberFormat("zh-CN", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(n);
 }
 export function date(n: number): string {
-  return new Date(n * 1000).toLocaleString("zh-CN", {
+  return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  });
+  }).format(new Date(n * 1000));
 }
 export const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
