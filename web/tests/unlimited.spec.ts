@@ -54,9 +54,21 @@ test("不限次数保留有效期和密码，独立下载累计计数且可撤�
   await page.goto(`/admin/shares/${id}`);
   await expect(page.getByText("2 / 不限次数", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "撤销分享", exact: true }).click();
+  const revokeResponse = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/api/v1/admin/shares/${id}`) &&
+      response.request().method() === "DELETE",
+  );
   await page.getByRole("button", { name: "确认撤销", exact: true }).click();
+  expect((await revokeResponse).status()).toBe(200);
+  await expect(
+    page.getByRole("button", { name: "确认撤销", exact: true }),
+  ).toHaveCount(0);
   await page.goto(url);
   await expect(
-    page.getByRole("heading", { name: "已撤销", exact: true }),
+    page.getByRole("heading", { name: /^(已撤销|等待清理|已清理)$/ }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "下载文件", exact: true }),
+  ).toHaveCount(0);
 });
