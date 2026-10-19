@@ -46,6 +46,8 @@ jobs:
       - run: PARCEL_TEST_BINARY="$PWD/bin/parcel" python3 -m unittest discover -s scripts/tests -v
       - run: npx playwright install --with-deps chromium firefox
         working-directory: web
+      - name: Verify bilingual deployment guide in Chromium
+        run: node --test scripts/tests/guide-browser.test.mjs
       - run: npm run test:e2e
         working-directory: web
       - run: npm --prefix cloudflare run test:browser

@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ff8126" />
+    <meta
+      name="description"
+      content="Parcel 开源文件中转站的 Cloudflare 部署教程。Workers、D1、私有 R2，配有实际控制台截图与配置生成器。"
+    />
+    <title>Parcel — Cloudflare 部署手册</title>
+    <link rel="alternate" hreflang="en" href="./" />
+    <link rel="alternate" hreflang="zh-CN" href="zh.html" />
+    <link rel="stylesheet" href="style.css" />
+    <script src="guide.js" defer></script>
+  </head>
+  <body id="top">
+    <a class="skip-link" href="#main">跳转到正文</a>
+    <header>
+      <a class="wordmark" href="#top" translate="no">Parcel</a>
+      <nav aria-label="主导航">
+        <a href="#steps">部署步骤</a><a href="#config">配置工具</a
+        ><a href="#verify">验收</a
+        ><a href="https://github.com/hyphy-void/Parcel">GitHub</a>
+        <a
+          class="language-switch"
+          data-language-switch
+          href="./"
+          lang="en"
+          hreflang="en"
+          aria-label="EN — Switch to English"
+          title="Switch to English"
+          ><svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+          >
+            <path
+              d="M3 5h12M9 3v2m-3 0c0 6 4 10 8 12M12 5c0 6-4 10-9 12m11 4 4-10 4 10m-7-3h6"
+            /></svg
+          ><span>EN</span></a
+        >
+      </nav>
+    </header>
+    <main id="main" tabindex="-1">
+      <section class="hero" aria-labelledby="guide-title">
+        <h1 id="guide-title">
+          <span class="hero-line">你的文件。</span>
+          <span class="hero-line">你的中转站。</span>
+        </h1>
+        <div class="hero-bottom">
+          <div class="hero-copy">
+            <p>
+              把 <span translate="no">Parcel</span> 部署到自己的 Cloudflare
+              账户。<br class="hero-break" />文件直传私有 R2，中转站由你掌控。
+            </p>
+            <p class="note hero-note">MIT 开源 · 支持 Workers Free</p>
+          </div>
+          <div class="hero-actions">
+            <a
+              class="action"
+              href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel"
+            >
+              <span>部署到 Cloudflare</span><span aria-hidden="true">↗</span>
+            </a>
+            <a class="hero-guide-link" href="#prepare"
+              >先看部署指南 <span aria-hidden="true">↓</span></a
+            >
+          </div>
+        </div>
+      </section>
+      <section id="steps" class="reading">
+        <div class="section-heading">
+          <h2>从空账户开始</h2>
+          <p>
+            按钮负责创建应用资源。管理员认证和文件跨域权限，按下面的实际控制台页面完成。
+            <span class="note review-note"
+              >截图核对于
+              <time datetime="2026-10-19" data-review-date
+                >2026 年 10 月 19 日</time
+              >。</span
+            >
+          </p>
+        </div>
+        <div class="guide-layout">
+          <aside class="guide-contents">
+            <details class="contents-disclosure" open>
+              <summary>本页目录</summary>
+              <nav aria-label="部署章节">
+                <a href="#prepare">准备账户</a>
+                <a href="#button">创建应用</a>
+                <a href="#access">配置管理员 Access</a>
+                <a href="#r2">创建 R2 凭据</a>
+                <a href="#variables">保存变量与密钥</a>
+                <a href="#cors">允许浏览器直传</a>
+                <a href="#config">配置工具</a>
+                <a href="#verify">上线验收</a>
+                <a href="#faq">常见问题</a>
+              </nav>
+            </details>
+          </aside>
+          <div class="guide-content">
+            <article id="prepare">
+              <h3>准备账户</h3>
+              <div class="answer">
+                <p>
+                  准备 GitHub 与 Cloudflare 账户，先在 Cloudflare 启用 R2，建立
+                  Zero Trust 组织，并启用 Workers
+                  子域名。已有账户无需重复创建。R2
+                  可能要求添加付款方式；请本人完成套餐和付款设置。
+                </p>
+                <p>
+                  本教程适用于新实例。现有 Go、Pages 或 V3
+                  实例升级，请使用仓库的迁移与生产部署文档，避免两套服务管理同一桶。
+                </p>
+                <p>
+                  应用默认配额为 9&nbsp;GB、单文件上限为 8&nbsp;GiB。R2
+                  免费额度按账户共享，存储、请求和其他桶都会影响账单；应用配额不是账单硬上限。<a
+                    href="https://developers.cloudflare.com/r2/pricing/"
+                    >查看 R2 价格</a
+                  >。
+                </p>
+              </div>
+            </article>
+            <article id="button">
+              <h3>创建应用</h3>
+              <div class="answer">
+                <p>
+                  点击部署按钮，按 Cloudflare 的引导创建自己的 GitHub 仓库，选择
+                  Worker 名称以及 D1、R2 资源。根目录保持
+                  <code translate="no">/</code>，Node 版本使用
+                  <code translate="no">24</code>。
+                </p>
+                <p>
+                  构建命令为
+                  <code translate="no">npm run build</code>，部署命令为
+                  <code translate="no">npm run deploy</code>。部署脚本通过
+                  <code translate="no">DB</code> 绑定执行 D1
+                  migrations，并把实际创建的 R2 桶名写入
+                  <code translate="no">R2_BUCKET_NAME</code>。
+                </p>
+                <p>
+                  关闭“启用预览构建”。部署页面的“使用 Cloudflare Access
+                  保护”保持关闭， 下一步再为管理员路径单独配置
+                  Access，让分享链接可以公开访问。
+                </p>
+                <p>
+                  首次保持
+                  <code translate="no">ACTIVE=false</code>。缺少运行时配置时返回
+                  <code translate="no">serverless_unconfigured</code>
+                  是预期状态；配置完成前不要对外分享。
+                </p>
+                <figure>
+                  <a href="images/bindings.webp"
+                    ><img
+                      src="images/bindings.webp"
+                      alt="Worker 生产环境中的 D1、R2 与两个速率限制器绑定，命名空间已替换为示例标签"
+                      width="1788"
+                      height="636"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Settings → Bindings → Production：DB 绑定 D1，FILES 绑定私有
+                    R2；ADMIN_LIMITER 和 API_LIMITER
+                    为速率限制器。图中的资源名为 parcel，命名空间值已覆盖并填入
+                    YOUR_*_NAMESPACE_ID 示例标签；保留自己部署生成的绑定。
+                  </figcaption>
+                </figure>
+                <figure>
+                  <a href="images/template-build.webp"
+                    ><img
+                      src="images/template-build.webp"
+                      alt="正式 parcel 实例的构建详情，构建与部署各阶段均成功"
+                      width="2453"
+                      height="1341"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    正式 parcel 实例的成功构建：Build settings 显示 npm run
+                    build:production、npm run deploy:production 与根目录
+                    /，下方各阶段均通过。这是既有实例的生产构建示例；新用户按钮部署应使用
+                    npm run build 与 npm run deploy，不能照抄这里带 :production
+                    的命令。
+                  </figcaption>
+                </figure>
+              </div>
+            </article>
+            <article id="access">
+              <h3>配置管理员 Access</h3>
+              <div class="answer">
+                <p>
+                  进入 Zero Trust → Access controls → Applications，添加
+                  Self-hosted 应用。使用准备访问的 HTTPS 域名，可先用自己的
+                  <code translate="no">worker.账户.workers.dev</code> 地址。
+                </p>
+                <p>为同一个应用添加以下七个路径，避免保护整个域名：</p>
+                <pre
+                  tabindex="0"
+                  role="region"
+                  aria-label="管理员 Access 路径"
+                ><code translate="no">/admin
+/admin/*
+/login
+/api/v1/auth/*
+/api/v1/admin/*
+/api/v1/uploads
+/api/v1/uploads/*</code></pre>
+                <p>
+                  创建 Allow 策略，Include 选择 Emails 并填写管理员邮箱。启用
+                  One-time PIN 或你自己的身份提供商。不要添加
+                  Bypass，也不要把整个域名设为管理员应用；首页与
+                  <code translate="no">/s/*</code> 分享页需要公开访问。
+                </p>
+                <figure>
+                  <a href="images/access.webp"
+                    ><img
+                      src="images/access.webp"
+                      alt="parcel-admin 自托管 Access 应用的七个公共主机名路径，域名已替换为 example.com"
+                      width="2522"
+                      height="1311"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Access controls → Applications → parcel-admin → Edit →
+                    Public
+                    hostnames。图中七条路径属于同一个应用；真实域名已实色覆盖并替换为
+                    example.com。为自己的应用配置相同路径，Allow
+                    策略仅包含管理员邮箱。
+                  </figcaption>
+                </figure>
+                <p>
+                  复制应用的 AUD，记录组织 Team domain，如
+                  <code translate="no"
+                    >https://your-team.cloudflareaccess.com</code
+                  >。分别填入 Worker 的
+                  <code translate="no">ACCESS_AUD</code> 和
+                  <code translate="no">ACCESS_TEAM_DOMAIN</code>，<code
+                    translate="no"
+                    >ADMIN_EMAILS</code
+                  >
+                  与策略邮箱保持一致。多个管理员用逗号分隔。
+                </p>
+              </div>
+            </article>
+            <article id="r2">
+              <h3>创建 R2 凭据</h3>
+              <div class="answer">
+                <p>
+                  R2 → Overview → Manage API Tokens → Create Account API
+                  token。选择 Object Read &amp; Write，仅允许这个应用的桶。记录
+                  S3 Access Key ID 与 Secret Access Key，作为 Worker
+                  的两项密钥保存。
+                </p>
+                <figure>
+                  <a href="images/r2-token.webp"
+                    ><img
+                      src="images/r2-token.webp"
+                      alt="R2 账户令牌表单，已选择 Object Read & Write 并仅允许 parcel 桶"
+                      width="2327"
+                      height="2345"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Create Account API Token：选择 Object Read & Write，再选择
+                    Apply to specific buckets only 并指定 parcel
+                    桶。这里展示配置表单，没有生成或展示 Access Key ID、Secret
+                    Access Key。
+                  </figcaption>
+                </figure>
+                <p>
+                  <code translate="no">R2_ENDPOINT</code> 是桶设置里的 S3 API
+                  账户地址，例如
+                  <code translate="no"
+                    >https://ACCOUNT_ID.r2.cloudflarestorage.com</code
+                  >，不带桶名与尾部斜杠。Worker 的
+                  <code translate="no">FILES</code> 绑定、<code
+                    >R2_BUCKET_NAME</code
+                  >
+                  和凭据允许的桶必须一致。
+                </p>
+                <p>
+                  桶保持私有，不启用公开 r2.dev
+                  或公开桶域名。文件通过短期预签名地址上传与下载。
+                </p>
+              </div>
+            </article>
+            <article id="variables">
+              <h3>保存变量与密钥</h3>
+              <div class="answer">
+                <p>
+                  Worker → Settings →
+                  运行时变量和密钥。普通配置选择变量；以下三项勾选“密钥”：
+                </p>
+                <ul>
+                  <li>
+                    <code translate="no">SESSION_SECRET</code>：独立生成的 64
+                    位十六进制随机值。
+                  </li>
+                  <li>
+                    <code translate="no">R2_ACCESS_KEY_ID</code>：刚创建的 S3
+                    Access Key ID。
+                  </li>
+                  <li>
+                    <code translate="no">R2_SECRET_ACCESS_KEY</code>：配套 S3
+                    Secret Access Key。
+                  </li>
+                </ul>
+                <div class="command-block" data-copy-block>
+                  <div class="command-toolbar">
+                    <span>生成会话密钥</span
+                    ><button type="button" data-copy="secret-command" hidden>
+                      复制命令
+                    </button>
+                  </div>
+                  <pre
+                    tabindex="0"
+                    role="region"
+                    aria-label="生成会话密钥的命令"
+                  ><code id="secret-command" translate="no">node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"</code></pre>
+                  <p class="copy-message" role="status" aria-live="polite"></p>
+                </div>
+                <p>
+                  在自己的终端生成会话密钥，不要把结果放进
+                  Git、Issue、截图或网页。单独安全备份；后续部署保持不变，直接更换会导致已有密码分享无法解锁。
+                </p>
+                <figure>
+                  <a href="images/add-secret.webp"
+                    ><img
+                      src="images/add-secret.webp"
+                      alt="添加环境变量的空表单，已选择 Production 并勾选 Secret"
+                      width="1217"
+                      height="680"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Add variable：选择 Production，填写 Key 和 Value，再勾选
+                    Secret。截图输入框为空，仅显示占位文本；不要把真实密钥放进截图。
+                  </figcaption>
+                </figure>
+                <p>
+                  普通变量至少填写
+                  <code translate="no">PUBLIC_URL</code>、<code translate="no"
+                    >ACCESS_TEAM_DOMAIN</code
+                  >、<code translate="no">ACCESS_AUD</code>、<code
+                    translate="no"
+                    >ADMIN_EMAILS</code
+                  >、<code translate="no">R2_ENDPOINT</code>、<code
+                    translate="no"
+                    >R2_BUCKET_NAME</code
+                  >。PUBLIC_URL 必须等于实际访问的 HTTPS
+                  origin，无路径、无尾部斜杠。
+                </p>
+                <figure>
+                  <a href="images/variables.webp"
+                    ><img
+                      src="images/variables.webp"
+                      alt="生产环境变量与加密密钥列表，账户与身份信息已实色覆盖并填入示例"
+                      width="1750"
+                      height="1859"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Runtime variables and secrets →
+                    Production。原始值已实色覆盖，填入
+                    YOUR_ACCESS_AUD、YOUR_TEAM、YOUR_ACCOUNT_ID 及 example.com
+                    地址示例，请替换为自己的配置。密钥显示 Value
+                    encrypted。图中现有实例已启用且配额为
+                    20&nbsp;GiB；新部署保持 ACTIVE=false，默认配额为
+                    9&nbsp;GB，完成配置与验证后再启用。
+                  </figcaption>
+                </figure>
+              </div>
+            </article>
+            <article id="cors">
+              <h3>允许浏览器直传</h3>
+              <div class="answer">
+                <p>
+                  R2 → 你的桶 → Settings → CORS Policy → Edit。允许的 Origin
+                  精确使用
+                  <code translate="no">PUBLIC_URL</code
+                  >。下面的配置工具会生成可粘贴的 JSON。
+                </p>
+                <figure>
+                  <a href="images/r2-cors.webp"
+                    ><img
+                      src="images/r2-cors.webp"
+                      alt="私有 R2 桶的 CORS Policy 编辑器，真实来源已替换为示例地址"
+                      width="1515"
+                      height="1424"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Settings → CORS Policy → Edit。真实来源已覆盖并替换为
+                    https://parcel.example.com。AllowedOrigins 必须等于自己的
+                    PUBLIC_URL。截图中的 AllowedHeaders 仅列出 Content-Type 与
+                    Range；部署时请使用下方生成器的完整 JSON，额外包含
+                    X-Amz-Meta-Parcel-Upload。CORS 不代替私有桶与签名授权。
+                  </figcaption>
+                </figure>
+                <p>
+                  另在 Object lifecycle rules 添加一条仅针对
+                  <code translate="no">parcel/v3/</code> 前缀的未完成 Multipart
+                  清理规则，1
+                  天后终止未完成上传。不要设置已完成对象的独立删除期限，正常过期删除由应用
+                  Cron 与 D1 状态协调。
+                </p>
+                <p>
+                  确认 Cron 为 <code translate="no">*/5 * * * *</code>，Free
+                  模式保留 <code translate="no">WORKERS_PLAN=free</code>、<code
+                    translate="no"
+                    >CLEANUP_BATCH_SIZE=1</code
+                  >。
+                </p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+      <section id="config" class="config-section">
+        <div class="config-layout">
+          <div class="section-heading">
+            <h2>生成你的配置</h2>
+            <p>
+              输入应用地址、账户 ID
+              与桶名。工具仅在当前浏览器计算，不接收任何密钥。
+            </p>
+          </div>
+          <div class="config-controls">
+            <form id="config-form" novalidate hidden>
+              <div class="form-field">
+                <label for="origin">应用 HTTPS 地址</label>
+                <input
+                  id="origin"
+                  name="origin"
+                  type="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  placeholder="https://parcel.example.com…"
+                  aria-describedby="origin-hint origin-error"
+                  required
+                />
+                <p class="field-hint" id="origin-hint">
+                  填写正式访问地址，不含路径或端口。
+                </p>
+                <p class="field-error" id="origin-error" hidden></p>
+              </div>
+              <div class="form-field">
+                <label for="account">Cloudflare 账户 ID</label>
+                <input
+                  id="account"
+                  name="account"
+                  autocomplete="off"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  maxlength="32"
+                  placeholder="0123456789abcdef…"
+                  aria-describedby="account-hint account-error"
+                  required
+                />
+                <p class="field-hint" id="account-hint">
+                  账户主页中的 32 位十六进制 ID。
+                </p>
+                <p class="field-error" id="account-error" hidden></p>
+              </div>
+              <div class="form-field">
+                <label for="bucket">R2 桶名</label>
+                <input
+                  id="bucket"
+                  name="bucket"
+                  autocomplete="off"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  maxlength="63"
+                  value="parcel"
+                  aria-describedby="bucket-hint bucket-error"
+                  required
+                />
+                <p class="field-hint" id="bucket-hint">
+                  使用 FILES 绑定的同一个私有桶。
+                </p>
+                <p class="field-error" id="bucket-error" hidden></p>
+              </div>
+              <button type="submit">生成 CORS 和变量</button>
+            </form>
+            <p
+              id="config-message"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              所有内容仅保存在页面内，刷新即可清空。
+            </p>
+          </div>
+        </div>
+        <div id="config-result" hidden>
+          <p class="output-help">代码区可滚动查看；复制时会包含完整配置。</p>
+          <div class="output-block" data-copy-block>
+            <div class="output-heading">
+              <h3>CORS Policy</h3>
+              <button type="button" data-copy="cors-output">
+                复制 CORS JSON
+              </button>
+            </div>
+            <p class="output-destination">R2 → Settings → CORS policy</p>
+
+            <pre
+              role="region"
+              tabindex="0"
+              aria-label="CORS JSON"
+            ><code id="cors-output" translate="no"></code></pre>
+
+            <p class="copy-message" role="status" aria-live="polite"></p>
+          </div>
+          <div class="output-block" data-copy-block>
+            <div class="output-heading">
+              <h3>运行时变量</h3>
+              <button type="button" data-copy="vars-output">复制变量</button>
+            </div>
+            <p class="output-destination">Worker → 设置 → 变量和密钥</p>
+
+            <pre
+              role="region"
+              tabindex="0"
+              aria-label="运行时变量"
+            ><code id="vars-output" translate="no"></code></pre>
+
+            <p class="copy-message" role="status" aria-live="polite"></p>
+          </div>
+          <p>
+            还须填写 Access 的 Team domain、AUD
+            与管理员邮箱，并分别保存三项密钥。
+          </p>
+        </div>
+        <noscript
+          ><p>
+            JavaScript 关闭时，请手动把下面的 example.com 替换为你的
+            PUBLIC_URL：
+          </p>
+          <pre
+            tabindex="0"
+            role="region"
+            aria-label="CORS 配置示例"
+          ><code translate="no">[{"AllowedOrigins":["https://parcel.example.com"],"AllowedMethods":["GET","HEAD","PUT"],"AllowedHeaders":["Content-Type","Range","X-Amz-Meta-Parcel-Upload"],"ExposeHeaders":["ETag","Content-Length","Content-Range","Accept-Ranges"],"MaxAgeSeconds":3600}]</code></pre>
+        </noscript>
+      </section>
+      <section id="verify" class="reading verify">
+        <div class="verify-intro">
+          <h2>最后一次检查</h2>
+          <p class="lead">
+            配置完整后，把 ACTIVE 改为 true
+            并部署。用一个小文件验证整条链路，再开放实例。
+          </p>
+        </div>
+        <div class="verify-checks">
+          <ol>
+            <li>
+              无痕窗口打开 <code translate="no">/admin</code>，应进入 Access
+              登录。未授权邮箱不能访问管理页面。
+            </li>
+            <li>管理员登录并上传文件，创建无密码和有密码分享。</li>
+            <li>
+              未登录窗口打开分享，测试正确密码、错误密码、下载与 Range
+              续传。同一有效下载会话续签不重复扣次。
+            </li>
+            <li>
+              撤销分享后不能获得新的签名地址。已签地址最长还有 5 分钟有效期。
+            </li>
+            <li>
+              等待 Cron，确认对象删除后释放配额。观察 Worker 错误与 CPU 指标。
+            </li>
+          </ol>
+          <p>
+            Workers Free 的 CPU 预算为每次请求 10&nbsp;ms。本地测试不能证明线上
+            CPU、Access 或真实 R2 配置；生产报 1102 时请检查指标。<a
+              href="https://developers.cloudflare.com/workers/platform/limits/"
+              >查看 Workers 限制</a
+            >。
+          </p>
+        </div>
+      </section>
+      <section id="faq" class="reading">
+        <h2>遇到问题</h2>
+        <div class="faq-list">
+          <details id="faq-unconfigured" name="troubleshooting">
+            <summary>页面返回 serverless_unconfigured</summary>
+            <p>
+              检查六项普通变量与三项密钥是否完整。SESSION_SECRET 必须为 64
+              位十六进制；PUBLIC_URL 和 R2_ENDPOINT 必须是无路径、无尾部斜杠的
+              HTTPS 地址。
+            </p>
+          </details>
+          <details id="faq-login-loop" name="troubleshooting">
+            <summary>返回 host_denied 或登录循环</summary>
+            <p>
+              访问域名须等于 PUBLIC_URL。Access 应用域名、AUD、Team domain
+              与管理员邮箱必须属于同一个实例。正式域名切换时同步更新
+              Access、PUBLIC_URL 和 R2 CORS。
+            </p>
+          </details>
+          <details id="faq-upload-errors" name="troubleshooting">
+            <summary>上传被 CORS 拒绝或提示签名错误</summary>
+            <p>
+              检查 CORS Origin 与 PUBLIC_URL 完全一致；确认 FILES
+              绑定、R2_BUCKET_NAME、S3 凭据限定桶一致。账户 API Token 不能代替
+              S3 Secret Access Key。
+            </p>
+          </details>
+          <details id="faq-updates" name="troubleshooting">
+            <summary>后续更新怎样保留配置？</summary>
+            <p>
+              模板部署使用 --keep-vars，保留控制台普通变量与密钥，并先执行 D1
+              migrations。不要把生产实例改成首次 CLI bootstrap。升级前备份 D1 与
+              SESSION_SECRET，阅读版本迁移说明；Worker 回滚不等于数据库回滚。
+            </p>
+            <figure>
+              <a href="images/builds.webp"
+                ><img
+                  src="images/builds.webp"
+                  alt="正式实例 main 分支的构建配置，资源配置已替换为占位标签"
+                  width="1840"
+                  height="2457"
+                  loading="lazy"
+              /></a>
+              <figcaption>
+                Settings → Builds → Production：正式实例使用 npm run
+                build:production 和 npm run deploy:production，根目录为 /，Node
+                为 24。YOUR_RESOURCE_CONFIG_JSON
+                标签覆盖了原始构建变量值，它是占位说明，不能直接粘贴：请按运维文档填写包含
+                accountId、workerName、databaseId、databaseName、bucketName
+                的完整 JSON 对象。新用户按钮流程仍使用 npm run build 与 npm run
+                deploy。
+              </figcaption>
+            </figure>
+          </details>
+          <details id="faq-cli" name="troubleshooting">
+            <summary>可以只使用 CLI 吗？</summary>
+            <p>
+              可以。安装 Node 24 与 Bash，克隆仓库，用 deploy/v3.example.json
+              建立忽略目录中的配置，准备限定账户权限的管理 Token，再运行 npm run
+              deploy:bootstrap -- --config
+              .parcel-v3/deploy.json。完整准备、冻结迁移与回滚步骤见仓库文档。
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div>
+        <p>上传。分享。到期消失。</p>
+        <p>
+          <a
+            href="https://github.com/hyphy-void/Parcel/blob/main/docs/v3-deployment.md"
+            >完整运维文档</a
+          >
+          ·
+          <a href="https://github.com/hyphy-void/Parcel/blob/main/LICENSE"
+            >MIT License</a
+          >
+        </p>
+        <p>
+          截图来自 Cloudflare
+          实际控制台中的现有实例；账户及身份信息已用实色永久覆盖并填入示例。部署时请使用自己的资源名称、配置和域名。点击图片可查看原始分辨率的无损
+          WebP。控制台界面可能变化，以当前标签为准。
+        </p>
+      </div>
+      <p class="footer-name" aria-hidden="true" translate="no">Parcel</p>
+    </footer>
+  </body>
+</html>

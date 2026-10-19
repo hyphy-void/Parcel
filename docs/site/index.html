@@ -1,453 +1,722 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ff8126" />
     <meta
       name="description"
-      content="Parcel 开源文件中转站的 Cloudflare 部署教程。Workers、D1、私有 R2，配有实际控制台截图与配置生成器。"
+      content="Deploy the open-source Parcel file relay on Cloudflare Workers, D1, and private R2. A guide with real dashboard screenshots and a configuration generator."
     />
-    <title>Parcel — Cloudflare 部署手册</title>
+    <title>Parcel — Cloudflare deployment guide</title>
+    <link rel="alternate" hreflang="en" href="./" />
+    <link rel="alternate" hreflang="zh-CN" href="zh.html" />
     <link rel="stylesheet" href="style.css" />
     <script src="guide.js" defer></script>
   </head>
-  <body>
+  <body id="top">
+    <a class="skip-link" href="#main">Skip to content</a>
     <header>
-      <a class="wordmark" href="#">Parcel</a>
-      <nav aria-label="主导航">
-        <a href="#steps">部署步骤</a><a href="#config">配置工具</a
-        ><a href="#verify">验收</a
-        ><a href="https://github.com/hyphy-void/Parcel">GitHub ↗</a>
+      <a class="wordmark" href="#top" translate="no">Parcel</a>
+      <nav aria-label="Main navigation">
+        <a href="#steps">Setup</a><a href="#config">Config tool</a
+        ><a href="#verify">Verify</a
+        ><a href="https://github.com/hyphy-void/Parcel">GitHub</a>
+        <a
+          class="language-switch"
+          data-language-switch
+          href="zh.html"
+          lang="zh-CN"
+          hreflang="zh-CN"
+          aria-label="切换到中文"
+          title="切换到中文"
+          ><svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+          >
+            <path
+              d="M3 5h12M9 3v2m-3 0c0 6 4 10 8 12M12 5c0 6-4 10-9 12m11 4 4-10 4 10m-7-3h6"
+            /></svg
+          ><span>中文</span></a
+        >
       </nav>
     </header>
-    <main>
-      <section class="hero">
-        <h1>你的文件。<br />你的中转站。</h1>
+    <main id="main" tabindex="-1">
+      <section class="hero" aria-labelledby="guide-title">
+        <h1 id="guide-title">
+          <span class="hero-line">Your files.</span>
+          <span class="hero-line">Your relay.</span>
+        </h1>
         <div class="hero-bottom">
-          <p>
-            把 Parcel 部署到自己的 Cloudflare 账户。<br />Workers 托管应用，D1
-            保存状态，私有 R2 传输文件。
-          </p>
-          <a
-            class="action"
-            href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel"
-            >部署到 Cloudflare ↗</a
-          >
+          <div class="hero-copy">
+            <p>
+              Deploy <span translate="no">Parcel</span> to your own Cloudflare
+              account.<br class="hero-break" />
+              Files go straight to private R2. You stay in control.
+            </p>
+            <p class="note hero-note">
+              MIT open source · Workers Free supported
+            </p>
+          </div>
+          <div class="hero-actions">
+            <a
+              class="action"
+              href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel"
+            >
+              <span>Deploy to Cloudflare</span><span aria-hidden="true">↗</span>
+            </a>
+            <a class="hero-guide-link" href="#prepare"
+              >Explore the setup guide <span aria-hidden="true">↓</span></a
+            >
+          </div>
         </div>
-        <p class="note">
-          MIT 开源 · Node 24 · 支持 Workers Free · 最后核对：2026 年 10 月 14 日
-        </p>
       </section>
       <section id="steps" class="reading">
         <div class="section-heading">
-          <h2>从空账户开始</h2>
+          <h2>Start from scratch</h2>
           <p>
-            按钮负责创建应用资源。管理员认证和文件跨域权限，按下面的实际控制台页面完成。
+            The deploy button creates the app resources. Follow the dashboard
+            screens below to set up administrator access and browser uploads.
+            <span class="note review-note"
+              >Screenshots reviewed
+              <time datetime="2026-10-19" data-review-date
+                >October 19, 2026</time
+              >.</span
+            >
           </p>
         </div>
-        <article id="prepare">
-          <h3>准备账户</h3>
-          <div class="answer">
-            <p>
-              准备 GitHub 与 Cloudflare 账户，先在 Cloudflare 启用 R2，建立 Zero
-              Trust 组织，并启用 Workers 子域名。已有账户无需重复创建。R2
-              可能要求添加付款方式；请本人完成套餐和付款设置。
-            </p>
-            <p>
-              本教程适用于新实例。现有 Go、Pages 或 V3
-              实例升级，请使用仓库的迁移与生产部署文档，避免两套服务管理同一桶。
-            </p>
-            <p>
-              应用默认配额为 9 GB、单文件上限为 8 GiB。R2
-              免费额度按账户共享，存储、请求和其他桶都会影响账单；应用配额不是账单硬上限。<a
-                href="https://developers.cloudflare.com/r2/pricing/"
-                >查看 R2 价格</a
-              >。
-            </p>
-          </div>
-        </article>
-        <article id="button">
-          <h3>创建应用</h3>
-          <div class="answer">
-            <p>
-              点击部署按钮，按 Cloudflare 的引导创建自己的 GitHub 仓库，选择
-              Worker 名称以及 D1、R2 资源。根目录保持 <code>/</code>，Node
-              版本使用 <code>24</code>。
-            </p>
-            <p>
-              构建命令为 <code>npm run build</code>，部署命令为
-              <code>npm run deploy</code>。部署脚本通过 <code>DB</code> 绑定执行
-              D1 migrations，并把实际创建的 R2 桶名写入
-              <code>R2_BUCKET_NAME</code>。
-            </p>
-            <p>
-              关闭“启用预览构建”。部署页面的“使用 Cloudflare Access
-              保护”保持关闭， 下一步再为管理员路径单独配置
-              Access，让分享链接可以公开访问。
-            </p>
-            <p>
-              首次保持 <code>ACTIVE=false</code>。缺少运行时配置时返回
-              <code>serverless_unconfigured</code>
-              是预期状态；配置完成前不要对外分享。
-            </p>
-            <figure>
-              <a href="images/bindings.webp"
-                ><img
-                  src="images/bindings.webp"
-                  alt="Worker 设置中的 DB、FILES 和两个速率限制器绑定"
-                  width="700"
-                  height="280"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                设置 → 绑定：DB 是 D1，FILES 是私有
-                R2。截图来自实际实例，资源名称请使用你自己的。
-              </figcaption>
-            </figure>
-            <figure>
-              <a href="images/template-build.webp"
-                ><img
-                  src="images/template-build.webp"
-                  alt="独立测试实例首次按钮部署成功，云端构建和部署均通过"
-                  width="1263"
-                  height="610"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                2026 年 10 月 14 日实测：按钮创建私有仓库、D1 与 R2，执行
-                0001.sql 迁移后完成云端构建与部署。测试实例保持 ACTIVE=false；
-                这一步验证部署流程，文件传输须在后续配置完成后验收。
-              </figcaption>
-            </figure>
-          </div>
-        </article>
-        <article id="access">
-          <h3>配置管理员 Access</h3>
-          <div class="answer">
-            <p>
-              进入 Zero Trust → Access → Applications，添加 Self-hosted
-              应用。使用准备访问的 HTTPS 域名，可先用自己的
-              <code>worker.账户.workers.dev</code> 地址。
-            </p>
-            <p>为同一个应用添加以下七个路径，避免保护整个域名：</p>
-            <pre><code>/admin
+        <div class="guide-layout">
+          <aside class="guide-contents">
+            <details class="contents-disclosure" open>
+              <summary>On this page</summary>
+              <nav aria-label="Deployment chapters">
+                <a href="#prepare">Prepare your accounts</a>
+                <a href="#button">Create the app</a>
+                <a href="#access">Set up admin Access</a>
+                <a href="#r2">Create R2 credentials</a>
+                <a href="#variables">Save variables and secrets</a>
+                <a href="#cors">Allow browser uploads</a>
+                <a href="#config">Config tool</a>
+                <a href="#verify">Launch checks</a>
+                <a href="#faq">Troubleshooting</a>
+              </nav>
+            </details>
+          </aside>
+          <div class="guide-content">
+            <article id="prepare">
+              <h3>Prepare your accounts</h3>
+              <div class="answer">
+                <p>
+                  You need GitHub and Cloudflare accounts. Enable R2, create a
+                  Zero Trust organization, and enable a Workers subdomain. Skip
+                  anything you already have. R2 may ask for a payment method;
+                  complete billing and plan setup yourself.
+                </p>
+                <p>
+                  This guide is for new instances. To upgrade an existing Go,
+                  Pages, or V3 instance, use the repository’s migration and
+                  production deployment docs so that two services do not manage
+                  the same bucket.
+                </p>
+                <p>
+                  The app defaults to a 9&nbsp;GB storage quota and an
+                  8&nbsp;GiB file limit. R2 free allowances are shared across
+                  your account; storage, requests, and other buckets affect
+                  billing. The app quota is not a billing cap.
+                  <a href="https://developers.cloudflare.com/r2/pricing/"
+                    >See R2 pricing</a
+                  >.
+                </p>
+              </div>
+            </article>
+            <article id="button">
+              <h3>Create the app</h3>
+              <div class="answer">
+                <p>
+                  Click the deploy button and follow Cloudflare’s steps to
+                  create your own GitHub repository and choose a Worker, D1
+                  database, and R2 bucket. Keep the root directory at
+                  <code translate="no">/</code> and use Node
+                  <code translate="no">24</code>.
+                </p>
+                <p>
+                  Use <code translate="no">npm run build</code> as the build
+                  command and <code translate="no">npm run deploy</code> as the
+                  deploy command. The deploy script applies D1 migrations
+                  through the <code translate="no">DB</code> binding and writes
+                  the actual bucket name to
+                  <code translate="no">R2_BUCKET_NAME</code>.
+                </p>
+                <p>
+                  Turn off “Enable preview builds.” Leave “Protect with
+                  Cloudflare Access” off on the deployment screen. Configure
+                  Access for administrator paths in the next section so that
+                  share links remain public.
+                </p>
+                <p>
+                  Keep <code translate="no">ACTIVE=false</code> for the first
+                  deployment. A
+                  <code translate="no">serverless_unconfigured</code> response
+                  is expected until runtime configuration is complete. Do not
+                  share links before setup is finished.
+                </p>
+                <figure>
+                  <a href="images/bindings.webp"
+                    ><img
+                      src="images/bindings.webp"
+                      alt="Production D1, R2, and two rate limiter bindings with example namespace labels"
+                      width="1788"
+                      height="636"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Settings → Bindings → Production: DB binds D1 and FILES
+                    binds private R2. ADMIN_LIMITER and API_LIMITER are rate
+                    limiters. This instance names its resources parcel.
+                    Namespace values are replaced with YOUR_*_NAMESPACE_ID
+                    labels; keep the bindings generated by your own deployment.
+                  </figcaption>
+                </figure>
+                <figure>
+                  <a href="images/template-build.webp"
+                    ><img
+                      src="images/template-build.webp"
+                      alt="Successful production parcel build with every build and deployment stage passing"
+                      width="2453"
+                      height="1341"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    A successful build of the existing production parcel
+                    instance. Build settings shows npm run build:production, npm
+                    run deploy:production, and root directory /; every stage
+                    below passed. This illustrates a production update. New
+                    button deployments must use npm run build and npm run
+                    deploy, without :production.
+                  </figcaption>
+                </figure>
+              </div>
+            </article>
+            <article id="access">
+              <h3>Set up admin Access</h3>
+              <div class="answer">
+                <p>
+                  Go to Zero Trust → Access controls → Applications and add a
+                  Self-hosted app. Use the HTTPS hostname you will visit; you
+                  can start with your own
+                  <code translate="no">worker.your-account.workers.dev</code>
+                  address.
+                </p>
+                <p>
+                  Add all seven paths to the same app, rather than protecting
+                  the entire hostname:
+                </p>
+                <pre
+                  tabindex="0"
+                  role="region"
+                  aria-label="Administrator Access paths"
+                ><code translate="no">/admin
 /admin/*
 /login
 /api/v1/auth/*
 /api/v1/admin/*
 /api/v1/uploads
 /api/v1/uploads/*</code></pre>
-            <p>
-              创建 Allow 策略，Include 选择 Emails 并填写管理员邮箱。启用
-              One-time PIN 或你自己的身份提供商。不要添加
-              Bypass，也不要把整个域名设为管理员应用；首页与
-              <code>/s/*</code> 分享页需要公开访问。
-            </p>
-            <figure>
-              <a href="images/access.webp"
-                ><img
-                  src="images/access.webp"
-                  alt="Access 自托管应用的管理员路径和应用配置截图，实例标识已遮挡"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                实际 Access
-                应用配置。被遮挡的是实例域名或账户标识；按上述七个路径配置你自己的应用。
-              </figcaption>
-            </figure>
-            <p>
-              复制应用的 AUD，记录组织 Team domain，如
-              <code>https://your-team.cloudflareaccess.com</code>。分别填入
-              Worker 的 <code>ACCESS_AUD</code> 和
-              <code>ACCESS_TEAM_DOMAIN</code>，<code>ADMIN_EMAILS</code>
-              与策略邮箱保持一致。多个管理员用逗号分隔。
-            </p>
+                <p>
+                  Create an Allow policy. Under Include, choose Emails and enter
+                  the administrator email addresses. Enable One-time PIN or your
+                  own identity provider. Do not add Bypass or protect the whole
+                  hostname: the homepage and
+                  <code translate="no">/s/*</code> share pages must remain
+                  public.
+                </p>
+                <figure>
+                  <a href="images/access.webp"
+                    ><img
+                      src="images/access.webp"
+                      alt="Seven public hostname paths on the parcel-admin Access app with example.com replacing the domain"
+                      width="2522"
+                      height="1311"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Access controls → Applications → parcel-admin → Edit →
+                    Public hostnames. All seven paths belong to one app. The
+                    real domain is permanently covered and replaced with
+                    example.com. Use the same paths for your app, with an Allow
+                    policy limited to administrator emails.
+                  </figcaption>
+                </figure>
+                <p>
+                  Copy the app’s AUD and your organization’s Team domain, such
+                  as
+                  <code translate="no"
+                    >https://your-team.cloudflareaccess.com</code
+                  >. Set them as <code translate="no">ACCESS_AUD</code> and
+                  <code translate="no">ACCESS_TEAM_DOMAIN</code> on the Worker.
+                  Keep <code translate="no">ADMIN_EMAILS</code> consistent with
+                  the policy; separate multiple addresses with commas.
+                </p>
+              </div>
+            </article>
+            <article id="r2">
+              <h3>Create R2 credentials</h3>
+              <div class="answer">
+                <p>
+                  Go to R2 → Overview → Manage API Tokens → Create Account API
+                  token. Choose Object Read &amp; Write and restrict access to
+                  this app’s bucket. Save the S3 Access Key ID and Secret Access
+                  Key as two Worker secrets.
+                </p>
+                <figure>
+                  <a href="images/r2-token.webp"
+                    ><img
+                      src="images/r2-token.webp"
+                      alt="R2 account token form with Object Read & Write and only the parcel bucket selected"
+                      width="2327"
+                      height="2345"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Create Account API Token: select Object Read &amp; Write,
+                    then Apply to specific buckets only and choose the parcel
+                    bucket. This is the setup form; no Access Key ID or Secret
+                    Access Key has been generated or shown.
+                  </figcaption>
+                </figure>
+                <p>
+                  <code translate="no">R2_ENDPOINT</code> is the account-level
+                  S3 API address in the bucket settings, such as
+                  <code translate="no"
+                    >https://ACCOUNT_ID.r2.cloudflarestorage.com</code
+                  >, without a bucket name or trailing slash. The Worker’s
+                  <code translate="no">FILES</code> binding,
+                  <code translate="no">R2_BUCKET_NAME</code>, and credential
+                  scope must refer to the same bucket.
+                </p>
+                <p>
+                  Keep the bucket private. Do not enable a public r2.dev URL or
+                  public bucket domain. Uploads and downloads use short-lived
+                  presigned URLs.
+                </p>
+              </div>
+            </article>
+            <article id="variables">
+              <h3>Save variables & secrets</h3>
+              <div class="answer">
+                <p>
+                  Open Worker → Settings → Runtime variables and secrets. Save
+                  ordinary settings as variables. Check “Secret” for these three
+                  values:
+                </p>
+                <ul>
+                  <li>
+                    <code translate="no">SESSION_SECRET</code>: an independently
+                    generated random value of 64 hexadecimal characters.
+                  </li>
+                  <li>
+                    <code translate="no">R2_ACCESS_KEY_ID</code>: the S3 Access
+                    Key ID you just created.
+                  </li>
+                  <li>
+                    <code translate="no">R2_SECRET_ACCESS_KEY</code>: its
+                    matching S3 Secret Access Key.
+                  </li>
+                </ul>
+                <div class="command-block" data-copy-block>
+                  <div class="command-toolbar">
+                    <span>Generate a session secret</span
+                    ><button type="button" data-copy="secret-command" hidden>
+                      Copy command
+                    </button>
+                  </div>
+                  <pre
+                    tabindex="0"
+                    role="region"
+                    aria-label="Session secret command"
+                  ><code id="secret-command" translate="no">node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"</code></pre>
+                  <p class="copy-message" role="status" aria-live="polite"></p>
+                </div>
+                <p>
+                  Generate the session secret in your own terminal. Keep it out
+                  of Git, issues, screenshots, and webpages. Back it up securely
+                  and preserve it on later deployments; replacing it prevents
+                  existing password-protected shares from being unlocked.
+                </p>
+                <figure>
+                  <a href="images/add-secret.webp"
+                    ><img
+                      src="images/add-secret.webp"
+                      alt="Empty Add environment variable form with Production and Secret selected"
+                      width="1217"
+                      height="680"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Add variable: choose Production, enter the Key and Value,
+                    and check Secret. The inputs here are empty and show
+                    placeholders only. Never include actual secrets in
+                    screenshots.
+                  </figcaption>
+                </figure>
+                <p>
+                  At minimum, set <code translate="no">PUBLIC_URL</code>,
+                  <code translate="no">ACCESS_TEAM_DOMAIN</code>,
+                  <code translate="no">ACCESS_AUD</code>,
+                  <code translate="no">ADMIN_EMAILS</code>,
+                  <code translate="no">R2_ENDPOINT</code>, and
+                  <code translate="no">R2_BUCKET_NAME</code>. PUBLIC_URL must
+                  exactly match the HTTPS origin you visit, without a path or
+                  trailing slash.
+                </p>
+                <figure>
+                  <a href="images/variables.webp"
+                    ><img
+                      src="images/variables.webp"
+                      alt="Production variables with solid example labels replacing account and identity details"
+                      width="1750"
+                      height="1859"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Runtime variables and secrets → Production. Secrets show
+                    Value encrypted. Solid labels permanently cover the original
+                    values and show YOUR_ACCESS_AUD, YOUR_TEAM, YOUR_ACCOUNT_ID,
+                    and example.com addresses. Replace these examples with your
+                    own settings. This existing instance is active and has a
+                    20&nbsp;GiB quota; new instances start with ACTIVE=false and
+                    a 9&nbsp;GB quota. Enable yours after setup and
+                    verification.
+                  </figcaption>
+                </figure>
+              </div>
+            </article>
+            <article id="cors">
+              <h3>Allow browser uploads</h3>
+              <div class="answer">
+                <p>
+                  Open R2 → your bucket → Settings → CORS Policy → Edit.
+                  AllowedOrigins must exactly match
+                  <code translate="no">PUBLIC_URL</code>. The configuration tool
+                  below generates the JSON to paste.
+                </p>
+                <figure>
+                  <a href="images/r2-cors.webp"
+                    ><img
+                      src="images/r2-cors.webp"
+                      alt="Private R2 bucket CORS Policy editor with an example origin replacing the real domain"
+                      width="1515"
+                      height="1424"
+                      loading="lazy"
+                  /></a>
+                  <figcaption>
+                    Settings → CORS Policy → Edit. The original origin is
+                    permanently covered and replaced with
+                    https://parcel.example.com. AllowedOrigins must match your
+                    PUBLIC_URL. The screenshot’s AllowedHeaders lists only
+                    Content-Type and Range; deploy with the complete JSON from
+                    the generator below, which also includes
+                    X-Amz-Meta-Parcel-Upload. CORS does not replace a private
+                    bucket or signed authorization.
+                  </figcaption>
+                </figure>
+                <p>
+                  Under Object lifecycle rules, add a rule to abort incomplete
+                  Multipart uploads after one day, scoped to the
+                  <code translate="no">parcel/v3/</code> prefix. Do not add a
+                  separate age-based deletion rule for completed objects: the
+                  app’s Cron and D1 state coordinate expiration and deletion.
+                </p>
+                <p>
+                  Check that Cron is <code translate="no">*/5 * * * *</code>. On
+                  Free, keep <code translate="no">WORKERS_PLAN=free</code> and
+                  <code translate="no">CLEANUP_BATCH_SIZE=1</code>.
+                </p>
+              </div>
+            </article>
           </div>
-        </article>
-        <article id="r2">
-          <h3>创建 R2 凭据</h3>
-          <div class="answer">
-            <p>
-              R2 → Overview → Manage API tokens → Create API token。选择 Object
-              Read &amp; Write，仅允许这个应用的桶。记录 S3 Access Key ID 与
-              Secret Access Key，作为 Worker 的两项密钥保存。
-            </p>
-            <figure>
-              <a href="images/r2-token.webp"
-                ><img
-                  src="images/r2-token.webp"
-                  alt="R2 API Token 的对象读写权限及限定桶设置，未创建或展示真实密钥"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                选择对象读写和指定桶。截图展示配置表单，不包含生成的密钥。
-              </figcaption>
-            </figure>
-            <p>
-              <code>R2_ENDPOINT</code> 是桶设置里的 S3 API 账户地址，例如
-              <code>https://ACCOUNT_ID.r2.cloudflarestorage.com</code
-              >，不带桶名与尾部斜杠。Worker 的 <code>FILES</code> 绑定、<code
-                >R2_BUCKET_NAME</code
-              >
-              和凭据允许的桶必须一致。
-            </p>
-            <p>
-              桶保持私有，不启用公开 r2.dev
-              或公开桶域名。文件通过短期预签名地址上传与下载。
-            </p>
-          </div>
-        </article>
-        <article id="variables">
-          <h3>保存变量与密钥</h3>
-          <div class="answer">
-            <p>
-              Worker → Settings →
-              运行时变量和密钥。普通配置选择变量；以下三项勾选“密钥”：
-            </p>
-            <ul>
-              <li>
-                <code>SESSION_SECRET</code>：独立生成的 64 位十六进制随机值。
-              </li>
-              <li>
-                <code>R2_ACCESS_KEY_ID</code>：刚创建的 S3 Access Key ID。
-              </li>
-              <li>
-                <code>R2_SECRET_ACCESS_KEY</code>：配套 S3 Secret Access Key。
-              </li>
-            </ul>
-            <pre><code>node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"</code></pre>
-            <p>
-              在自己的终端生成会话密钥，不要把结果放进
-              Git、Issue、截图或网页。单独安全备份；后续部署保持不变，直接更换会导致已有密码分享无法解锁。
-            </p>
-            <figure>
-              <a href="images/add-secret.webp"
-                ><img
-                  src="images/add-secret.webp"
-                  alt="添加环境变量面板，密钥复选框已勾选，输入框为空"
-                  width="600"
-                  height="338"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                输入名称和你的值，再勾选“密钥”。这里使用空表单截图，避免展示凭据。
-              </figcaption>
-            </figure>
-            <p>
-              普通变量至少填写
-              <code>PUBLIC_URL</code
-              >、<code>ACCESS_TEAM_DOMAIN</code>、<code>ACCESS_AUD</code>、<code>ADMIN_EMAILS</code>、<code>R2_ENDPOINT</code>、<code>R2_BUCKET_NAME</code>。PUBLIC_URL
-              必须等于实际访问的 HTTPS origin，无路径、无尾部斜杠。
-            </p>
-            <figure>
-              <a href="images/variables.webp"
-                ><img
-                  src="images/variables.webp"
-                  alt="运行时变量和加密密钥列表，管理员邮箱、AUD、组织和账户地址已黑块遮挡"
-                  width="700"
-                  height="897"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                实际实例的变量列表。黑块为永久遮挡；截图里的配额属于已有实例，新部署默认
-                9 GB。
-              </figcaption>
-            </figure>
-          </div>
-        </article>
-        <article id="cors">
-          <h3>允许浏览器直传</h3>
-          <div class="answer">
-            <p>
-              R2 → 你的桶 → Settings → CORS Policy → Edit。允许的 Origin
-              精确使用 <code>PUBLIC_URL</code>。下面的配置工具会生成可粘贴的
-              JSON。
-            </p>
-            <figure>
-              <a href="images/r2-cors.webp"
-                ><img
-                  src="images/r2-cors.webp"
-                  alt="私有 R2 桶的 CORS 编辑器，实际实例的来源域名已遮挡"
-                  loading="lazy"
-              /></a>
-              <figcaption>
-                只允许自己的应用来源。CORS 不代替私有桶和签名授权。
-              </figcaption>
-            </figure>
-            <p>
-              另在 Object lifecycle rules 添加一条仅针对
-              <code>parcel/v3/</code> 前缀的未完成 Multipart 清理规则，1
-              天后终止未完成上传。不要设置已完成对象的独立删除期限，正常过期删除由应用
-              Cron 与 D1 状态协调。
-            </p>
-            <p>
-              确认 Cron 为 <code>*/5 * * * *</code>，Free 模式保留
-              <code>WORKERS_PLAN=free</code
-              >、<code>CLEANUP_BATCH_SIZE=1</code>。
-            </p>
-          </div>
-        </article>
+        </div>
       </section>
       <section id="config" class="config-section">
-        <div class="section-heading">
-          <h2>生成你的配置</h2>
-          <p>
-            输入应用地址、账户 ID
-            与桶名。工具仅在当前浏览器计算，不接收任何密钥。
-          </p>
+        <div class="config-layout">
+          <div class="section-heading">
+            <h2>Generate your config</h2>
+            <p>
+              Enter your app URL, account ID, and bucket name. Everything is
+              computed in this browser. The tool never asks for secrets.
+            </p>
+          </div>
+          <div class="config-controls">
+            <form id="config-form" novalidate hidden>
+              <div class="form-field">
+                <label for="origin">App HTTPS URL</label>
+                <input
+                  id="origin"
+                  name="origin"
+                  type="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  placeholder="https://parcel.example.com…"
+                  aria-describedby="origin-hint origin-error"
+                  required
+                />
+                <p class="field-hint" id="origin-hint">
+                  Your production address, without a path or port.
+                </p>
+                <p class="field-error" id="origin-error" hidden></p>
+              </div>
+              <div class="form-field">
+                <label for="account">Cloudflare account ID</label>
+                <input
+                  id="account"
+                  name="account"
+                  autocomplete="off"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  maxlength="32"
+                  placeholder="0123456789abcdef…"
+                  aria-describedby="account-hint account-error"
+                  required
+                />
+                <p class="field-hint" id="account-hint">
+                  The 32-character hexadecimal ID on your account home.
+                </p>
+                <p class="field-error" id="account-error" hidden></p>
+              </div>
+              <div class="form-field">
+                <label for="bucket">R2 bucket name</label>
+                <input
+                  id="bucket"
+                  name="bucket"
+                  autocomplete="off"
+                  spellcheck="false"
+                  autocapitalize="none"
+                  maxlength="63"
+                  value="parcel"
+                  aria-describedby="bucket-hint bucket-error"
+                  required
+                />
+                <p class="field-hint" id="bucket-hint">
+                  Use the same private bucket as your FILES binding.
+                </p>
+                <p class="field-error" id="bucket-error" hidden></p>
+              </div>
+              <button type="submit">Generate CORS & variables</button>
+            </form>
+            <p
+              id="config-message"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              Everything stays in this page. Reload to clear it.
+            </p>
+          </div>
         </div>
-        <form id="config-form" data-ui>
-          <label
-            >应用 HTTPS 地址<input
-              id="origin"
-              type="url"
-              placeholder="https://parcel.your-account.workers.dev"
-              required /></label
-          ><label
-            >Cloudflare 账户 ID<input
-              id="account"
-              pattern="[a-f0-9]{32}"
-              placeholder="32 位十六进制账户 ID"
-              required /></label
-          ><label
-            >R2 桶名<input
-              id="bucket"
-              pattern="[a-z0-9][a-z0-9-]{2,62}"
-              value="parcel"
-              required /></label
-          ><button type="submit">生成 CORS 和变量</button>
-        </form>
-        <p id="config-message" role="status">
-          所有内容仅保存在页面内，刷新即可清空。
-        </p>
         <div id="config-result" hidden>
-          <h3>CORS Policy</h3>
-          <pre><code id="cors-output"></code></pre>
-          <button type="button" data-copy="cors-output">复制 CORS JSON</button>
-          <h3>运行时变量</h3>
-          <pre><code id="vars-output"></code></pre>
-          <button type="button" data-copy="vars-output">复制变量</button>
+          <p class="output-help">
+            Scroll within each code block to review it. Copy includes the full
+            configuration.
+          </p>
+          <div class="output-block" data-copy-block>
+            <div class="output-heading">
+              <h3>CORS Policy</h3>
+              <button type="button" data-copy="cors-output">
+                Copy CORS JSON
+              </button>
+            </div>
+            <p class="output-destination">R2 → Settings → CORS policy</p>
+
+            <pre
+              role="region"
+              tabindex="0"
+              aria-label="CORS JSON"
+            ><code id="cors-output" translate="no"></code></pre>
+
+            <p class="copy-message" role="status" aria-live="polite"></p>
+          </div>
+          <div class="output-block" data-copy-block>
+            <div class="output-heading">
+              <h3>Runtime variables</h3>
+              <button type="button" data-copy="vars-output">
+                Copy variables
+              </button>
+            </div>
+            <p class="output-destination">
+              Worker → Settings → Variables and Secrets
+            </p>
+
+            <pre
+              role="region"
+              tabindex="0"
+              aria-label="Runtime variables"
+            ><code id="vars-output" translate="no"></code></pre>
+
+            <p class="copy-message" role="status" aria-live="polite"></p>
+          </div>
           <p>
-            还须填写 Access 的 Team domain、AUD
-            与管理员邮箱，并分别保存三项密钥。
+            You still need to set the Access Team domain, AUD, and admin emails,
+            and save the three secrets separately.
           </p>
         </div>
         <noscript
           ><p>
-            JavaScript 关闭时，请手动把下面的 example.com 替换为你的
-            PUBLIC_URL：
+            With JavaScript disabled, replace example.com below with your own
+            PUBLIC_URL:
           </p>
-          <pre><code>[{"AllowedOrigins":["https://parcel.example.com"],"AllowedMethods":["GET","HEAD","PUT"],"AllowedHeaders":["Content-Type","Range","X-Amz-Meta-Parcel-Upload"],"ExposeHeaders":["ETag","Content-Length","Content-Range","Accept-Ranges"],"MaxAgeSeconds":3600}]</code></pre>
+          <pre
+            tabindex="0"
+            role="region"
+            aria-label="CORS configuration example"
+          ><code translate="no">[{"AllowedOrigins":["https://parcel.example.com"],"AllowedMethods":["GET","HEAD","PUT"],"AllowedHeaders":["Content-Type","Range","X-Amz-Meta-Parcel-Upload"],"ExposeHeaders":["ETag","Content-Length","Content-Range","Accept-Ranges"],"MaxAgeSeconds":3600}]</code></pre>
         </noscript>
       </section>
       <section id="verify" class="reading verify">
-        <h2>最后一次检查</h2>
-        <p class="lead">
-          配置完整后，把 ACTIVE 改为 true
-          并部署。用一个小文件验证整条链路，再开放实例。
-        </p>
-        <ol>
-          <li>
-            无痕窗口打开 <code>/admin</code>，应进入 Access
-            登录。未授权邮箱不能访问管理页面。
-          </li>
-          <li>管理员登录并上传文件，创建无密码和有密码分享。</li>
-          <li>
-            未登录窗口打开分享，测试正确密码、错误密码、下载与 Range
-            续传。同一有效下载会话续签不重复扣次。
-          </li>
-          <li>
-            撤销分享后不能获得新的签名地址。已签地址最长还有 5 分钟有效期。
-          </li>
-          <li>
-            等待 Cron，确认对象删除后释放配额。观察 Worker 错误与 CPU 指标。
-          </li>
-        </ol>
-        <p>
-          Workers Free 的 CPU 预算为每次请求 10 ms。本地测试不能证明线上
-          CPU、Access 或真实 R2 配置；生产报 1102 时请检查指标。<a
-            href="https://developers.cloudflare.com/workers/platform/limits/"
-            >查看 Workers 限制</a
-          >。
-        </p>
+        <div class="verify-intro">
+          <h2>Check before launch</h2>
+          <p class="lead">
+            Set ACTIVE to true and deploy. Test the whole flow with a small file
+            before opening your instance.
+          </p>
+        </div>
+        <div class="verify-checks">
+          <ol>
+            <li>
+              Open <code translate="no">/admin</code> in a private window. It
+              should show Access login. An unauthorized email must not reach the
+              admin page.
+            </li>
+            <li>
+              Sign in as an administrator, upload a file, and create shares with
+              and without a password.
+            </li>
+            <li>
+              Open shares while signed out. Test correct and incorrect
+              passwords, downloading, and Range resume. Refreshing a valid
+              download session must not consume another download.
+            </li>
+            <li>
+              Revoke a share and check that it cannot issue new signed URLs.
+              Previously signed URLs can remain valid for up to five minutes.
+            </li>
+            <li>
+              Wait for Cron. Confirm that quota is released after object
+              deletion, and inspect Worker errors and CPU metrics.
+            </li>
+          </ol>
+          <p>
+            Workers Free has a CPU budget of 10&nbsp;ms per request. Local tests
+            do not verify production CPU, Access, or real R2 settings. Check
+            metrics if production returns error 1102.
+            <a href="https://developers.cloudflare.com/workers/platform/limits/"
+              >See Workers limits</a
+            >.
+          </p>
+        </div>
       </section>
       <section id="faq" class="reading">
-        <h2>遇到问题</h2>
-        <details>
-          <summary>页面返回 serverless_unconfigured</summary>
-          <p>
-            检查六项普通变量与三项密钥是否完整。SESSION_SECRET 必须为 64
-            位十六进制；PUBLIC_URL 和 R2_ENDPOINT 必须是无路径、无尾部斜杠的
-            HTTPS 地址。
-          </p>
-        </details>
-        <details>
-          <summary>返回 host_denied 或登录循环</summary>
-          <p>
-            访问域名须等于 PUBLIC_URL。Access 应用域名、AUD、Team domain
-            与管理员邮箱必须属于同一个实例。正式域名切换时同步更新
-            Access、PUBLIC_URL 和 R2 CORS。
-          </p>
-        </details>
-        <details>
-          <summary>上传被 CORS 拒绝或提示签名错误</summary>
-          <p>
-            检查 CORS Origin 与 PUBLIC_URL 完全一致；确认 FILES
-            绑定、R2_BUCKET_NAME、S3 凭据限定桶一致。账户 API Token 不能代替 S3
-            Secret Access Key。
-          </p>
-        </details>
-        <details>
-          <summary>后续更新怎样保留配置？</summary>
-          <p>
-            模板部署使用 --keep-vars，保留控制台普通变量与密钥，并先执行 D1
-            migrations。不要把生产实例改成首次 CLI bootstrap。升级前备份 D1 与
-            SESSION_SECRET，阅读版本迁移说明；Worker 回滚不等于数据库回滚。
-          </p>
-          <figure>
-            <a href="images/builds.webp"
-              ><img
-                src="images/builds.webp"
-                alt="现有实例 main 分支生产构建配置，资源标识已遮挡"
-                loading="lazy"
-            /></a>
-            <figcaption>
-              我们现有实例使用 build:production / deploy:production
-              保留生产资源。新用户按钮流程使用 build /
-              deploy，两套命令用途不同。
-            </figcaption>
-          </figure>
-        </details>
-        <details>
-          <summary>可以只使用 CLI 吗？</summary>
-          <p>
-            可以。安装 Node 24 与 Bash，克隆仓库，用 deploy/v3.example.json
-            建立忽略目录中的配置，准备限定账户权限的管理 Token，再运行 npm run
-            deploy:bootstrap -- --config
-            .parcel-v3/deploy.json。完整准备、冻结迁移与回滚步骤见仓库文档。
-          </p>
-        </details>
+        <h2>Need a hand?</h2>
+        <div class="faq-list">
+          <details id="faq-unconfigured" name="troubleshooting">
+            <summary>The page returns serverless_unconfigured</summary>
+            <p>
+              Check the six ordinary variables and three secrets. SESSION_SECRET
+              must contain 64 hexadecimal characters. PUBLIC_URL and R2_ENDPOINT
+              must be HTTPS origins without a path or trailing slash.
+            </p>
+          </details>
+          <details id="faq-login-loop" name="troubleshooting">
+            <summary>host_denied or a login loop</summary>
+            <p>
+              The hostname you visit must match PUBLIC_URL. The Access app
+              hostname, AUD, Team domain, and admin emails must belong to the
+              same instance. When changing the production domain, update Access,
+              PUBLIC_URL, and R2 CORS together.
+            </p>
+          </details>
+          <details id="faq-upload-errors" name="troubleshooting">
+            <summary>CORS rejection or a signature error</summary>
+            <p>
+              Check that the CORS origin exactly matches PUBLIC_URL and that the
+              FILES binding, R2_BUCKET_NAME, and S3 credential scope use the
+              same bucket. An API token cannot replace the S3 Secret Access Key.
+            </p>
+          </details>
+          <details id="faq-updates" name="troubleshooting">
+            <summary>How do updates preserve my config?</summary>
+            <p>
+              Template deployment uses --keep-vars to preserve dashboard
+              variables and secrets, and applies D1 migrations first. Do not
+              switch a production instance to first-time CLI bootstrap. Back up
+              D1 and SESSION_SECRET and read migration notes before upgrading.
+              Rolling back a Worker does not roll back its database.
+            </p>
+            <figure>
+              <a href="images/builds.webp"
+                ><img
+                  src="images/builds.webp"
+                  alt="Production main branch build configuration with a placeholder replacing the resource configuration"
+                  width="1840"
+                  height="2457"
+                  loading="lazy"
+              /></a>
+              <figcaption>
+                Settings → Builds → Production: this existing instance uses npm
+                run build:production and npm run deploy:production, root
+                directory /, and Node 24. The solid YOUR_RESOURCE_CONFIG_JSON
+                label replaces the entire original build-variable value. It is a
+                placeholder, not literal JSON: supply the complete object with
+                accountId, workerName, databaseId, databaseName, and bucketName
+                as documented in the operations guide. New button deployments
+                still use npm run build and npm run deploy.
+              </figcaption>
+            </figure>
+          </details>
+          <details id="faq-cli" name="troubleshooting">
+            <summary>Can I use only the CLI?</summary>
+            <p>
+              Yes. Install Node 24 and Bash, clone the repository, and use
+              deploy/v3.example.json to create a config in an ignored directory.
+              Prepare an account-scoped management token, then run npm run
+              deploy:bootstrap -- --config .parcel-v3/deploy.json. See the
+              repository docs for preparation, frozen migration, and rollback.
+            </p>
+          </details>
+        </div>
       </section>
     </main>
     <footer>
       <div>
-        <p>上传。分享。到期消失。</p>
+        <p>Upload. Share. Let it expire.</p>
         <p>
           <a
             href="https://github.com/hyphy-void/Parcel/blob/main/docs/v3-deployment.md"
-            >完整运维文档 ↗</a
+            >Operations documentation</a
           >
           ·
           <a href="https://github.com/hyphy-void/Parcel/blob/main/LICENSE"
-            >MIT License ↗</a
+            >MIT License</a
           >
         </p>
         <p>
-          截图来自 Cloudflare 实际控制台，已遮挡实例信息，全部使用 WebP
-          并随教程源码保存。控制台界面可能变化，以当前标签为准。
+          These screenshots show an existing instance in the real Cloudflare
+          dashboard. Solid labels permanently cover account and identity details
+          and replace them with examples. Use your own resource names,
+          configuration, and domains. Click any image to open the
+          original-resolution, lossless WebP. Dashboard labels may change;
+          follow the current interface.
         </p>
       </div>
-      <p class="footer-name" aria-hidden="true">Parcel</p>
+      <p class="footer-name" aria-hidden="true" translate="no">Parcel</p>
     </footer>
   </body>
 </html>
