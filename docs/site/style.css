@@ -111,7 +111,7 @@ nav a {
     max(var(--space), env(safe-area-inset-left));
 }
 .hero h1 {
-  font-size: clamp(48px, 18vw, 280px);
+  font-size: clamp(32px, 9vw, 144px);
   line-height: 0.94;
   font-weight: 800;
   letter-spacing: -0.065em;
@@ -123,7 +123,7 @@ nav a {
   max-width: 100%;
 }
 :lang(zh-CN) .hero h1 {
-  font-size: clamp(40px, 15vw, 236px);
+  font-size: clamp(36px, 12vw, 188px);
   line-height: 1.12;
   letter-spacing: -0.04em;
 }
@@ -941,9 +941,6 @@ button:disabled {
   }
   .hero-actions {
     min-width: 230px;
-  }
-  .hero-break {
-    display: none;
   }
   .hero-copy > p:first-child {
     max-width: 32ch;

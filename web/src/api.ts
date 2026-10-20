@@ -1,3 +1,4 @@
+import { getLocale } from "./i18n";
 import type { PasswordParameters } from "./password";
 import type { FileEncryption } from "./e2ee";
 export type Upload = {
@@ -138,7 +139,7 @@ export async function api<T>(
   }
 }
 export function bytes(n = 0): string {
-  if (n < 1024) return `${new Intl.NumberFormat("zh-CN").format(n)}\u00a0B`;
+  if (n < 1024) return `${new Intl.NumberFormat(getLocale()).format(n)}\u00a0B`;
   const units = ["KiB", "MiB", "GiB", "TiB"];
   let x = n / 1024,
     i = 0;
@@ -149,13 +150,13 @@ export function bytes(n = 0): string {
   return `${decimal(x, x >= 10 ? 1 : 2)}\u00a0${units[i]}`;
 }
 export function decimal(n: number, digits = 2): string {
-  return new Intl.NumberFormat("zh-CN", {
+  return new Intl.NumberFormat(getLocale(), {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(n);
 }
 export function date(n: number): string {
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(getLocale(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",

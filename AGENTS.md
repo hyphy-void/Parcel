@@ -14,6 +14,13 @@ Use Node 24 and the Go toolchain in `go.mod`. Run from the repository root:
 - `cd web && npx playwright install chromium firefox && npm run test:e2e`: run browser tests.
 - `PARCEL_TEST_BINARY="$PWD/bin/parcel" python3 -m unittest discover -s scripts/tests -v`: test the updater.
 
+## Product Naming & Documentation
+Use **Parcel** as the product name. When the deployment architecture needs to be distinguished, call it **Cloudflare 部署** in Chinese or **Cloudflare deployment** in English; describe its components as Workers + D1 + private R2 when useful.
+
+Do not use **V3**, **Cloudflare V3**, or similar internal generation labels as product or architecture names in user-facing replies, UI, README files, deployment documentation, or the tutorial site. Do not infer a branch name or release version from these historical labels.
+
+Preserve existing technical identifiers, paths, filenames, commands, and configuration values unless a separate refactor is requested. Quote their actual names when required for correct instructions; this exception does not make them product names or justify adding the old label to surrounding prose.
+
 ## Coding Style & Naming Conventions
 Format Go with `gofmt`; use tabs, lowercase package names, and exported CamelCase identifiers. Match existing TypeScript/CSS formatting: two spaces, double quotes, semicolons; Prettier is available in `web/`. Use `*_test.go`, `*.spec.ts`, and Python `test_*.py` filenames.
 

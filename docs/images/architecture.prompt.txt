@@ -1,0 +1,50 @@
+Use case: infographic-diagram.
+Asset type: production architecture illustration for the English GitHub README of Parcel, an end-to-end encrypted temporary file-sharing app.
+Primary request: draw an exceptionally clean, polished, technically accurate architecture diagram with strong editorial typography, matching Parcel's illustrated tutorial site.
+Canvas: wide landscape, approximately 2048 x 1152 pixels, opaque background, ample margins. Every label must stay comfortably legible when shown at an 850px README width.
+Style: precise flat editorial information design. Swiss-inspired layout, warm paper background, very bold grotesk headline, simple line icons, thin straight connectors with clear arrowheads, restrained square or slightly rounded shapes, excellent spacing. No photographs, gradients, shadows, 3D, glow, mascots, decorative doodles, pseudo-UI screenshots, watermarks, or extraneous labels.
+Exact palette: vivid orange #FF8126, paper #F5F5F2, near-black ink #151715, muted gray #E8EAE5. Orange is the only accent color. High contrast text. Reference is the visual identity of https://parcelwiki.pages.dev/; use the explicit palette rather than trying to fetch this URL.
+Header: small wordmark "Parcel", large headline "Encrypted at both ends." Avoid additional promotional sentences.
+Main diagram: three generous columns, sender browser on the left, a clearly bounded cloud region in the middle, recipient browser on the right. Balance the composition horizontally. Sender browser may use an orange surface; center server nodes use ink and white; recipient uses paper and ink with orange accents. Simple browser-window/file/lock outlines are sufficient.
+Left node exact labels: "Sender's browser" and "Hash + encrypt".
+Center group heading: "Your Cloudflare account".
+Within center, an upper storage node labeled "Private R2" with sublabel "Encrypted files". A separate smaller lower control node labeled "Workers + D1" with sublabel "Access rules + encrypted envelopes". R2 is private and stores ciphertext. Workers + D1 stores rules and encrypted key envelopes, never plaintext file keys.
+Right node exact labels: "Recipient's browser" and "Verify + decrypt + save".
+MAIN DATA FLOW: a solid arrow LEFT browser -> Private R2, label "Upload ciphertext"; a solid arrow Private R2 -> RIGHT browser, label "Download ciphertext". Keep both arrow labels above their arrows with plenty of room. Files go directly between browsers and R2; do not route file data through Workers or D1.
+CONTROL FLOW: thin muted dashed arrows from Workers + D1 outward to the sender browser and recipient browser, below the main data flow. Label left control arrow "Signed upload access"; right control arrow "Signed download access". Do not cross text or other connectors.
+LINK FLOW: one separate orange dashed arrow from sender browser to recipient browser, running below and visibly OUTSIDE the bounded Cloudflare group. Label "Full link + optional password". A nearby small but readable annotation must read "Link key (#k=...) stays out of API requests." This bypass route must not connect to R2, Workers or D1.
+Footer: understated text "AES-256-GCM / 16 MiB chunks / SHA-256 verification".
+Constraints: all text in English, spelled exactly. A recipient decrypts in their browser, not on the server. Never show plaintext, file keys, or link secrets flowing to Cloudflare. No claims of zero knowledge, independent audit, zero cost, or performance benchmarks. Keep the composition spacious, hierarchy decisive, connector routing unambiguous, and all elements within the frame.
+
+High-resolution enhancement pass (built-in imagegen)
+
+Use case: precise-object-edit / infographic-diagram restoration.
+Edit target: the supplied Parcel architecture image.
+Task: make a higher-resolution, genuinely sharper master of THIS EXACT IMAGE, then preserve it as a high-quality raster. Perform faithful super-resolution and edge cleanup, not a redesign.
+Requested output: 3344 x 1882 pixels, exactly double the original 1672 x 941 pixels. Preserve the exact 1672:941 aspect ratio, the entire frame and margins. Render at the highest available native resolution.
+STRICT INVARIANTS: identical layout, colors, typography, font family, weight, kerning, line breaks, text size relative to the canvas, icons, arrow positions and directions, rounded borders, spacing, and overall visual balance. Keep the original paper-white, orange and ink-black palette exactly. Do not add, remove, translate or reword anything. No border, crop, extra margins, logos, shadows, gradient, new texture, or color grading.
+Only enhancement allowed: remove the faint softness and AI artifacts from the existing text, thin strokes and geometric edges; recover crisp consistent letterforms and antialiasing without halos, excessive sharpening or pixelation. Retain all existing typographic proportions. The tiny cloudy dark patches inside the large black headline should become clean consistent dark ink.
+All text must match the reference verbatim:
+"Parcel"
+"Encrypted at both ends."
+"Sender’s browser"
+"Hash + encrypt"
+"Your Cloudflare account"
+"Private R2"
+"Encrypted files"
+"Workers + D1"
+"Access rules + encrypted envelopes"
+"Recipient’s browser"
+"Verify + decrypt + save"
+"Upload ciphertext"
+"Download ciphertext"
+"Signed upload access"
+"Signed download access"
+"Full link + optional password"
+"Link key (#k=...) stays out of API requests."
+"AES-256-GCM / 16 MiB chunks / SHA-256 verification"
+Keep the source image's exact multi-line layout for every label, including Sender’s browser, Recipient’s browser, and the two-line encrypted-envelopes sublabel. The result should look like the same image exported at higher resolution with cleaner text, not a new rendering of the design.
+
+Export notes
+
+The enhancement tool returned a 1672 x 941 PNG. The enhanced raster was exported at exactly twice that size (3344 x 1882) using Lanczos3 resampling, then encoded as lossless WebP. This is a 2x export rather than a native 3344 x 1882 model output. The WebP was decoded and verified pixel-for-pixel against the enlarged export; the original aspect ratio is preserved exactly.

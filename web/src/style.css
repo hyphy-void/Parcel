@@ -264,11 +264,21 @@ footer > span:last-child {
 .github-link {
   display: grid;
   place-items: center;
-  grid-column: 3;
-  grid-row: 1;
   width: 44px;
   height: 44px;
   flex-shrink: 0;
+}
+.header-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  grid-column: 3;
+  grid-row: 1;
+}
+.language-switch {
+  min-height: 44px;
+  padding: 8px;
+  white-space: nowrap;
 }
 .github-link:hover {
   background: var(--stage-ink);
@@ -1288,6 +1298,11 @@ footer > span:last-child {
     justify-self: stretch;
     justify-content: space-between;
     gap: 8px;
+    flex-wrap: wrap;
+  }
+  .public-app header > .text-button {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
   nav > a {
     padding: 10px 14px;

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -261,7 +262,9 @@ export function EncryptedReceive({ id }: { id: string }) {
     if (
       !context ||
       !confirm(
-        "清除本机密文续传缓存？已保存的文件和服务器上的分享不会改变。再次下载需要重新传输密文。",
+        t(
+          "清除本机密文续传缓存？已保存的文件和服务器上的分享不会改变。再次下载需要重新传输密文。",
+        ),
       )
     )
       return;
@@ -272,7 +275,9 @@ export function EncryptedReceive({ id }: { id: string }) {
   async function newDownloadSession() {
     if (
       !confirm(
-        "原下载会话已失效。建立新会话会再消耗一次下载资格；本机已有密文块会继续使用。是否继续？",
+        t(
+          "原下载会话已失效。建立新会话会再消耗一次下载资格；本机已有密文块会继续使用。是否继续？",
+        ),
       )
     )
       return;
@@ -301,29 +306,32 @@ export function EncryptedReceive({ id }: { id: string }) {
       </div>
       {!share ? (
         <>
-          <h1>{phase === "loading" ? "正在打开加密分享…" : "无法打开分享"}</h1>
+          <h1>
+            {phase === "loading" ? t("正在打开加密分享…") : t("无法打开分享")}
+          </h1>
         </>
       ) : !secret ? (
         <>
-          <h1>链接缺少解密密钥</h1>
+          <h1>{t("链接缺少解密密钥")}</h1>
           <p className="note">
-            请向分享者索取完整链接，包含 #
-            后的全部内容。服务器无法恢复丢失的密钥。
+            {t(
+              "请向分享者索取完整链接，包含 # 后的全部内容。服务器无法恢复丢失的密钥。",
+            )}
           </p>
         </>
       ) : inactive && !complete ? (
         <>
-          <h1>{availability[share.availability] || "分享已失效"}</h1>
-          <p className="note">无法继续获取密文，请联系分享者。</p>
+          <h1>{t(availability[share.availability]) || t("分享已失效")}</h1>
+          <p className="note">{t("无法继续获取密文，请联系分享者。")}</p>
         </>
       ) : !context && share.encryption?.password_kdf ? (
         <>
-          <h1>解锁加密分享</h1>
+          <h1>{t("解锁加密分享")}</h1>
           <p className="note">
-            密码与链接密钥共同在此浏览器解密，服务器不会收到解密密钥。
+            {t("密码与链接密钥共同在此浏览器解密，服务器不会收到解密密钥。")}
           </p>
           <form onSubmit={unlock}>
-            <label htmlFor="receive-password">分享密码</label>
+            <label htmlFor="receive-password">{t("分享密码")}</label>
             <input
               ref={passwordInput}
               id="receive-password"
@@ -342,9 +350,9 @@ export function EncryptedReceive({ id }: { id: string }) {
                 setUnlockError("");
               }}
             />
-            {unlockError && (
+            {t(unlockError) && (
               <p id="receive-password-error" className="alert" role="alert">
-                {unlockError}
+                {t(unlockError)}
               </p>
             )}
             <button className="button primary full" disabled={busy}>
@@ -353,13 +361,13 @@ export function EncryptedReceive({ id }: { id: string }) {
               ) : (
                 <KeyRound size={18} />
               )}
-              {busy ? "正在本机解密…" : "解锁文件"}
+              {busy ? t("正在本机解密…") : t("解锁文件")}
             </button>
           </form>
         </>
       ) : context ? (
         <>
-          <h1>接收加密文件</h1>
+          <h1>{t("接收加密文件")}</h1>
           <p className="filename-title" translate="no">
             {context.metadata.name}
           </p>
@@ -368,16 +376,19 @@ export function EncryptedReceive({ id }: { id: string }) {
             <div>
               <Clock3 size={19} />
               <strong>{date(share.expires)}</strong>
-              <span>有效期至</span>
+              <span>{t("有效期至")}</span>
             </div>
             <div>
               <ArrowDown size={19} />
               <strong>
                 {share.max_downloads === -1
-                  ? "不限次数"
-                  : `${Math.max(0, share.max_downloads - share.download_count)} 次`}
+                  ? t("不限次数")
+                  : t(
+                      "{0} 次",
+                      Math.max(0, share.max_downloads - share.download_count),
+                    )}
               </strong>
-              <span>剩余新下载资格</span>
+              <span>{t("剩余新下载资格")}</span>
             </div>
           </div>
           {(progress.received > 0 || busy) && (
@@ -386,7 +397,7 @@ export function EncryptedReceive({ id }: { id: string }) {
                 className="meter"
                 role="progressbar"
                 aria-label={
-                  phase === "saving" ? "解密保存进度" : "密文接收进度"
+                  phase === "saving" ? t("解密保存进度") : t("密文接收进度")
                 }
                 aria-valuemin={0}
                 aria-valuemax={100}
@@ -396,10 +407,13 @@ export function EncryptedReceive({ id }: { id: string }) {
               </div>
               <p className="note" role="status">
                 {phase === "saving"
-                  ? `正在解密并保存 ${bytes(savedBytes)}`
+                  ? t("正在解密并保存 {0}", bytes(savedBytes))
                   : complete
-                    ? "密文已完整接收，准备保存原文件。"
-                    : `已接收并校验 ${bytes(progress.received)} 密文，可从完整块继续。`}
+                    ? t("密文已完整接收，准备保存原文件。")
+                    : t(
+                        "已接收并校验 {0} 密文，可从完整块继续。",
+                        bytes(progress.received),
+                      )}
               </p>
             </div>
           )}
@@ -409,7 +423,7 @@ export function EncryptedReceive({ id }: { id: string }) {
               onClick={() => abort.current?.abort()}
             >
               <Pause size={18} />
-              {phase === "saving" ? "取消保存" : "暂停接收"}
+              {phase === "saving" ? t("取消保存") : t("暂停接收")}
             </button>
           ) : complete ? (
             <button
@@ -417,7 +431,7 @@ export function EncryptedReceive({ id }: { id: string }) {
               onClick={save}
             >
               <ArrowDown size={20} />
-              {phase === "saved" ? "再次保存解密文件" : "保存解密文件"}
+              {phase === "saved" ? t("再次保存解密文件") : t("保存解密文件")}
             </button>
           ) : (
             <button
@@ -426,23 +440,30 @@ export function EncryptedReceive({ id }: { id: string }) {
               disabled={!canReceive || sessionExpired}
             >
               <ArrowDown size={20} />
-              {progress.received ? "继续接收密文" : "下载文件"}
+              {progress.received ? t("继续接收密文") : t("下载文件")}
             </button>
           )}
           {phase === "saved" && (
             <p className="note" role="status">
-              解密与 SHA-256
-              校验已完成。请在浏览器下载列表或所选目录确认保存结果。
+              {t(
+                "解密与 SHA-256 校验已完成。请在浏览器下载列表或所选目录确认保存结果。",
+              )}
             </p>
           )}
           <p className="note">
-            分块接收密文后，在浏览器校验、解密并流式写入文件。请保持页面打开；刷新后可继续接收，同一有效会话不重复扣次。
+            {t(
+              "分块接收密文后，在浏览器校验、解密并流式写入文件。请保持页面打开；刷新后可继续接收，同一有效会话不重复扣次。",
+            )}
           </p>
           <p className="note">
-            大文件需要足够的本机空间临时保存一份密文，以及保存最终文件的空间。缓存仅存于此浏览器；清理网站数据会移除续传记录。
+            {t(
+              "大文件需要足够的本机空间临时保存一份密文，以及保存最终文件的空间。缓存仅存于此浏览器；清理网站数据会移除续传记录。",
+            )}
           </p>
           <p className="note">
-            浏览器如询问是否允许长期存储，可允许以降低续传缓存被自动清除的风险；暂不回答或拒绝均不阻止本次下载。
+            {t(
+              "浏览器如询问是否允许长期存储，可允许以降低续传缓存被自动清除的风险；暂不回答或拒绝均不阻止本次下载。",
+            )}
           </p>
           {progress.received > 0 && (
             <button
@@ -453,7 +474,7 @@ export function EncryptedReceive({ id }: { id: string }) {
               disabled={busy}
             >
               <Trash2 size={16} />
-              清除本机续传缓存
+              {t("清除本机续传缓存")}
             </button>
           )}
           {sessionExpired &&
@@ -466,24 +487,26 @@ export function EncryptedReceive({ id }: { id: string }) {
                   void newDownloadSession().catch((e) => setError(e.message))
                 }
               >
-                建立新的下载会话
+                {t("建立新的下载会话")}
               </button>
             )}
           {!canReceive && !complete && (
-            <p className="note">下载次数已用完或会话失效，请联系分享者。</p>
+            <p className="note">
+              {t("下载次数已用完或会话失效，请联系分享者。")}
+            </p>
           )}
         </>
       ) : (
-        <p className="note">正在本机读取加密信息…</p>
+        <p className="note">{t("正在本机读取加密信息…")}</p>
       )}
       {error && (
         <p className="alert" role="alert">
-          {error}
+          {t(error)}
         </p>
       )}
       <div className="receive-foot">
         <ShieldCheck size={15} />
-        端到端加密 · 文件密钥留在浏览器
+        {t("端到端加密 · 文件密钥留在浏览器")}
       </div>
     </div>
   );

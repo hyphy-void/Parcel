@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { ArrowRight, Download, Loader2, ShieldCheck } from "lucide-react";
@@ -174,7 +175,11 @@ export function NativeAdminForm({
     const url = URL.createObjectURL(
       new Blob(
         [
-          `Parcel 管理员恢复码\n${location.origin}\n\n每个恢复码仅可使用一次，需要同时输入管理员密码。\n重新绑定认证器后，旧恢复码全部失效。请离线妥善保存。\n\n${codes.join("\n")}\n`,
+          t(
+            "Parcel 管理员恢复码\n{0}\n\n每个恢复码仅可使用一次，需要同时输入管理员密码。\n重新绑定认证器后，旧恢复码全部失效。请离线妥善保存。\n\n{1}\n",
+            location.origin,
+            codes.join("\n"),
+          ),
         ],
         { type: "text/plain;charset=utf-8" },
       ),
@@ -189,12 +194,13 @@ export function NativeAdminForm({
   if (authenticated)
     return (
       <>
-        <h1>登录成功</h1>
+        <h1>{t("登录成功")}</h1>
         <p className="muted">
-          正在进入管理页面。若页面未跳转，可使用下方链接。
+          {t("正在进入管理页面。若页面未跳转，可使用下方链接。")}
         </p>
         <a className="button primary full" href="/admin">
-          进入管理页面 <ArrowRight size={18} aria-hidden="true" />
+          {t("进入管理页面")}
+          <ArrowRight size={18} aria-hidden="true" />
         </a>
       </>
     );
@@ -202,16 +208,16 @@ export function NativeAdminForm({
   if (!config)
     return (
       <>
-        <h1>管理员登录</h1>
+        <h1>{t("管理员登录")}</h1>
         <p className="muted" role="status">
-          {error || "正在加载登录设置…"}
+          {t(error) || t("正在加载登录设置…")}
         </p>
         {error && (
           <button
             className="button secondary"
             onClick={() => location.reload()}
           >
-            重新加载
+            {t("重新加载")}
           </button>
         )}
       </>
@@ -219,24 +225,25 @@ export function NativeAdminForm({
   if (config.auth_mode === "access")
     return (
       <>
-        <h1>让文件轻装上路。</h1>
-        <p className="muted">验证管理员身份后，上传文件并管理分享。</p>
+        <h1>{t("让文件轻装上路。")}</h1>
+        <p className="muted">{t("验证管理员身份后，上传文件并管理分享。")}</p>
         <a className="button primary full" href="/admin">
-          进入管理页面 <ArrowRight size={18} aria-hidden="true" />
+          {t("进入管理页面")}
+          <ArrowRight size={18} aria-hidden="true" />
         </a>
       </>
     );
   if (codes)
     return (
       <>
-        <h1>保存恢复码</h1>
+        <h1>{t("保存恢复码")}</h1>
         <p className="muted">
-          认证器已绑定。丢失手机时，使用管理员密码和恢复码重新绑定。
+          {t("认证器已绑定。丢失手机时，使用管理员密码和恢复码重新绑定。")}
         </p>
         <p className="note">
-          恢复码仅显示这一次。每个只能使用一次，请保存在安全的位置。
+          {t("恢复码仅显示这一次。每个只能使用一次，请保存在安全的位置。")}
         </p>
-        <ul className="recovery-codes" aria-label="一次性恢复码">
+        <ul className="recovery-codes" aria-label={t("一次性恢复码")}>
           {codes.map((value) => (
             <li key={value}>
               <code>{value}</code>
@@ -249,7 +256,7 @@ export function NativeAdminForm({
           onClick={downloadCodes}
         >
           <Download size={18} aria-hidden="true" />
-          下载恢复码
+          {t("下载恢复码")}
         </button>
         <label className="auth-checkbox">
           <input
@@ -257,7 +264,7 @@ export function NativeAdminForm({
             checked={saved}
             onChange={(e) => setSaved(e.target.checked)}
           />
-          我已安全保存恢复码
+          {t("我已安全保存恢复码")}
         </label>
         <button
           className="button primary full"
@@ -267,7 +274,8 @@ export function NativeAdminForm({
             location.assign("/admin");
           }}
         >
-          进入管理页面 <ArrowRight size={18} aria-hidden="true" />
+          {t("进入管理页面")}
+          <ArrowRight size={18} aria-hidden="true" />
         </button>
       </>
     );
@@ -275,29 +283,31 @@ export function NativeAdminForm({
     <>
       <h1>
         {enrollment
-          ? "扫码绑定认证器"
+          ? t("扫码绑定认证器")
           : setup
-            ? "设置管理员登录"
+            ? t("设置管理员登录")
             : recover
-              ? "恢复认证器"
+              ? t("恢复认证器")
               : security
-                ? "更换认证器"
-                : "管理员登录"}
+                ? t("更换认证器")
+                : t("管理员登录")}
       </h1>
       <p className="muted">
         {enrollment
-          ? "用认证器扫描二维码，再输入生成的 6 位动态验证码。"
+          ? t("用认证器扫描二维码，再输入生成的 6 位动态验证码。")
           : setup
-            ? "输入初始化密钥并设置密码，然后绑定认证器。"
+            ? t("输入初始化密钥并设置密码，然后绑定认证器。")
             : recover
-              ? "输入管理员密码和一个未使用的恢复码，重新绑定认证器。"
+              ? t("输入管理员密码和一个未使用的恢复码，重新绑定认证器。")
               : security
-                ? "验证密码和当前动态码后，绑定新的认证器。完成后其他登录和旧恢复码都会失效。"
-                : "输入管理员密码和认证器中的动态验证码。"}
+                ? t(
+                    "验证密码和当前动态码后，绑定新的认证器。完成后其他登录和旧恢复码都会失效。",
+                  )
+                : t("输入管理员密码和认证器中的动态验证码。")}
       </p>
       {setup && !config.setup_available ? (
         <p className="alert" role="alert">
-          请先在部署设置中配置管理员初始化密钥，再刷新此页。
+          {t("请先在部署设置中配置管理员初始化密钥，再刷新此页。")}
         </p>
       ) : (
         <form
@@ -314,28 +324,32 @@ export function NativeAdminForm({
                     src={qr}
                     width="240"
                     height="240"
-                    alt="使用认证器扫描此二维码绑定 Parcel"
+                    alt={t("使用认证器扫描此二维码绑定 Parcel")}
                   />
                 ) : (
-                  <span role="status">正在生成二维码…</span>
+                  <span role="status">{t("正在生成二维码…")}</span>
                 )}
               </div>
               <details className="totp-secret">
-                <summary>无法扫码？手动输入密钥</summary>
+                <summary>{t("无法扫码？手动输入密钥")}</summary>
                 <p>
-                  账户：Parcel 管理员；类型：基于时间；6 位数字，每 30 秒更新。
+                  {t(
+                    "账户：Parcel 管理员；类型：基于时间；6 位数字，每 30 秒更新。",
+                  )}
                 </p>
                 <code>{enrollment.secret}</code>
               </details>
               <p className="note">
-                请在 10 分钟内完成。二维码和密钥可生成登录验证码，请勿分享。
+                {t(
+                  "请在 10 分钟内完成。二维码和密钥可生成登录验证码，请勿分享。",
+                )}
               </p>
             </>
           ) : (
             <>
               {setup && (
                 <>
-                  <label htmlFor="admin-setup-token">初始化密钥</label>
+                  <label htmlFor="admin-setup-token">{t("初始化密钥")}</label>
                   <input
                     id="admin-setup-token"
                     type="password"
@@ -347,7 +361,7 @@ export function NativeAdminForm({
                   />
                 </>
               )}
-              <label htmlFor="admin-password">管理员密码</label>
+              <label htmlFor="admin-password">{t("管理员密码")}</label>
               <input
                 id="admin-password"
                 name="password"
@@ -361,7 +375,9 @@ export function NativeAdminForm({
               />
               {setup && (
                 <>
-                  <label htmlFor="admin-password-confirm">确认密码</label>
+                  <label htmlFor="admin-password-confirm">
+                    {t("确认密码")}
+                  </label>
                   <input
                     id="admin-password-confirm"
                     type="password"
@@ -378,7 +394,7 @@ export function NativeAdminForm({
           {(!setup || enrollment) && (
             <>
               <label htmlFor="admin-code">
-                {recover && !enrollment ? "恢复码" : "动态验证码"}
+                {recover && !enrollment ? t("恢复码") : t("动态验证码")}
               </label>
               <input
                 id="admin-code"
@@ -397,14 +413,16 @@ export function NativeAdminForm({
               />
               <p id="admin-code-help" className="note">
                 {recover && !enrollment
-                  ? "确认新认证器后，该恢复码和其余旧恢复码都会失效。"
-                  : "使用认证器当前显示的 6 位数字。若刚刚用过，请等待下一次更新。"}
+                  ? t("确认新认证器后，该恢复码和其余旧恢复码都会失效。")
+                  : t(
+                      "使用认证器当前显示的 6 位数字。若刚刚用过，请等待下一次更新。",
+                    )}
               </p>
             </>
           )}
           {error && (
             <div className="alert" role="alert">
-              {error}
+              {t(error)}
             </div>
           )}
           <button className="button primary full" disabled={busy}>
@@ -414,12 +432,12 @@ export function NativeAdminForm({
               <ArrowRight size={18} aria-hidden="true" />
             )}
             {busy
-              ? "正在验证…"
+              ? t("正在验证…")
               : enrollment
-                ? "确认绑定"
+                ? t("确认绑定")
                 : setup || recover || security
-                  ? "继续绑定认证器"
-                  : "登录 Parcel"}
+                  ? t("继续绑定认证器")
+                  : t("登录 Parcel")}
           </button>
         </form>
       )}
@@ -434,7 +452,7 @@ export function NativeAdminForm({
             setError("");
           }}
         >
-          {recover ? "返回动态验证码登录" : "无法使用认证器？使用恢复码"}
+          {recover ? t("返回动态验证码登录") : t("无法使用认证器？使用恢复码")}
         </button>
       )}
       {enrollment && (
@@ -449,12 +467,12 @@ export function NativeAdminForm({
             setError("");
           }}
         >
-          重新开始绑定
+          {t("重新开始绑定")}
         </button>
       )}
       <p className="note">
         <ShieldCheck size={16} aria-hidden="true" />
-        <span>密码与认证器双重验证。</span>
+        <span>{t("密码与认证器双重验证。")}</span>
       </p>
     </>
   );
