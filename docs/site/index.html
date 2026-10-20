@@ -486,8 +486,10 @@
                 <p>
                   After enrollment, use a new private window to verify password
                   + TOTP login, rejection of incorrect credentials, and HTTP 401
-                  from anonymous administrator APIs. Test uploads and public
-                  shares before opening the instance.
+                  from anonymous administrator APIs. Then set
+                  <code translate="no">ACTIVE=true</code> and deploy before
+                  testing uploads and public shares. Maintenance allows
+                  enrollment and login, but file transfers remain disabled.
                 </p>
               </div>
             </article>
