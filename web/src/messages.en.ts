@@ -311,7 +311,7 @@ export const english: Record<string, string> = {
   等待发布结果: "Waiting for publishing result",
   "传输完成，正在发布…": "Transfer complete. Publishing…",
   文件上传进度: "File upload progress",
-  已上传: "Uploaded ",
+  已上传: "Uploaded",
   "正在核对文件并生成分享链接，无需重新上传。":
     "Checking the file and creating the share link. No need to upload again.",
   "文件只保存在本机。分享失效后，Parcel 会自动回收空间。":

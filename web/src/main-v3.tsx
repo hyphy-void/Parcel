@@ -1765,8 +1765,7 @@ function NewShare({ auth }: { auth: Auth }) {
                 />
               </div>
               <small>
-                {t("已上传")}
-                {bytes(transferred)} / {bytes(upload.size)}
+                {t("已上传")} {bytes(transferred)} / {bytes(upload.size)}
               </small>
               {phase === "checking" && (
                 <p className="note">
