@@ -59,6 +59,10 @@ export async function exportSnapshot(config, api, { sessionSecret } = {}) {
         `SELECT * FROM ${table} ORDER BY ${primary} LIMIT 100 OFFSET ?`,
         [offset],
       );
+      if (items.some((row) => row.encryption))
+        throw new Error(
+          "End-to-end encrypted files cannot be exported for Go rollback; retain the E2EE Worker and use D1/R2 backups",
+        );
       rows[table].push(...items);
       if (items.length < 100) break;
       if (offset === 100000) throw new Error("Snapshot row limit exceeded");

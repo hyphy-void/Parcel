@@ -60,7 +60,7 @@
           <div class="hero-copy">
             <p>
               把 <span translate="no">Parcel</span> 部署到自己的 Cloudflare
-              账户。<br class="hero-break" />文件直传私有 R2，中转站由你掌控。
+              账户。<br class="hero-break" />浏览器先加密，再把密文直传私有 R2。
             </p>
             <p class="note hero-note">MIT 开源 · 支持 Workers Free</p>
           </div>
@@ -84,7 +84,10 @@
       >
         <div class="section-heading">
           <h2 id="security-title">文件怎样被保护</h2>
-          <p>文件走 HTTPS。密码在浏览器里处理。两条路径，各有职责。</p>
+          <p>
+            Cloudflare V3
+            在发送者浏览器加密、接收者浏览器解密。文件密钥留在两端。
+          </p>
         </div>
         <figure class="transfer-figure">
           <div class="transfer-map">
@@ -98,10 +101,10 @@
                 />
               </svg>
               <p class="flow-node-title">你的浏览器</p>
-              <span>读取原文件，接收原文件</span>
+              <span>上传前加密，下载后解密</span>
             </div>
             <div class="transfer-route">
-              <p class="flow-node-title">HTTPS / TLS</p>
+              <p class="flow-node-title">AES-GCM 分块</p>
               <svg class="flow-arrow" aria-hidden="true" viewBox="0 0 160 40">
                 <path
                   d="M4 20h148m-18-14 18 14-18 14"
@@ -109,7 +112,7 @@
                   stroke="currentColor"
                   stroke-width="4"
                 /></svg
-              ><span>分片直传 · 签名直下</span>
+              ><span>16 MiB 原文 → HTTPS 传输密文</span>
             </div>
             <div class="transfer-store">
               <svg aria-hidden="true" viewBox="0 0 120 112">
@@ -130,53 +133,63 @@
                 />
               </svg>
               <p class="flow-node-title">私有 R2</p>
-              <span>静态加密由 Cloudflare 管理</span>
+              <span>仅保存密文，不持有文件解密密钥</span>
             </div>
             <div class="transfer-control">
               <p class="transfer-title">Parcel Worker + D1</p>
               <p>
-                验证权限、有效期与下载次数，签发最长 5
-                分钟的文件访问地址。文件内容不经过 Worker。
+                验证权限、有效期与下载次数，签发短期密文访问地址。
+                不接收明文文件密钥与原始文件名。
               </p>
             </div>
           </div>
           <figcaption>
-            文件内容通过 HTTPS 在浏览器和 R2 之间传输。R2
-            自动加密存储的对象，存储密钥由 Cloudflare 管理。
+            每个文件使用独立的随机 256 位密钥。每个分块使用新的 12 字节随机
+            nonce 和 16 字节认证标签，额外占用 28
+            字节；认证同时绑定文件身份、块顺序与长度。
           </figcaption>
         </figure>
         <p class="security-truth">
-          当前版本没有在浏览器中加密文件内容，也没有下载后的本地解密步骤。这不是端到端加密：拥有桶内对象读取权限的运维者，以及存储服务，可以访问文件内容。分享密码控制下载授权，不是文件解密密钥。
+          文件内容、原始文件名、媒体类型和原文 SHA-256
+          均被加密。服务端仍可见大小、分享
+          ID、有效期、下载次数和请求元信息。端到端加密仅适用于 Cloudflare
+          V3；独立 Go 与连接 Origin 的 Pages 构建保留原有传输协议。
         </p>
         <div class="password-explainer">
-          <h3>密码走另一条路</h3>
+          <h3>链接密钥与分享密码</h3>
           <ol class="password-flow">
             <li>
-              <strong>浏览器派生</strong>
+              <strong>保留完整链接</strong>
               <p>
-                原始密码 + 随机盐 → Argon2id。V3 向 API
-                发送派生凭据，不发送原始密码。
+                分享链接的 # 后保存随机 32 字节密钥材料。URL 片段不会随 HTTP
+                请求发送；Parcel 也不会把它加入
+                API。缺少这部分，服务器无法解包文件密钥。
               </p>
             </li>
             <li>
-              <strong>Worker 校验</strong>
+              <strong>本机解包密钥</strong>
               <p>
-                派生凭据经 HTTPS 送达 Worker。存入 D1 前使用 AES-GCM
-                加密；Worker 持有解密和校验所需的服务端密钥。
+                有密码时，浏览器用独立随机盐运行 Argon2id，再由 HKDF
+                结合链接密钥材料，用 AES-GCM
+                包裹文件密钥和元信息。接收者需要完整链接与密码。
               </p>
             </li>
             <li>
-              <strong>验证后放行</strong>
+              <strong>单独验证下载权限</strong>
               <p>
-                分享密码通过后可获得受限下载授权；管理员还须提供 TOTP
-                动态码，才会建立管理会话。
+                另一份使用不同盐的密码派生凭据，经 HTTPS 交给 Worker
+                做在线授权；它不是解包密钥。有效期、次数、撤销和管理员 TOTP
+                仍由服务端检查。
               </p>
             </li>
           </ol>
         </div>
         <p class="note">
-          派生凭据本身也属于敏感凭据；浏览器派生不能替代 HTTPS。请妥善保管
-          SESSION_SECRET，它保护密码校验材料和 TOTP 密钥。
+          修改分享密码只重新包裹很小的密钥信封，不重传文件。已经拿到旧文件密钥和密文的人，仍能解密自己的副本；撤销无法收回已保存的文件或密钥。
+        </p>
+        <p class="note">
+          此机制信任浏览器、设备与实际加载的网页代码。恶意更新的网页、扩展或本机恶意程序仍可能读取端点密钥。
+          HTTPS 和 Cloudflare 的存储加密继续提供额外保护，不能代替端点可信。
         </p>
         <p class="security-sources">
           <a
@@ -185,7 +198,7 @@
           >
           ·
           <a
-            href="https://github.com/hyphy-void/Parcel/blob/main/cloudflare/v3/password.mjs"
+            href="https://github.com/hyphy-void/Parcel/blob/main/web/src/e2ee.ts"
             >核对实现代码</a
           >
         </p>
@@ -215,6 +228,7 @@
                 <a href="#r2">创建 R2 凭据</a>
                 <a href="#variables">保存变量与密钥</a>
                 <a href="#cors">允许浏览器直传</a>
+                <a href="#encrypted-sharing">使用加密分享</a>
                 <a href="#config">配置工具</a>
                 <a href="#verify">上线验收</a>
                 <a href="#faq">常见问题</a>
@@ -658,6 +672,49 @@
                 </p>
               </div>
             </article>
+            <article id="encrypted-sharing">
+              <h3>使用加密分享</h3>
+              <div class="answer">
+                <p>
+                  选择文件和可选分享密码。浏览器先读取原文件计算完整 SHA-256，
+                  再逐块加密、上传；每块原文为 16
+                  MiB，末块可更小，内存占用不会随文件总大小增长。
+                  空文件也有一个带认证信息的 28 字节密文块。
+                </p>
+                <p>
+                  暂停或刷新时保留网站数据。续传需重新选择原文件，Parcel
+                  会核对完整 SHA-256，而非只信任文件名和大小。已完成块留在 R2，
+                  重试使用新的随机
+                  nonce；浏览器须保留本地上传密钥，任务也须仍在有效期内。
+                </p>
+                <p>
+                  复制包含
+                  <code>#k=…</code>
+                  的完整分享链接，把可选密码分开发送，并留存链接。 分享页的“备份
+                  / 导入本机分享密钥”可以导出小型加密备份， 使用单独的至少 12
+                  字节备份口令。换浏览器管理密码前先导入备份；
+                  仅凭管理员登录不能找回丢失的密钥或原始文件名。
+                </p>
+                <p>
+                  接收者先在本机解锁，再把通过认证的密文块接收到浏览器
+                  IndexedDB。
+                  接收完成后点“保存解密文件”，逐块校验、解密并流式写入磁盘，不会拼成巨型
+                  Blob。刷新后可从完整缓存块继续；同一有效下载会话的重试不重复扣除下载资格。
+                </p>
+                <p>
+                  本机需同时容纳临时密文与最终原文件，约两倍文件大小并预留余量。
+                  浏览器配额、无痕模式、磁盘余量、下载权限和缓存自动清理都会影响大文件。
+                  长期存储权限可选，不回答或拒绝不会阻止本次接收。
+                  保存期间保持页面打开；确认文件已保存后，可清除本机续传缓存。
+                </p>
+                <p>
+                  创建者浏览器的网站数据中保存本机密钥，不能防住控制该浏览器的人。
+                  清理网站数据或换设备前先备份；本机密钥、完整链接和备份全部丢失后，服务器无法恢复。
+                  旧版未加密 V3 分享不兼容，需重新上传；升级不会删除现有 D1 或
+                  R2 数据。 Go 与连接 Origin 的 Pages 仍是独立的非 E2EE 模式。
+                </p>
+              </div>
+            </article>
           </div>
         </div>
       </section>
@@ -815,13 +872,22 @@
               API 应返回 401。Access 模式则应进入 Access
               登录，未授权邮箱不能访问。
             </li>
-            <li>管理员登录并上传文件，创建无密码和有密码分享。</li>
             <li>
-              未登录窗口打开分享，测试正确密码、错误密码、下载与 Range
-              续传。同一有效下载会话续签不重复扣次。
+              上传空文件、小文件与多分块文件，分别创建无密码和有密码分享；暂停、刷新、重选原文件续传。
+              确认 R2 保存密文，D1 不含原始文件名或明文文件密钥。
+            </li>
+            <li>
+              未登录窗口打开完整链接，测试正确密码、错误密码与缺少片段密钥；
+              暂停、刷新接收后继续，保存解密文件并与原文件比对 SHA-256。
+              首次请求丢响应、同一有效下载会话重试或续签均不重复扣次。
             </li>
             <li>
               撤销分享后不能获得新的签名地址。已签地址最长还有 5 分钟有效期。
+              已经获得的密文和密钥副本无法收回。
+            </li>
+            <li>
+              导出、导入加密密钥备份；修改分享密码不应重新上传文件。
+              新接收者须使用新密码与完整链接才能解密。
             </li>
             <li>
               等待 Cron，确认对象删除后释放配额。观察 Worker 错误与 CPU 指标。
@@ -863,6 +929,21 @@
               检查 CORS Origin 与 PUBLIC_URL 完全一致；确认 FILES
               绑定、R2_BUCKET_NAME、S3 凭据限定桶一致。账户 API Token 不能代替
               S3 Secret Access Key。
+            </p>
+          </details>
+          <details id="faq-screenshots" name="troubleshooting">
+            <summary>哪些截图需要更新？</summary>
+            <p>
+              Parcel 应用侧的上传创建与进度、完整分享链接、密码修改与密钥备份、
+              接收者解锁、密文接收和解密保存流程截图都需要按新版重拍。
+              使用可丢弃的演示文件与密钥，不公开真实完整链接、密码、密钥备份或认证器密钥。
+            </p>
+            <p>
+              教程中的八张 Cloudflare 配置图仍适用：绑定、模板构建、可选
+              Access、R2 凭据、 变量、添加密钥、CORS 与生产构建。E2EE
+              不新增运行时密钥或 CORS 请求头；
+              两张构建图可按需刷新为新版本的发布证据。TOTP
+              绑定继续使用网页示意，无需真实扫码截图。
             </p>
           </details>
           <details id="faq-updates" name="troubleshooting">

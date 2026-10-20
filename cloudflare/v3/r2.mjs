@@ -62,9 +62,8 @@ export class R2Store {
     );
   }
   signGet(s) {
-    const ascii = s.name.replace(/[^\x20-\x7e]|["\\]/g, "_");
     return this.sign("GET", s.storage_key, {
-      "response-content-disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(s.name)}`,
+      "response-content-disposition": 'attachment; filename="encrypted.parcel"',
       "response-content-type": "application/octet-stream",
       "response-cache-control": "private, no-store",
     });

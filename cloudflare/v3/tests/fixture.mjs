@@ -7,6 +7,33 @@ import assert from "node:assert/strict";
 import { unstable_splitSqlQuery } from "wrangler";
 import { argon2idAsync } from "@noble/hashes/argon2.js";
 import { PASSWORD_PROTOCOL } from "../password.mjs";
+import { E2EE_CHUNK_BYTES, E2EE_OVERHEAD_BYTES } from "../encryption.mjs";
+
+// A structurally valid opaque descriptor for service tests. Cryptographic
+// authenticity is exercised separately with the browser encryption module.
+export function encryptionManifest(size, password = false) {
+  const b64 = (n) => Buffer.alloc(n).toString("base64url");
+  return {
+    version: 1,
+    algorithm: "AES-256-GCM",
+    file_id: b64(16),
+    plain_size: size,
+    chunk_size: E2EE_CHUNK_BYTES,
+    chunk_count: Math.max(1, Math.ceil(size / E2EE_CHUNK_BYTES)),
+    envelope: { salt: b64(16), iv: b64(12), ciphertext: b64(48) },
+    ...(password
+      ? {
+          password_kdf: {
+            scheme: "argon2id",
+            salt: b64(16),
+            memory_kib: 32768,
+            iterations: 2,
+            parallelism: 1,
+          },
+        }
+      : {}),
+  };
+}
 
 export async function passwordProof(
   password,
@@ -68,12 +95,16 @@ export async function fixture(t, options = {}) {
     r2Persist: join(dir, "r2"),
     serviceBindings: {
       ASSETS: async (request) => {
+        if (options.assets) return options.assets(request);
         const path = new URL(request.url).pathname;
-        const filename = path.startsWith("/assets/")
-          ? path.slice(1)
-          : "index.html";
+        const filename =
+          path.startsWith("/assets/") || path === "/parcel-download-sw.js"
+            ? path.slice(1)
+            : "index.html";
         return new Response(
-          await readFile(resolve("../dist/v3-web", filename)),
+          await readFile(
+            resolve(options.assetDirectory || "../dist/v3-web", filename),
+          ),
           {
             headers: {
               "Content-Type": filename.endsWith(".js")
@@ -162,8 +193,8 @@ export async function fixture(t, options = {}) {
     const response = await api("/api/v1/uploads", {
       method: "POST",
       body: {
-        name: "测试资料.bin",
         size,
+        encryption: encryptionManifest(size, !!extra.password_proof),
         ttl_seconds: 3600,
         max_downloads: 3,
         ...extra,
@@ -181,7 +212,10 @@ export async function fixture(t, options = {}) {
   }
   async function put(id, n, bytes) {
     const u = await row(id),
-      payload = typeof bytes === "number" ? new Uint8Array(bytes) : bytes;
+      payload =
+        typeof bytes === "number"
+          ? new Uint8Array(bytes + E2EE_OVERHEAD_BYTES)
+          : bytes;
     const result = await bucket
       .resumeMultipartUpload(u.storage_key, u.multipart_id)
       .uploadPart(n, payload);

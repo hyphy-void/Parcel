@@ -6,18 +6,25 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
 
-推荐新用户使用 **Workers + D1 + 私有 R2**。按 [图文部署手册](https://parcelwiki.pages.dev) 完成密码 + TOTP（或可选 Access）、R2 凭据、CORS 和运行时配置，再启用实例。教程解释传输加密、密码保护与 R2 静态加密；当前版本不提供文件内容的浏览器端或端到端加密。教程截图已脱敏并以无损 WebP 随仓库保存。按钮自动准备资源与 D1 schema；首次部署保持维护模式。Workers Free 不代表 R2 无限免费，新实例默认 9 GB 应用配额，免费额度与账单按账户计算。
+推荐新用户使用 **Workers + D1 + 私有 R2**。Cloudflare V3 的新分享使用浏览器端到端加密：文件在上传前分块加密，R2 保存密文，接收者在浏览器解密并流式保存。按 [图文部署手册](https://parcelwiki.pages.dev) 完成密码 + TOTP（或可选 Access）、R2 凭据、CORS 和运行时配置，再启用实例。教程截图已脱敏并以无损 WebP 随仓库保存。按钮自动准备资源与 D1 schema；首次部署保持维护模式。Workers Free 不代表 R2 无限免费，新实例默认 9 GB 应用配额，免费额度与账单按账户计算。
 
 CLI 自动准备部署：`npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`，完整步骤见 [V3 部署说明](docs/v3-deployment.md)。源码按 [MIT](LICENSE) 许可发布。
 
 v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。Go 模式可通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。Pages 模式采用静态前端 + API Gateway + Access 身份验证，接入步骤见 [Pages 部署说明](docs/pages-deployment.md)。
 
-
-V3 支持 Workers Free 的 Cloudflare 原生部署模式：Workers 托管前端与 API，D1 负责权威状态和原子事务，R2 继续文件直传/直下载，核心链路不依赖树莓派。构建、自动部署、迁移和回滚见 [V3 部署说明](docs/v3-deployment.md)。
+V3 支持 Workers Free 的 Cloudflare 原生部署模式：Workers 托管前端与 API，D1 负责权威状态和原子事务，密文在浏览器和 R2 之间直传，核心链路不依赖树莓派。端到端加密严格限定 Cloudflare V3；独立 Go 和连接 Origin 的 Pages 构建保留原 UI 与传输协议，未提供文件 E2EE。构建、自动部署与升级限制见 [V3 部署说明](docs/v3-deployment.md)。
 
 V3 管理员可选择 Access 或“管理员密码 + TOTP 动态验证码”：支持认证器扫码绑定、一次性恢复码和更换认证器。现有实例须设置 `ADMIN_AUTH=totp`、完成初始化并解除管理路径的 Access 拦截，才会停止邮箱验证码登录。切换步骤见 [V3 管理员认证](docs/v3-deployment.md#管理员密码--totp-登录替代邮箱验证码)。
 
 管理员登录后上传单个文件，设置可选密码、有效期与下载次数（可选不限次数），生成一个分享链接。不限次数时仍保留有效期与密码保护。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
+
+### Cloudflare V3 端到端加密
+
+每份文件使用独立随机 256 位密钥，按 16 MiB 原文分块执行 AES-GCM；每块增加 12 字节随机 nonce 和 16 字节认证标签。文件名、媒体类型和原文 SHA-256 与文件密钥一起密封。完整链接的 `#k=…` 保存随机 32 字节密钥材料，不进入 HTTP 请求或 Parcel API；有密码时，独立盐的 Argon2id 与链接材料经 HKDF 保护密钥信封。另一份不同盐的密码凭据只用于服务端在线授权，不能当作解密密钥。
+
+上传刷新后需保留网站数据、重选原文件并核验完整 SHA-256。接收端先把密文暂存 IndexedDB，再逐块解密、校验并流式写盘，需约两份文件的磁盘空间及浏览器存储配额。创建者须保留完整链接，并在换设备或清理网站数据前导出带独立口令的加密密钥备份。服务器、管理员登录或 `SESSION_SECRET` 都不能恢复丢失的文件密钥。修改密码只重包密钥，不重传文件；已取得密钥和密文的副本无法撤回。
+
+服务器仍可见大小、分享 ID、次数、有效期和请求元信息；此方案信任加载的网页、浏览器与终端，不能抵抗恶意网页更新、扩展或本机攻击。升级新增 `0004_e2ee.sql` 与 `0005_download_admissions.sql`，迁移本身不删除现有 D1/R2 数据；旧 V3 未加密分享返回不兼容状态，需要重新上传。不能把新版加密分享回滚为 Go 可读文件。
 
 ## 本地启动
 
@@ -62,7 +69,7 @@ Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需�
 - [验收报告与未测项目](docs/acceptance.md)
 - [真实局域网设备验收步骤](docs/lan-acceptance.md)
 
-下载次数指首次准许传输消耗的下载资格；同一有效会话重试与续传不重复扣次，网络中断不退还资格。浏览器的实际保存进度由原生下载列表显示。
+下载次数指首次准许传输消耗的下载资格；同一有效会话重试与续传不重复扣次，网络中断不退还资格。V3 分别显示密文接收与解密保存进度，最终保存结果仍须在浏览器下载列表或所选目录确认。Go 模式继续由原生下载列表显示保存进度。
 
 ### 私有 R2 存储
 

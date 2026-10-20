@@ -1,4 +1,4 @@
-import { equal, hash, hmac, token, utf8 } from "./crypto.mjs";
+import { equal, hash, hmac, token } from "./crypto.mjs";
 import {
   PASSWORD_PROTOCOL,
   passwordParameters,
@@ -6,6 +6,13 @@ import {
   verifyPassword,
 } from "./password.mjs";
 import { PART_BYTES, URL_TTL, R2Store } from "./r2.mjs";
+import {
+  E2EE_CHUNK_BYTES,
+  E2EE_PART_BYTES,
+  validateEncryption,
+  storedEncryption,
+  sameFileEncryption,
+} from "./encryption.mjs";
 
 export class Problem extends Error {
   constructor(status, code, message) {
@@ -192,11 +199,19 @@ export class Service {
       fail(429, "rate_limited", "请求过于频繁，请稍后重试");
   }
   uploadJSON(u, parts) {
+    const encryption = storedEncryption(u);
     return {
       id: u.id,
-      name: u.name,
-      size: u.size,
-      offset: u.offset,
+      name: "encrypted.parcel",
+      size: u.plaintext_size,
+      offset:
+        u.offset === u.size
+          ? u.plaintext_size
+          : Math.floor(u.offset / u.part_bytes) * E2EE_CHUNK_BYTES,
+      stored_size: u.size,
+      stored_offset: u.offset,
+      encryption,
+      unsupported: !encryption,
       ttl_seconds: u.ttl,
       max_downloads: u.max_downloads,
       state: u.state,
@@ -205,7 +220,8 @@ export class Service {
       updated: u.updated,
       error: u.error,
       storage_backend: "r2",
-      part_bytes: u.part_bytes,
+      part_bytes: E2EE_CHUNK_BYTES,
+      stored_part_bytes: u.part_bytes,
       ...(parts ? { parts } : {}),
     };
   }
@@ -219,23 +235,30 @@ export class Service {
           : "available";
   }
   shareJSON(s) {
+    const encryption = storedEncryption(s);
     return {
       id: s.id,
       upload_id: s.upload_id,
-      name: s.name,
-      size: s.size,
-      sha256: s.sha256,
+      name: encryption ? "encrypted.parcel" : "旧版分享（已停用）",
+      size: s.plaintext_size,
+      stored_size: s.size,
+      sha256: "",
+      encryption,
+      unsupported: !encryption,
       created: s.created,
       expires: s.expires,
       max_downloads: s.max_downloads,
       download_count: s.download_count,
+      version: s.version,
       state: s.state,
       error: s.error,
       storage_backend: "r2",
       etag: s.etag,
       password_required: !!s.password_hash,
       password_protocol: PASSWORD_PROTOCOL,
-      password_kdf: passwordParameters(s.password_hash),
+      password_kdf: encryption
+        ? passwordParameters(s.password_hash)
+        : undefined,
       availability: this.availability(s),
       url: this.c.PUBLIC_URL + "/s/" + s.id,
     };
@@ -249,6 +272,30 @@ export class Service {
     const s = await this.first("SELECT * FROM shares WHERE id=?", id);
     if (!s) fail(404, "not_found", "分享不存在");
     return s;
+  }
+  requireEncryption(row) {
+    const encryption = storedEncryption(row);
+    if (!encryption)
+      fail(410, "encryption_required", "旧版分享已停用，请重新加密上传文件");
+    return encryption;
+  }
+  validatePasswordEnvelope(encryption, data) {
+    if (!!encryption.password_kdf !== !!data.password_proof)
+      fail(400, "invalid_encryption", "密码保护与加密密钥封装不一致");
+    // The online verifier must use an independent Argon2 salt. It may never
+    // accidentally disclose the password-derived root used by the envelope.
+    const proofSalt = data.password_proof?.salt;
+    if (
+      encryption.password_kdf &&
+      typeof proofSalt === "string" &&
+      proofSalt.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") ===
+        encryption.password_kdf.salt
+    )
+      fail(
+        400,
+        "invalid_encryption",
+        "密码验证和文件加密必须使用独立的派生参数",
+      );
   }
   async lease(table, id, states) {
     const value = token();
@@ -317,18 +364,50 @@ export class Service {
     };
   }
   async create(data, request) {
-    const name = data.name,
-      size = data.size;
+    const plainSize = data.size;
     if (
-      typeof name !== "string" ||
-      !name ||
-      utf8(name).length > 1024 ||
-      /[\/\\\p{Cc}]/u.test(name)
+      !Number.isSafeInteger(plainSize) ||
+      plainSize < 0 ||
+      plainSize > this.c.maxFile
     )
-      fail(400, "invalid_filename", "文件名不合法");
-    if (!Number.isSafeInteger(size) || size < 0 || size > this.c.maxFile)
       fail(413, "file_too_large", "文件超过大小限制");
-    if (size > 100000000 && data.confirm_large !== true)
+    if (
+      data.name !== undefined ||
+      data.type !== undefined ||
+      data.sha256 !== undefined
+    )
+      fail(
+        400,
+        "encrypted_metadata_required",
+        "文件名和校验值必须在浏览器端加密",
+      );
+    if (
+      Object.keys(data).some(
+        (key) =>
+          ![
+            "size",
+            "encryption",
+            "ttl_seconds",
+            "max_downloads",
+            "password",
+            "password_proof",
+            "confirm_large",
+          ].includes(key),
+      )
+    )
+      fail(400, "invalid_encryption", "上传请求包含不支持的加密参数");
+    let encryption, size;
+    try {
+      ({ encryption, storedSize: size } = validateEncryption(
+        data.encryption,
+        plainSize,
+      ));
+    } catch {
+      fail(400, "invalid_encryption", "请使用端到端加密上传协议");
+    }
+    this.validatePasswordEnvelope(encryption, data);
+    const name = "encrypted.parcel";
+    if (plainSize > 100000000 && data.confirm_large !== true)
       fail(400, "confirmation_required", "超过 100 MB 需要确认后上传");
     const ttl = data.ttl_seconds || this.c.defaultTTL,
       limit = data.max_downloads || this.c.downloadLimit;
@@ -348,7 +427,7 @@ export class Service {
     const idem = raw ? await hash(raw) : null;
     const fingerprint = await hmac(
       this.c.SESSION_SECRET,
-      JSON.stringify({ name, size, ttl, limit, password }),
+      JSON.stringify({ size, plainSize, encryption, ttl, limit, password }),
     );
     const existing = async () => {
       const u = idem
@@ -366,13 +445,16 @@ export class Service {
       now = this.now();
     // Both the quota predicate and trigger execute inside the same D1 write.
     const inserted = await this.first(
-      `INSERT INTO uploads(id,name,size,ttl,max_downloads,password_hash,state,storage_key,share_id,created,updated,idem,request_hash)
-      SELECT ?,?,?,?,?,?,'created',?,?,?,?,?,? FROM storage_usage WHERE id=1 AND ?<=?-used-reserved
+      `INSERT INTO uploads(id,name,size,plaintext_size,encryption,part_bytes,ttl,max_downloads,password_hash,state,storage_key,share_id,created,updated,idem,request_hash)
+      SELECT ?,?,?,?,?,?,?,?,?,'created',?,?,?,?,?,? FROM storage_usage WHERE id=1 AND ?<=?-used-reserved
       AND (SELECT count(*) FROM uploads WHERE state NOT IN ('completed','cleaned'))<100
       ON CONFLICT(idem) DO NOTHING RETURNING *`,
       id,
       name,
       size,
+      plainSize,
+      JSON.stringify(encryption),
+      E2EE_PART_BYTES,
       ttl,
       limit,
       passwordHash,
@@ -399,6 +481,7 @@ export class Service {
   }
   async getUpload(id) {
     let u = await this.upload(id);
+    this.requireEncryption(u);
     if (u.state === "finalizing") {
       if (u.retry_at <= this.now()) this.ctx.waitUntil(this.finalize(id));
       return json(this.uploadJSON(u));
@@ -415,6 +498,7 @@ export class Service {
   async signPart(id, number) {
     let u = await this.lease("uploads", id, writable);
     try {
+      this.requireEncryption(u);
       if (!Number.isSafeInteger(number) || number < 1 || number > countParts(u))
         fail(400, "invalid_part", "分块编号不合法");
       await this.ensureMultipart(u);
@@ -434,6 +518,7 @@ export class Service {
   }
   async complete(id) {
     let u = await this.upload(id);
+    this.requireEncryption(u);
     if (u.state === "completed") return json(this.uploadJSON(u), 202);
     if (u.state !== "finalizing") {
       u = await this.lease("uploads", id, writable);
@@ -484,8 +569,8 @@ export class Service {
       const now = this.now();
       const result = await this.db.batch([
         this.stmt(
-          `INSERT INTO shares(id,upload_id,storage_key,name,size,password_hash,created,expires,max_downloads,etag)
-          SELECT share_id,id,storage_key,name,size,password_hash,?,?+ttl,max_downloads,? FROM uploads
+          `INSERT INTO shares(id,upload_id,storage_key,name,size,plaintext_size,encryption,password_hash,created,expires,max_downloads,etag)
+          SELECT share_id,id,storage_key,name,size,plaintext_size,encryption,password_hash,?,?+ttl,max_downloads,? FROM uploads
           WHERE id=? AND state='finalizing' AND lease_token=? AND lease_until>? ON CONFLICT(upload_id) DO NOTHING`,
           now,
           now,
@@ -577,12 +662,15 @@ export class Service {
   }
   async getShare(id, request) {
     const s = await this.share(id);
+    const encryption = this.requireEncryption(s);
     if (!(await this.granted(request, s)))
       return json({
         id,
         password_required: true,
         password_protocol: PASSWORD_PROTOCOL,
         password_kdf: passwordParameters(s.password_hash),
+        encryption,
+        version: s.version,
         locked: true,
         availability: this.availability(s),
       });
@@ -590,6 +678,7 @@ export class Service {
   }
   async unlock(id, data) {
     const s = await this.share(id);
+    this.requireEncryption(s);
     if (s.state !== "active" || s.expires <= this.now())
       fail(410, "share_expired", "分享已失效");
     if (
@@ -650,14 +739,38 @@ export class Service {
     }
   }
   async changePassword(id, data) {
+    const s = await this.share(id),
+      current = this.requireEncryption(s);
+    if (
+      Object.keys(data).some(
+        (key) =>
+          !["encryption", "password", "password_proof", "version"].includes(
+            key,
+          ),
+      )
+    )
+      fail(400, "invalid_encryption", "密码更新请求包含不支持的加密参数");
     if (data.password_proof === undefined && data.password !== "")
       fail(400, "invalid_password", "请提供新密码或明确移除密码保护");
+    let encryption;
+    try {
+      ({ encryption } = validateEncryption(data.encryption, s.plaintext_size));
+    } catch {
+      fail(400, "invalid_encryption", "请提供重新封装后的加密密钥");
+    }
+    if (!sameFileEncryption(current, encryption))
+      fail(400, "invalid_encryption", "文件加密参数不能改变");
+    this.validatePasswordEnvelope(encryption, data);
+    if (!Number.isSafeInteger(data.version) || data.version !== s.version)
+      fail(409, "share_changed", "分享设置已经改变，请刷新后重试");
     const password = await this.passwordHash(data);
     const result = await this.db.batch([
       this.stmt(
-        "UPDATE shares SET password_hash=?,version=version+1 WHERE id=? AND state='active' AND expires>? RETURNING version",
+        "UPDATE shares SET password_hash=?,encryption=?,version=version+1 WHERE id=? AND version=? AND state='active' AND expires>? RETURNING version",
         password,
+        JSON.stringify(encryption),
         id,
+        s.version,
         this.now(),
       ),
       this.stmt(
@@ -672,7 +785,9 @@ export class Service {
       ),
     ]);
     if (!result[0].meta.changes) {
-      await this.share(id);
+      const current = await this.share(id);
+      if (current.version !== s.version)
+        fail(409, "share_changed", "分享设置已经改变，请刷新后重试");
       fail(410, "share_expired", "分享已失效");
     }
     this.ctx.waitUntil(this.audit("share_password_changed", id));
@@ -691,9 +806,56 @@ export class Service {
         ?.slice(`parcel_grant_${id}=`.length) || "";
     return hash(value);
   }
+  async recoverAdmission(id, request, value, admission) {
+    if (admission.share_id !== id)
+      fail(409, "idempotency_conflict", "下载请求标识已用于其他分享");
+    if (
+      admission.token_hash !== (await hash(value)) ||
+      !(await this.first(
+        "SELECT 1 FROM download_sessions WHERE token_hash=? AND share_id=?",
+        admission.token_hash,
+        id,
+      ))
+    )
+      fail(410, "download_unavailable", "原下载会话已失效，请明确建立新会话");
+    return this.download(id, request, { session: value }, true);
+  }
   async download(id, request, data, refresh = false) {
     const s = await this.share(id);
+    this.requireEncryption(s);
     let now = this.now();
+    let admissionHash = null,
+      admissionValue;
+    if (!refresh && data.request_token !== undefined) {
+      if (
+        typeof data.request_token !== "string" ||
+        !/^[A-Za-z0-9_-]{32}$/.test(data.request_token)
+      )
+        fail(400, "invalid_idempotency_key", "下载请求标识不合法");
+      admissionHash = await hash(
+        `parcel-v3-download-admission-v1\n${data.request_token}`,
+      );
+      const derived = await hmac(
+        this.c.SESSION_SECRET,
+        `parcel-v3-download-capability-v1\n${id}\n${data.request_token}`,
+      );
+      admissionValue = btoa(
+        String.fromCharCode(
+          ...derived
+            .slice(0, 48)
+            .match(/../g)
+            .map((byte) => parseInt(byte, 16)),
+        ),
+      )
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+      const existing = await this.first(
+        "SELECT * FROM download_admissions WHERE request_hash=?",
+        admissionHash,
+      );
+      if (existing)
+        return this.recoverAdmission(id, request, admissionValue, existing);
+    }
     if (!refresh && !(await this.granted(request, s)))
       fail(401, "share_locked", "请先验证分享密码");
     const grant = await this.grantHash(request, id);
@@ -721,7 +883,7 @@ export class Service {
     } else {
       if (this.availability(s) !== "available")
         fail(410, "share_unavailable", "分享已失效或下载次数已用完");
-      value = token();
+      value = admissionValue || token();
       expiry = now + this.c.downloadTTL;
     }
     // Sign before the transaction: signing failures never consume a count. All
@@ -769,7 +931,9 @@ export class Service {
         this.stmt(
           `INSERT INTO download_sessions(token_hash,share_id,version,state,created,activated,last_activity,expires)
           SELECT ?,id,version,'active',?,?,?,? FROM shares WHERE id=? AND state='active' AND expires>max(?,unixepoch()) AND version=?
-          AND (max_downloads=-1 OR download_count<max_downloads) AND ${this.grantPredicate()} RETURNING token_hash`,
+          AND (max_downloads=-1 OR download_count<max_downloads) AND ${this.grantPredicate()}
+          AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM download_admissions WHERE request_hash=?))
+          ON CONFLICT(token_hash) DO NOTHING RETURNING token_hash`,
           sessionHash,
           now,
           now,
@@ -780,15 +944,37 @@ export class Service {
           s.version,
           grant,
           now,
+          admissionHash,
+          admissionHash,
         ),
         this.stmt(
           `UPDATE shares SET download_count=download_count+1,signed_until=max(signed_until,?) WHERE id=?
-          AND EXISTS(SELECT 1 FROM download_sessions WHERE token_hash=? AND share_id=shares.id)`,
+          AND changes()=1 AND EXISTS(SELECT 1 FROM download_sessions WHERE token_hash=? AND share_id=shares.id)`,
           retain,
           id,
           sessionHash,
         ),
+        ...(admissionHash
+          ? [
+              this.stmt(
+                `INSERT INTO download_admissions(request_hash,share_id,token_hash)
+          SELECT ?,share_id,token_hash FROM download_sessions WHERE token_hash=? AND share_id=?
+          ON CONFLICT(request_hash) DO NOTHING`,
+                admissionHash,
+                sessionHash,
+                id,
+              ),
+            ]
+          : []),
       ]);
+    }
+    if (!refresh && admissionHash && result[0].meta.changes !== 1) {
+      const admitted = await this.first(
+        "SELECT * FROM download_admissions WHERE request_hash=?",
+        admissionHash,
+      );
+      if (admitted)
+        return this.recoverAdmission(id, request, admissionValue, admitted);
     }
     if (result[0].meta.changes !== 1)
       fail(
@@ -842,6 +1028,7 @@ export class Service {
       storage_backend: "r2",
       backend_mode: "serverless",
       password_protocol: PASSWORD_PROTOCOL,
+      encryption_required: true,
       version: "3.0.0-dev",
       base_url: this.c.PUBLIC_URL,
       used_bytes: used,

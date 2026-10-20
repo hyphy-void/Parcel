@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixture, passwordProof } from "./fixture.mjs";
+import { fixture, passwordProof, encryptionManifest } from "./fixture.mjs";
 import { configuration } from "../service.mjs";
 import { matchTotp, openSecret, sealSecret, totp } from "../totp.mjs";
 
@@ -117,7 +117,7 @@ test("native setup requires deployment secret and a real TOTP before exposing an
   await f.api("/api/v1/uploads", {
     cookie: admin.cookie,
     method: "POST",
-    body: { name: "native-auth.bin", size: 0 },
+    body: { size: 0, encryption: encryptionManifest(0) },
     headers: {
       "X-CSRF-Token": admin.csrf,
       "Idempotency-Key": crypto.randomUUID(),

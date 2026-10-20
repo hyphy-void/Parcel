@@ -31,6 +31,10 @@ export function manifest(raw) {
     throw new Error("Unsupported snapshot format");
   if (Object.keys(data.rows).some((k) => !tables.includes(k)))
     throw new Error("Unexpected snapshot table");
+  if ([...data.rows.uploads, ...data.rows.shares].some((row) => row.encryption))
+    throw new Error(
+      "End-to-end encrypted rows are not a legacy Go migration snapshot",
+    );
   if (
     data.rows.uploads.some((u) => !["completed", "cleaned"].includes(u.state))
   )

@@ -33,7 +33,8 @@ export function createWorker(deps = {}) {
         url.pathname === "/login" ||
         url.pathname === "/admin" ||
         url.pathname.startsWith("/admin/");
-      const asset = url.pathname.startsWith("/assets/");
+      const downloadWorker = url.pathname === "/parcel-download-sw.js";
+      const asset = url.pathname.startsWith("/assets/") || downloadWorker;
       if (url.pathname.startsWith("/api")) {
         if (!apiRoute) return respond(problem(404, "not_found", "接口不存在"));
         if (!apiRoute.allowed)
@@ -54,6 +55,7 @@ export function createWorker(deps = {}) {
           adminPage ||
           /^\/s\/[A-Za-z0-9_-]{32}$/.test(url.pathname) ||
           /^\/assets\/[A-Za-z0-9._-]+$/.test(url.pathname) ||
+          downloadWorker ||
           url.pathname === "/favicon.ico"
         ))
           return respond(problem(404, "not_found", "页面不存在"));
@@ -104,7 +106,8 @@ export function createWorker(deps = {}) {
           await env.ASSETS.fetch(new Request(target, request)),
           adminPage,
         );
-        if (!asset) response.headers.set("Cache-Control", "private, no-store");
+        if (!asset || downloadWorker)
+          response.headers.set("Cache-Control", "private, no-store");
         return response;
       }
       if (

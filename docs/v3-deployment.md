@@ -1,17 +1,33 @@
 # V3：Workers + D1 + 私有 R2
 
-V3 的页面和 API 由一个带 Static Assets 的 Worker 托管；D1 是分享、上传任务、下载会话和配额的唯一权威数据库。浏览器用 16 MiB Multipart 直接上传 R2，用短期签名 URL 直接下载。管理员可使用密码 + TOTP，或继续使用 Cloudflare Access；Worker 校验会话或 Access JWT，并验证 Origin 和 CSRF。树莓派、Go、SQLite、Tunnel 和内部 Origin 服务令牌退出这条请求链路。Go 部署模式继续保留；正式实例已切换 V3，线上验收与切换记录见 [V3 计划](v3-plan.md)。
+V3 的页面和 API 由一个带 Static Assets 的 Worker 托管；D1 是分享、上传任务、下载会话和配额的唯一权威数据库。浏览器先按 16 MiB 原文分块加密，再用 Multipart 直传 R2；下载短期签名地址返回密文，由接收者浏览器解密保存。管理员可使用密码 + TOTP，或继续使用 Cloudflare Access；Worker 校验会话或 Access JWT，并验证 Origin 和 CSRF。树莓派、Go、SQLite、Tunnel 和内部 Origin 服务令牌退出这条请求链路。文件端到端加密仅用于 Cloudflare V3：独立 Go 与连接 Origin 的 Pages 构建保留原 UI 和传输协议，未提供 E2EE。
 
 ```mermaid
 flowchart LR
-  Browser[浏览器] --> Access[Access 管理员认证]
-  Access --> Worker[Workers 页面与 API]
-  Browser --> Worker
+  Browser[浏览器本地加密与解密] --> Worker[Workers 页面与认证 API]
   Worker --> D1[D1 权威状态与事务]
   Worker --> R2[私有 R2 控制 API]
-  Browser <-->|文件直传与直下载| R2
+  Browser <-->|仅密文直传与下载| R2
   Cron[Cron 每 5 分钟] --> Worker
 ```
+
+## V3 端到端加密与升级
+
+每个文件在上传者浏览器生成独立随机 32 字节文件密钥。每个 16 MiB 原文块采用 AES-256-GCM，前置新生成的 12 字节随机 nonce，尾部附 16 字节认证标签；因此完整密文块为 16,777,244 字节，末块按实际原文大小加 28 字节。空文件有一个 28 字节认证块。AAD 绑定协议版本、文件身份、总长度、块大小、块总数、块序号和当前原文长度，拒绝换块、乱序和截断。每次重试生成新 nonce，不复用旧尝试的随机值。最多 10,000 块，应用的 `MAX_FILE_BYTES` 仍可设置更低上限；默认单文件 8 GiB。
+
+文件名、媒体类型、修改时间、原文 SHA-256 与文件密钥一起封装为 AES-GCM 密钥信封。分享链接的 `#k=…` 是随机 32 字节链接材料，URL 片段不随 HTTP 请求发送，客户端不得把它加入 API、审计或统计。无密码时，链接材料经 HKDF-SHA256 产生信封密钥；有密码时，再用独立随机盐的 Argon2id（32 MiB、2 次迭代、并行度 1）处理密码，与链接材料共同经 HKDF 派生信封密钥。盐、KDF 参数与不可变文件布局均受认证。服务器只保存公开描述与加密信封，没有明文文件密钥、原始文件名或原文哈希。
+
+在线密码授权继续使用 `client-argon2id-v1`，但使用另一份随机盐与派生结果。它控制谁能取得密文访问地址，不是文件解密密钥；即使服务器能验证该凭据，也不能拿它解包文件密钥。`SESSION_SECRET` 继续保护服务端凭据、管理员 TOTP 与会话，不用于生成文件密钥。修改分享密码只重包信封并更新在线凭据，无需重传密文；执行修改的浏览器必须持有本机文件密钥或导入其加密备份。已经取得旧密钥与密文的人仍可解密已有副本，密码修改和撤销不能撤回这些材料。
+
+上传前浏览器以有界内存读取整个原文件计算 SHA-256。暂停或刷新后，保留网站数据并重新选择原文件；再次核对完整哈希后只上传缺失块。浏览器本地记录含上传密钥；任务过期、清除网站数据或丢失该密钥会阻止恢复。分享创建者应保留完整链接，并通过“备份 / 导入本机分享密钥”导出加密 JSON 备份，使用独立的 12–256 字节口令。网站数据中的本机密钥并非防本机攻击的保险箱；备份、完整链接与本机密钥全部丢失时，服务器和管理员登录都无法恢复。
+
+接收端按密文块 Range 获取、先验证 AEAD 再暂存 IndexedDB。完整接收后逐块再次验证、解密并流式写盘，最后核对密钥信封中的 SHA-256；不构建整文件 Blob。原生文件保存 API 可用时直接写入，否则使用同源 Service Worker 的有界流。刷新或中断从本机完整密文块恢复，同一有效下载会话不重复扣次。接收与保存通常同时需要一份密文缓存和一份原文件空间，约两倍文件大小并预留余量；浏览器存储配额、无痕模式、磁盘空间、下载权限及缓存驱逐都会影响可用容量。长期存储权限为可选项，拒绝或暂不回答不阻止本次接收。保存完成后用户可清理本机密文缓存。
+
+服务器仍可见文件大小、分享 ID、有效期、次数与请求元信息。E2EE 信任实际加载的网页、浏览器与设备，不能抵抗恶意网页更新、扩展、本机恶意程序或已控制的端点。HTTPS、私有桶和 R2 静态加密继续作为额外保护。
+
+正式部署先按序应用 `0004_e2ee.sql` 和 `0005_download_admissions.sql`，再发布 Worker。前者新增原文大小与加密描述列，保留原存储大小列作为配额权威账本；后者保存下载资格幂等记录的哈希，保证首次请求丢失响应、重试或并发不会重复扣除同一资格。迁移本身不删除或重写现有 D1/R2 文件；旧版未加密 V3 分享不能在新协议下下载，返回不兼容状态，必须在浏览器重新加密上传。原有过期、撤销和清理生命周期仍适用。不要通过清空数据库或桶来升级。
+
+无需新增服务端 E2EE Secret、环境变量或 CORS 请求头。保留完整 CORS 的 `Content-Type`、`Range`、`X-Amz-Meta-Parcel-Upload` 请求头，以及 `ETag`、`Content-Length`、`Content-Range`、`Accept-Ranges` 响应头暴露。Go 不认识加密对象和密钥信封，不能把这批分享导出后作为可读 Go 分享回滚；恢复旧 Worker 也不会自动把密文变成原文。独立 Go/Origin 构建的保留是部署模式保留，不是线上旧 V3 分享兼容。
 
 ## 管理员密码 + TOTP 登录（替代邮箱验证码）
 
@@ -106,52 +122,30 @@ npm run deploy -- --config .parcel-v3/deploy.json
 npm run deploy -- --config .parcel-v3/deploy.json --activate
 ```
 
-上线验收需通过管理员 Access 登录，上传 0 字节、小文件和超过 16 MiB 的文件，暂停/续传、密码解锁、下载续签和撤销；确认 Network 中没有 Pi/Origin 请求，文件内容只在浏览器与 R2 之间传输。查看 Workers 实际 CPU、异常及 Cron 执行记录，并确认重试和配额恢复。自动公共探测只证明公开 API 的配置与维护状态，不能证明这整套线上业务验收已完成。
+上线验收需按所选方式登录，上传 0 字节、小文件和超过 16 MiB 的文件；验证暂停、刷新、原文件全哈希核对和续传，缺少 `#k=…`、错误密码和正确密码的接收行为，加密密钥备份导入、密码修改、密文 Range 续传与撤销。接收后流式保存并比对原文件 SHA-256；确认 R2 仅有密文、D1 无原始文件名或明文密钥，Network 没有 Pi/Origin 请求，首次下载资格丢响应重试及同一有效会话续签不重复扣次。查看 Workers 实际 CPU、异常及 Cron 执行记录，并确认密文字节配额恢复。自动公共探测不能代替这些验收。
 
-## 迁移现有 Go 的 R2 分享
+## 从现有 Go 或旧 V3 升级
 
-建议先用隔离桶验收 V3，再单独安排旧分享迁移。使用同一个桶迁移时，两套数据库不能同时写入或清理同一对象。D1 导入保留分享 ID、原密码的 Argon2id 盐与结果、授权版本、下载次数、下载会话和签名保留期；导入时将原 Go 哈希封装为加密记录，回滚导出时用同一密钥恢复 Go 格式。不复制文件内容。Go 的管理员会话不迁移，管理员在新 Access 应用重新登录。
+新版 V3 不保留未加密分享的下载兼容。历史 Go→D1 的数据库导入只能搬运状态，不能把原文对象变为 E2EE 密文；不要用旧导入流程宣称旧分享可继续访问。需保留原文件时，先从原实例另行保存，再在新版浏览器重新加密上传，生成新链接。升级到新 V3 的现有旧分享返回不兼容状态；迁移本身不清空或删除数据库与桶。
 
-1. 先在旧 Go 完成或取消所有在途上传，让旧单 PUT 签名过期、暂存对象清理完成。导出会拒绝未完成任务、活跃旧 PUT、未清理暂存对象及本地文件分享。
-2. 将 V3 配置指向原 R2 桶，设置 `allowExistingBucket:true`、`active:false`，部署维护模式 Worker。保留原桶 CORS 来源，加入 V3 来源；保留当前旧域名，直到验证完毕。
-3. 停止旧 Go 服务和清理进程，保持停止。对原数据库执行导出或用 SQLite backup 取得一致副本。工具同时检查 Go 数据目录 `.lock`，运行中的 Go 会使直接导出失败。保存原 `/etc/parcel/`、SQLite、二进制和部署配置。
-4. 导出和导入（生成的配置路径由 Worker 名决定）：
-
-```bash
-python3 scripts/export-v3.py /path/to/parcel.db .parcel-v3/go-snapshot.json --bucket EXISTING_BUCKET --writers-frozen
-node scripts/import-v3.mjs .parcel-v3/go-snapshot.json .parcel-v3/parcel/wrangler.json --writers-frozen
-```
-
-目标 D1 必须空白或属于同一份快照。每批写入可恢复；全部内容、数量和配额验证后才标记导入完成。导入期间 Worker 保持维护。若目标 Worker 曾激活过，应先维护并等待 16 分钟，使旧请求与 Cron 完成，再导入。不要在正在服务的 D1 上导入。旧上传的幂等键仍保留，但重建请求缺少明文密码指纹时会拒绝旧键重用；新上传使用新键。
-
-5. 原 Go 继续停机，激活独立 V3 地址并验收旧分享、密码和已有下载会话。只有 D1 成为唯一写入/清理者后才切换正式域名。域名变更须更新 `PUBLIC_URL`、Access destinations、R2 CORS 和前端访问入口；目前工具刻意只部署隔离 workers.dev 地址，正式域名切换是另一次可审阅的操作。
+建议使用独立资源验收，并备份旧数据库、对象、配置与二进制。两套后端不得同时写入或清理同一对象前缀。独立 Go 可继续运行其原模式，但它不支持新版 V3 密文与密钥信封。原管理员与旧分享的服务端凭据备份，也不能代替浏览器文件密钥备份。
 
 ## 正式域名切换
 
-先完成隔离环境验收，再转移正式域名。若需要保留旧分享，必须先执行上述冻结与迁移步骤；使用独立新桶切换时，旧分享不会自动出现在 V3，旧后端仍只管理旧桶。
+先完成隔离环境验收，再转移正式域名。旧分享不能直接转成新版加密分享，需要保存原文件并重新上传；使用独立新桶切换时，旧后端仍只管理旧桶。
 
-1. 准备正式 Wrangler 配置：复用已验证的 Worker、D1、私有 R2 与 Secrets；把 `PUBLIC_URL` 改为正式 HTTPS 地址，把 `ACCESS_AUD` 改为覆盖正式域名管理员路径的 Access 应用 AUD，设置 `workers_dev:false`、`preview_urls:false`。先审阅应用的七个 destinations 与管理员邮箱策略，不能只替换地址而继续使用隔离环境 AUD。R2 CORS 加入正式来源，同时保留旧来源与无关规则。
+1. 准备正式 Wrangler 配置：复用已验证的 Worker、D1、私有 R2 与 Secrets；把 `PUBLIC_URL` 改为正式 HTTPS 地址，设置 `workers_dev:false`、`preview_urls:false`。Access 模式还需把 `ACCESS_AUD` 改为正式域名管理员应用 AUD，审阅七个 destinations 与邮箱策略；TOTP 模式不应保留拦截这些路径的 Access 规则。R2 CORS 加入正式来源，同时保留旧来源与无关规则。
 2. 在 Dashboard 的原 Pages 项目 → 自定义域，解除正式域名绑定；然后在 V3 Worker → 设置 → 域和路由 → 添加 → 自定义域，填写同一域名。若旧 Pages CNAME 阻止绑定，只移除该主机名的旧记录，再由 Worker 创建记录。保留 Origin 域名与其他 DNS。这两个界面之间可能短暂中断，因此应在配置和回滚方案准备好后操作。
 3. 部署已审阅的正式配置。通过 Dashboard 管理自定义域时，配置可以省略 `routes`；Wrangler 在没有 custom-domain routes 时不会重写已绑定的自定义域。由 CLI 创建/修改自定义域则还需要该 Zone 的 Workers Routes Write 权限。[Workers 权限](https://developers.cloudflare.com/workers/authorization/workers/)
-4. 验证正式域名的未登录管理路径进入 Access，公共分享保持可访问，管理员登录、分块上传、密码、下载续签、撤销、Cron 和实际 CPU 均通过。确认 `workers.dev` 已关闭，再记录切换时间与资源配置。此时才把正式切换标为完成。
+4. 验证正式域名按所选方式显示密码 + TOTP 或 Access，匿名管理 API 拒绝访问，公开加密分享可打开；完成分块上传、解密保存、密码、下载续签、撤销、Cron 和实际 CPU 验收。确认 `workers.dev` 已关闭，再记录切换时间与资源配置。TOTP 模式须解除管理路径剩余的 Access 拦截。
 
-若切换验收失败，应先恢复 Worker 的隔离配置，再按需要恢复 Pages 自定义域。独立桶模式保留两套各自状态；同桶迁移必须使用冻结回滚快照，禁止让两套后端同时写入或清理同一对象。不要在正式切换后直接重跑只支持隔离地址的首次部署命令；它会恢复隔离配置并先进入维护。
+若切换验收失败，应先维护并保留 D1、R2 和客户端密钥备份，再按已验证的资源隔离方案恢复访问。禁止让两套后端同时写入或清理同一对象；不能把旧 Go 指向新 V3 密文来恢复下载。不要在正式切换后直接重跑只支持隔离地址的首次部署命令；它会恢复隔离配置并先进入维护。
 
 ## 回滚
 
-若 V3 尚未激活、没有任何新状态写入，可以保持 V3 维护，再恢复原 Go 的一致备份与原域名。
+新版 E2EE 分享不能导出为 Go 可读分享，历史 `export-d1-v3.mjs` / `rollback-v3.py` 流程不支持它们。不能恢复旧 SQLite、指向同一密文桶就声称完成回滚，也不能用服务端 `SESSION_SECRET` 解密文件。
 
-V3 激活后，不能直接恢复旧 SQLite：这样会丢掉新增分享、下载次数、撤销和清理结果。先完成/取消 V3 在途上传，将部署配置 `active:false` 后重新部署，等待 16 分钟，使先前请求与最长 15 分钟 Cron 完成。`MAINTENANCE_SINCE` 和远程维护状态会被导出工具核对；若仍有未完成任务或未过期租约，拒绝回滚快照。
-
-```bash
-npm run deploy -- --config .parcel-v3/deploy.json
-node scripts/export-d1-v3.mjs .parcel-v3/parcel/wrangler.json .parcel-v3/d1-rollback.json
-python3 scripts/rollback-v3.py .parcel-v3/d1-rollback.json /path/to/parcel.db --bucket EXISTING_BUCKET --writers-frozen
-```
-
-D1 回滚导出必须提供原 `SESSION_SECRET`；工具优先读取环境变量，然后读取统一的 `.parcel-v3/cloudflare-credentials.json`，不再读取旧 `secrets.json`。导出的快照包含 Go 格式密码哈希，应作为敏感备份保护。回滚工具拒绝直接写入未解密的 V3 密码记录。
-
-Go 必须停机。回滚工具取得 Go `.lock`，自动保留 SQLite backup，在一个事务中恢复最新的四张权威状态表，保留 Go 管理员配置、现有 R2 对象键与已消费下载次数。确认 Go 的 R2 配置、正式 URL 和旧 Access/Gateway 仍匹配，再恢复域名和 Go 服务。V3 保持维护，避免两套清理器同时工作。
+应用发布失败时优先修复并重新部署兼容 E2EE 的 Worker。若确需恢复旧服务，先维护新版、保存一致的 D1/R2 与客户端密钥备份，停止新版清理与写入，再恢复与原服务对应的独立数据库和对象。新 E2EE 文件保留在独立备份或兼容的 V3 实例中，不能由 Go 接管。数据库恢复、次数、撤销与对象清理状态必须一致；禁止两套清理器同时管理同一前缀。
 
 ## 清理、备份和容量
 
@@ -180,6 +174,7 @@ main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图�
 新部署的 Worker、D1 数据库和私有 R2 桶默认统一命名为 `parcel`，CLI bootstrap 也使用相同默认名称。已有实例仍须填写自己的实际资源标识；修改模板默认名称不会替已有实例迁移数据。本地 `.parcel-v3/` 目录、源码目录和 `parcel/v3/` 对象前缀继续保留兼容用途，不代表需要创建另一套服务。
 
 原 CLI bootstrap 独立入口为 `npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`；旧的带 `--config` 的 `npm run deploy` 命令继续兼容。生产实例继续使用下述专用生产命令；模板按钮不会复用生产实例标识或凭据。
+
 ## 正式 Worker 的 Git 自动部署
 
 正式 Worker 连接 `main` 生产分支。在 Workers 的 Settings > Builds 中选择仓库、生产分支，关闭其他分支自动构建，根目录保持仓库根目录，使用 Node 24：
@@ -191,12 +186,20 @@ main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图�
 - 构建变量：`PARCEL_WORKER_BUILD_CONFIG`，JSON 对象，仅包含 `accountId`、`workerName`、`databaseId`、`databaseName`、`bucketName`，填写已上线实例的资源标识。
 - 构建变量：`NODE_VERSION=24`。
 
-`build:production` 先验证资源标识、生成忽略目录中的 `.parcel-v3/wrangler.builds.json`，然后安装锁定依赖并构建 Access 模式前端与 Worker。部署保留现有运行时变量与 Secrets，关闭 workers.dev 和预览地址，不上传仓库示例变量，不自动创建数据库或存储桶，不更改 Access、域名及 R2 CORS。账户配置与凭据继续留在本机或 Cloudflare，不提交到 Git。
+`build:production` 先验证资源标识、生成忽略目录中的 `.parcel-v3/wrangler.builds.json`，然后安装锁定依赖并构建 V3 前端与 Worker；管理员模式在运行时读取。部署保留现有运行时变量与 Secrets，关闭 workers.dev 和预览地址，不上传仓库示例变量，不自动创建数据库或存储桶，不更改 Access、域名及 R2 CORS。账户配置与凭据继续留在本机或 Cloudflare，不提交到 Git。
 
 Cloudflare 构建的 API Token 使用已拥有的部署 Token，或另行配置受限用户 Token。自动数据库迁移需要当前账户的 D1 编辑权限；还需要 Workers 脚本编辑、Workers R2 存储读取及账户设置读取。若原 Token 只有 D1 读取权限，需一次性补充 D1 编辑权限；构建与部署命令、资源标识和运行时变量无需改动。Workers 脚本权限覆盖所选账户的 Workers，不能按单个 Worker 限定。
 
 只有所选生产分支触发正式部署；其他分支继续由 GitHub CI 检查。Cloudflare 构建与 GitHub CI 分别运行；推送生产分支前应完成相关测试。`deploy:production` 现在先对现有 DB binding 执行未应用的 D1 migrations，成功后才发布 Worker；迁移失败会阻止发布，修复后可重试同一命令，已完成的迁移不会重复执行。新增迁移须兼容部署期间仍运行的旧 Worker，并在推送前审阅数据与回滚影响。
 
 “不限下载次数”使用 `max_downloads=-1`，`1–100` 保持原有次数限制，省略或传 `0` 仍使用默认次数。无需新增环境变量，`DEFAULT_DOWNLOAD_LIMIT` 保持原值。`0002_unlimited_downloads.sql` 通过事务内重建相关表放宽约束，保留现有分享、密码、授权、下载会话、在途上传和配额账本，重新安装外键、索引及配额触发器。有效期、密码保护、撤销与签名地址保留期仍照常生效，无需清空 D1 或 R2。迁移后 Worker 发布失败可重试；一旦创建了不限次数的分享，不应回退到不支持该选项的 Worker。包含不限次数分享的 D1 快照回滚到 Go 时，目标须先升级到 schema 4。
+
+上述 `0002` 的 Go 回滚说明仅适用于历史未加密协议；包含新版 E2EE 描述的快照不能交给 Go 恢复为可下载分享。
+
+## 教程截图更新清单
+
+[中英图文教程](https://parcelwiki.pages.dev) 的原有八张 Cloudflare 配置图继续适用：`bindings.webp`、`template-build.webp`、`access.webp`、`r2-token.webp`、`variables.webp`、`add-secret.webp`、`r2-cors.webp`、`builds.webp`。E2EE 无新增环境变量、服务端 Secret 或 CORS 请求头；其中 Access 图仍仅为可选方案。两张构建图可按需重拍为新提交的发布证据，现有 TOTP 绑定示意保留，不需要真实扫码截图。
+
+需要更新或新增的应用侧截图是：上传创建与本机哈希/加密进度、成功页完整链接提示、分享详情的密码修改与加密密钥备份、接收页密码解锁、密文接收/暂停/续传、解密保存与本机缓存清理。只使用可丢弃演示文件和密钥；公开图片必须遮住真实 `#k=…`、分享密码、备份口令/内容、TOTP 和恢复码。原理图继续使用网页绘制，不把真实密钥截图用作说明。
 
 推送后确认 Cloudflare 构建与部署成功，并检查网页资源、管理员 Access 跳转，以及登录后的 `/api/v1/admin/status`。V3 Worker 没有 Go 服务的 `/readyz` 路由。需要回滚时可在 Workers Deployments 回退上一版本，随后回退对应 Git 提交，避免下次推送重新发布故障版本。

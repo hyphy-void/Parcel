@@ -11,7 +11,8 @@
     "test:browser": "node --test tests/access-ui.browser.mjs",
     "build:v3": "node v3/build.mjs",
     "test:v3": "node --test v3/tests/*.test.mjs",
-    "test:browser:v3": "node --test v3/tests/browser.mjs"
+    "test:browser:v3": "node --test v3/tests/browser.mjs",
+    "test:e2ee:https": "node --test v3/tests/e2ee-browser.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^2.4.0",

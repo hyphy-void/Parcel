@@ -1,0 +1,2410 @@
+import React, { useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  File,
+  FolderOpen,
+  HardDrive,
+  KeyRound,
+  Loader2,
+  LockKeyhole,
+  LogOut,
+  Package,
+  Pause,
+  Plus,
+  RefreshCw,
+  ShieldCheck,
+  Share2,
+  Trash2,
+  UploadCloud,
+  X,
+} from "lucide-react";
+import {
+  api,
+  ApiError,
+  type DownloadTicket,
+  availability,
+  bytes,
+  decimal,
+  date,
+  randomPassword,
+  randomShareCode,
+  sleep,
+  type Share,
+  type Status,
+  type Upload,
+} from "./api";
+import {
+  createFileContext,
+  encryptFilePart,
+  verifyOriginalFile,
+  changePassword as rewrapPassword,
+  exportFileContext,
+  importFileContext,
+  type FileContext,
+} from "./e2ee";
+import { localShare, retainShareContext, shareContext } from "./share-keys";
+import { PASSWORD_PROTOCOL, passwordBody, passwordSalt } from "./password";
+import { NativeAdminForm } from "./admin-auth";
+import { EncryptedReceive } from "./receive-encrypted";
+import "./style.css";
+import "./login.css";
+
+type Auth = {
+  password_protocol?: string;
+  csrf: string;
+  auth_mode?: "password" | "access" | "totp";
+  email?: string;
+};
+function desktopAutofocus() {
+  return matchMedia("(min-width: 768px) and (pointer: fine)").matches;
+}
+function useLeaveWarning(dirty: boolean) {
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+}
+function ErrorMessage({ message }: { message: string }) {
+  return message ? (
+    <div className="alert" role="alert">
+      {message}
+    </div>
+  ) : null;
+}
+function Loading({ text = "正在加载…" }: { text?: string }) {
+  return (
+    <div className="loading" role="status" aria-live="polite">
+      <Loader2 className="spin" size={20} aria-hidden="true" />
+      {text}
+    </div>
+  );
+}
+function ParcelEnvelope({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`parcel-envelope ${compact ? "envelope-small" : ""}`}
+      aria-hidden="true"
+    >
+      <div className="envelope-sheet">
+        <File size={30} strokeWidth={1.5} aria-hidden="true" />
+        <span className="sheet-line" />
+        <span className="sheet-line short" />
+      </div>
+      <div className="envelope-pocket">
+        <Package size={24} strokeWidth={1.5} aria-hidden="true" />
+        <span translate="no">Parcel</span>
+      </div>
+      <span className="envelope-seal">
+        <Check size={18} aria-hidden="true" />
+      </span>
+    </div>
+  );
+}
+function Shell({
+  children,
+  auth,
+  pageClass = "",
+}: {
+  children: React.ReactNode;
+  auth?: Auth;
+  pageClass?: string;
+}) {
+  const [error, setError] = useState("");
+  async function logout() {
+    try {
+      const result = await api<{ logout_url?: string }>(
+        "/auth/logout",
+        { method: "POST" },
+        auth?.csrf,
+      );
+      location.assign(
+        result.logout_url === "/cdn-cgi/access/logout"
+          ? result.logout_url
+          : "/login",
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  return (
+    <div className={`app ${auth ? "admin-app" : "public-app"} ${pageClass}`}>
+      <a className="skip-link" href="#main-content">
+        跳到主要内容
+      </a>
+      <header>
+        <a href={auth ? "/admin" : "/"} className="brand" translate="no">
+          <span className="brand-icon">
+            <Package size={23} aria-hidden="true" />
+          </span>
+          <span className="brand-wordmark">
+            <strong>Parcel</strong>
+            <span className="brand-tag">临时文件分享</span>
+          </span>
+        </a>
+        {auth ? (
+          <nav
+            aria-label="主导航"
+            className={auth.auth_mode === "totp" ? "totp-nav" : undefined}
+          >
+            <a
+              href="/admin"
+              aria-current={location.pathname === "/admin" ? "page" : undefined}
+            >
+              我的分享
+            </a>
+            <a
+              href="/admin/new"
+              aria-current={
+                location.pathname === "/admin/new" ? "page" : undefined
+              }
+            >
+              上传文件
+            </a>
+            {auth.auth_mode === "totp" && (
+              <a
+                href="/admin/security"
+                aria-current={
+                  location.pathname === "/admin/security" ? "page" : undefined
+                }
+              >
+                登录安全
+              </a>
+            )}
+            <button
+              className="text-button"
+              onClick={logout}
+              aria-label="退出登录"
+            >
+              <LogOut size={17} aria-hidden="true" />
+              <span>退出</span>
+            </button>
+          </nav>
+        ) : (
+          <a href="/login" className="text-button">
+            管理入口 <ArrowRight size={15} aria-hidden="true" />
+          </a>
+        )}
+        <a
+          className="github-link"
+          href="https://github.com/hyphy-void/Parcel"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GitHub 仓库（在新标签页打开）"
+          title="GitHub 仓库"
+        >
+          <span className="github-mark" aria-hidden="true" />
+        </a>
+      </header>
+      <main id="main-content" tabIndex={-1}>
+        <ErrorMessage message={error} />
+        {children}
+      </main>
+      <footer>
+        <span>
+          <span className="footer-brand" translate="no">
+            Parcel
+          </span>
+          让文件轻装上路。
+        </span>
+        <span>
+          <ShieldCheck size={16} aria-hidden="true" />
+          <span>自托管存储，到期自动清理</span>
+          <a href="https://parcelwiki.pages.dev/zh.html">部署手册</a>
+        </span>
+      </footer>
+    </div>
+  );
+}
+async function copyText(
+  content: string,
+  input: HTMLInputElement | HTMLTextAreaElement | null,
+) {
+  const copySelection = () => {
+    try {
+      if (!input) return false;
+      const active = document.activeElement;
+      input.focus({ preventScroll: true });
+      input.select();
+      input.setSelectionRange(0, content.length);
+      const success = document.execCommand("copy");
+      if (success && active instanceof HTMLElement)
+        active.focus({ preventScroll: true });
+      return success;
+    } catch {
+      return false;
+    }
+  };
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(content);
+      return true;
+    } catch {
+      return copySelection();
+    }
+  }
+  // Keep the HTTP fallback synchronous so the click's user activation applies.
+  return copySelection();
+}
+function CopyField({
+  value,
+  name = "文件",
+  password,
+  passwordRequired = false,
+  children,
+}: {
+  value: string;
+  name?: string;
+  password?: string;
+  passwordRequired?: boolean;
+  children?: React.ReactNode;
+}) {
+  const linkRef = useRef<HTMLInputElement>(null);
+  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const id = React.useId();
+  const missingPassword = passwordRequired && !password;
+  const content = `我用 Parcel 分享了「${name}」\n链接：${value}${password ? `\n提取码：${password}` : missingPassword ? "\n提取码：请向分享者获取" : ""}`;
+  const [copied, setCopied] = useState<"link" | "message">();
+  const [linkFallback, setLinkFallback] = useState(false);
+  const [messageStatus, setMessageStatus] = useState("");
+  const [sharing, setSharing] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(undefined), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  async function copyLink() {
+    setCopied(undefined);
+    setLinkFallback(false);
+    if (await copyText(value, linkRef.current)) setCopied("link");
+    else setLinkFallback(true);
+  }
+  async function copyMessage() {
+    setCopied(undefined);
+    setMessageStatus("");
+    if (await copyText(content, messageRef.current)) {
+      setCopied("message");
+      setMessageStatus("分享文案已复制，可以粘贴发送给对方。");
+    } else {
+      setMessageStatus("分享文案已选中，请使用系统的复制操作。");
+    }
+  }
+  function openShare() {
+    setMessageStatus("");
+    setCopied(undefined);
+    dialogRef.current?.showModal();
+  }
+  async function sendShare() {
+    setSharing(true);
+    setMessageStatus("");
+    try {
+      // The URL is already in the text; a separate url would duplicate it.
+      await navigator.share({ title: name, text: content });
+    } catch (e) {
+      if ((e as Error).name !== "AbortError")
+        setMessageStatus("暂时无法打开系统分享，请复制文案后发送。");
+    } finally {
+      setSharing(false);
+    }
+  }
+  return (
+    <div className="copy-wrapper">
+      <label htmlFor={`${id}-link`}>分享链接</label>
+      <div className="copy-field">
+        <input
+          id={`${id}-link`}
+          name="share-link"
+          autoComplete="off"
+          spellCheck={false}
+          translate="no"
+          ref={linkRef}
+          readOnly
+          value={value}
+        />
+        <button type="button" onClick={copyLink} aria-label="复制分享链接">
+          {copied === "link" ? (
+            <Check size={18} aria-hidden="true" />
+          ) : (
+            <Copy size={18} aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      <small
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className={linkFallback ? undefined : "sr-only"}
+      >
+        {linkFallback
+          ? "链接已选中，请使用系统的复制操作。"
+          : copied === "link"
+            ? "分享链接已复制。"
+            : ""}
+      </small>
+      {children}
+      <button
+        type="button"
+        className={`button primary ${children ? "full" : "share-action"}`}
+        onClick={openShare}
+      >
+        <Share2 size={18} aria-hidden="true" />
+        分享
+      </button>
+      <dialog
+        ref={dialogRef}
+        className="share-dialog"
+        aria-labelledby={`${id}-title`}
+      >
+        <div className="share-dialog-heading">
+          <h2 id={`${id}-title`}>分享文件</h2>
+          <button
+            type="button"
+            className="share-close"
+            aria-label="关闭分享"
+            onClick={() => dialogRef.current?.close()}
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </div>
+        <p className="muted">复制下面的文案，发给接收文件的人。</p>
+        {missingPassword && (
+          <p className="note">
+            无法读取原提取码，请另外发送，或在分享详情中设置新密码。
+          </p>
+        )}
+        <label htmlFor={`${id}-message`}>分享文案</label>
+        <textarea
+          id={`${id}-message`}
+          name="share-message"
+          autoComplete="off"
+          spellCheck={false}
+          ref={messageRef}
+          readOnly
+          value={content}
+          className="copy-content"
+        />
+        <div className="share-dialog-actions">
+          <button
+            type="button"
+            className="button primary"
+            onClick={copyMessage}
+          >
+            {copied === "message" ? (
+              <Check size={17} aria-hidden="true" />
+            ) : (
+              <Copy size={17} aria-hidden="true" />
+            )}
+            {copied === "message" ? "已复制" : "复制分享文案"}
+          </button>
+          {window.isSecureContext && typeof navigator.share === "function" && (
+            <button
+              type="button"
+              className="button secondary"
+              onClick={sendShare}
+              disabled={sharing}
+            >
+              <Share2 size={17} aria-hidden="true" />
+              {sharing ? "正在打开…" : "系统分享"}
+            </button>
+          )}
+        </div>
+        <small role="status" aria-live="polite" aria-atomic="true">
+          {messageStatus}
+        </small>
+      </dialog>
+    </div>
+  );
+}
+type LoginVisualHandle = { pulse: () => void };
+const LoginVisual = React.memo(
+  React.forwardRef<LoginVisualHandle, { focused: boolean; busy: boolean }>(
+    function LoginVisual({ focused, busy }, ref) {
+      const envelope = useRef<HTMLDivElement>(null);
+      const pulseAnimation = useRef<Animation | undefined>(undefined);
+      React.useImperativeHandle(
+        ref,
+        () => ({
+          pulse() {
+            if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+            pulseAnimation.current?.cancel();
+            pulseAnimation.current = envelope.current?.animate(
+              [
+                { transform: "translateY(0) rotate(0deg)" },
+                { transform: "translateY(-5px) rotate(-2deg)", offset: 0.3 },
+                { transform: "translateY(0) rotate(0deg)" },
+              ],
+              { duration: 360, easing: "cubic-bezier(.16, 1, .3, 1)" },
+            );
+          },
+        }),
+        [],
+      );
+      useEffect(() => () => pulseAnimation.current?.cancel(), []);
+      return (
+        <section
+          className="login-story"
+          data-focused={focused}
+          data-busy={busy}
+        >
+          <div className="story-copy">
+            <p className="story-title">
+              分享一份文件，
+              <br />
+              少一份牵挂。
+            </p>
+            <p>
+              上传，发出链接。
+              <br />
+              到期自动清理。
+            </p>
+          </div>
+          <div className="login-envelope-display">
+            <div ref={envelope} className="login-envelope-motion">
+              <ParcelEnvelope />
+            </div>
+          </div>
+          <div className="login-visual-status" aria-hidden="true">
+            <ShieldCheck size={16} aria-hidden="true" />
+            <span>文件分享，从这里开始。</span>
+          </div>
+        </section>
+      );
+    },
+  ),
+);
+function Login() {
+  const [password, setPassword] = useState(""),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [focused, setFocused] = useState(false);
+  const visual = useRef<LoginVisualHandle>(null);
+  const passwordInput = useRef<HTMLInputElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const errorAnimation = useRef<Animation | undefined>(undefined);
+  useEffect(() => () => errorAnimation.current?.cancel(), []);
+  useEffect(() => {
+    if (error && !busy) passwordInput.current?.focus({ preventScroll: true });
+  }, [error, busy]);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+      location.assign("/admin");
+    } catch (e) {
+      setError((e as Error).message);
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        errorAnimation.current?.cancel();
+        errorAnimation.current = form.current?.animate(
+          [
+            { transform: "translateX(0)" },
+            { transform: "translateX(-5px)" },
+            { transform: "translateX(4px)" },
+            { transform: "translateX(-2px)" },
+            { transform: "translateX(0)" },
+          ],
+          { duration: 320, easing: "ease-out" },
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (import.meta.env.VITE_ADMIN_AUTH === "v3") {
+    return (
+      <Shell pageClass="login-app">
+        <div className="login-layout">
+          <LoginVisual ref={visual} focused={focused} busy={busy} />
+          <div className="auth-card">
+            <NativeAdminForm onBusy={setBusy} onFocus={setFocused} />
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+  if (import.meta.env.VITE_ADMIN_AUTH === "access") {
+    return (
+      <Shell pageClass="login-app">
+        <div className="login-layout">
+          <LoginVisual ref={visual} focused={false} busy={false} />
+          <div className="auth-card">
+            <h1>让文件轻装上路。</h1>
+            <p className="muted">验证管理员身份后，上传文件并管理分享。</p>
+            <a className="button primary full" href="/admin">
+              进入管理页面 <ArrowRight size={18} aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
+  return (
+    <Shell pageClass="login-app">
+      <div className="login-layout">
+        <LoginVisual ref={visual} focused={focused} busy={busy} />
+        <div className="auth-card">
+          <h1>让文件轻装上路。</h1>
+          <p className="muted">登录后上传文件，创建你的临时分享。</p>
+          <form ref={form} onSubmit={submit} aria-busy={busy}>
+            <label htmlFor="admin-password">管理员密码</label>
+            <input
+              ref={passwordInput}
+              id="admin-password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+                visual.current?.pulse();
+              }}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              aria-invalid={!!error}
+              aria-describedby={error ? "login-error" : undefined}
+              disabled={busy}
+              autoComplete="current-password"
+              required
+              autoFocus={desktopAutofocus()}
+            />
+            <div id="login-error">
+              <ErrorMessage message={error} />
+            </div>
+            <button className="button primary full" disabled={busy}>
+              {busy ? (
+                <Loader2 size={18} className="spin" aria-hidden="true" />
+              ) : (
+                <ArrowRight size={18} aria-hidden="true" />
+              )}
+              {busy ? "正在登录…" : "登录 Parcel"}
+            </button>
+          </form>
+          <p className="note">
+            <ShieldCheck size={16} aria-hidden="true" />
+            <span>密码由服务器管理员初始化。</span>
+          </p>
+        </div>
+      </div>
+    </Shell>
+  );
+}
+function Dashboard({ auth }: { auth: Auth }) {
+  const [status, setStatus] = useState<Status>(),
+    [items, setItems] = useState<Share[]>([]),
+    [total, setTotal] = useState(0),
+    [cleaned, setCleaned] = useState(0),
+    [confirmClear, setConfirmClear] = useState(false),
+    [clearing, setClearing] = useState(false),
+    [message, setMessage] = useState(""),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(() => {
+    const requested = Number(new URLSearchParams(location.search).get("page"));
+    return Number.isSafeInteger(requested) && requested > 0 ? requested : 1;
+  });
+  async function load() {
+    try {
+      const [s, list] = await Promise.all([
+        api<Status>("/admin/status"),
+        api<{ items: Share[]; total: number; cleaned_count: number }>(
+          `/admin/shares?page=${page}`,
+        ),
+      ]);
+      setStatus(s);
+      setItems(await Promise.all(list.items.map(localShare)));
+      setTotal(list.total);
+      setCleaned(list.cleaned_count ?? 0);
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function clearHistory() {
+    setClearing(true);
+    setError("");
+    try {
+      let removed = 0,
+        remaining = true;
+      while (remaining) {
+        const result = await api<{ removed: number; remaining?: boolean }>(
+          "/admin/shares/cleaned",
+          { method: "DELETE" },
+          auth.csrf,
+        );
+        removed += result.removed;
+        remaining = result.remaining === true && result.removed > 0;
+      }
+      setConfirmClear(false);
+      setMessage(`已清除 ${removed} 条已清理记录。`);
+      if (page !== 1) {
+        const url = new URL(location.href);
+        url.searchParams.set("page", "1");
+        history.replaceState(null, "", url);
+        setPage(1);
+      } else await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setClearing(false);
+    }
+  }
+  useEffect(() => {
+    void load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+  }, [page]);
+  return (
+    <Shell auth={auth}>
+      <section className="page-heading">
+        <div>
+          <h1>我的分享</h1>
+          <p className="muted">把文件交给对方，把收尾交给 Parcel。</p>
+        </div>
+        <a className="button primary" href="/admin/new">
+          <Plus size={19} aria-hidden="true" />
+          新建分享
+        </a>
+      </section>
+      <ErrorMessage message={error} />
+      {status && (
+        <div className="stats">
+          <div className="stat">
+            <span>
+              <HardDrive size={18} aria-hidden="true" />
+              {status.storage_backend === "r2" ? "R2 存储额度" : "存储用量"}
+            </span>
+            <strong>
+              {status.storage_backend === "r2"
+                ? `${decimal((status.r2_used_bytes ?? 0) / 1e9)}\u00a0GB`
+                : bytes(status.used_bytes)}
+              <small>
+                {" "}
+                /{" "}
+                {status.storage_backend === "r2"
+                  ? `${decimal((status.r2_quota_bytes ?? 9e9) / 1e9)}\u00a0GB`
+                  : bytes(status.quota_bytes)}
+              </small>
+            </strong>
+            <div className="meter">
+              <span
+                style={{
+                  transform: `scaleX(${Math.min(1, Math.max(0, status.storage_backend === "r2" ? ((status.r2_used_bytes ?? 0) + (status.r2_reserved_bytes ?? 0)) / (status.r2_quota_bytes ?? 9e9) : (status.used_bytes + status.reserved_bytes) / status.quota_bytes))})`,
+                }}
+              />
+            </div>
+            <small>
+              {status.storage_backend === "r2"
+                ? `上传及临时预留 ${bytes(status.r2_reserved_bytes)} · 剩余 ${decimal((status.r2_available_bytes ?? 0) / 1e9)}\u00a0GB`
+                : `上传预留 ${bytes(status.reserved_bytes)} · 待清理 ${bytes(status.pending_bytes)}`}
+            </small>
+            <small className="budget-state">
+              {status.storage_backend === "r2" &&
+                ((status.r2_available_bytes ?? 1) <= 0
+                  ? "额度已满，暂停新上传"
+                  : "额度保护已启用 · 满额暂停新上传")}
+            </small>
+          </div>
+          <div className="stat">
+            <span>
+              <FolderOpen size={18} aria-hidden="true" />
+              分享记录
+            </span>
+            <strong>
+              {new Intl.NumberFormat("zh-CN").format(total)}
+              <small> 个分享</small>
+            </strong>
+            <small>到期、撤销或次数用完后自动回收文件</small>
+          </div>
+          <div className="stat">
+            <span>
+              <ShieldCheck size={18} aria-hidden="true" />
+              {status.backend_mode === "serverless" ? "云端服务" : "你的服务器"}
+            </span>
+            <strong>
+              {status.storage_backend === "r2" ? "私有 R2 存储" : "本地存储"}
+            </strong>
+            <small>
+              {status.backend_mode === "serverless"
+                ? "Cloudflare 原生后端"
+                : `本地磁盘可用 ${bytes(status.free_bytes)}`}{" "}
+              · v{status.version}
+            </small>
+          </div>
+        </div>
+      )}
+      {status?.storage_backend === "r2" && (
+        <p className="r2-budget-note">
+          按 Parcel
+          管理的文件计量，包含尚未释放的临时空间。账户月度免费存储与读写额度以
+          Cloudflare 为准。
+        </p>
+      )}
+      <section className="panel">
+        <div className="panel-title share-list-title">
+          <div className="list-heading">
+            <h2>分享记录</h2>
+            <span>{total} 个文件</span>
+          </div>
+          <div className="list-actions">
+            <button className="text-button" onClick={load} disabled={clearing}>
+              <RefreshCw size={15} aria-hidden="true" />
+              刷新
+            </button>
+            <button
+              className="text-button clear-history"
+              disabled={loading || clearing || cleaned === 0}
+              onClick={() => {
+                setMessage("");
+                setConfirmClear(true);
+              }}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              清除已清理
+            </button>
+          </div>
+        </div>
+        {confirmClear && (
+          <div className="clear-history-confirm" role="alert">
+            <div>
+              <strong>清除 {cleaned} 条已清理记录？</strong>
+              <p>记录清除后无法恢复。可下载和等待清理的分享会保留。</p>
+            </div>
+            <div className="list-actions">
+              <button
+                className="text-button"
+                disabled={clearing}
+                onClick={() => setConfirmClear(false)}
+              >
+                取消
+              </button>
+              <button
+                className="button danger-outline"
+                disabled={clearing}
+                onClick={clearHistory}
+              >
+                {clearing ? "正在清除…" : "确认清除"}
+              </button>
+            </div>
+          </div>
+        )}
+        {message && (
+          <p className="history-message" role="status">
+            {message}
+          </p>
+        )}
+        {loading ? (
+          <Loading />
+        ) : items.length ? (
+          <div className="share-list">
+            <div className="list-columns" aria-hidden="true">
+              <span>文件</span>
+              <span>已用下载资格</span>
+              <span>状态</span>
+            </div>
+            {items.map((s) => (
+              <a
+                className="share-row"
+                href={`/admin/shares/${s.id}`}
+                key={s.id}
+              >
+                <div className="file-icon" aria-hidden="true">
+                  <File size={23} strokeWidth={1.5} aria-hidden="true" />
+                </div>
+                <div className="file-info">
+                  <strong>{s.name}</strong>
+                  <span>
+                    <span>{bytes(s.size)}</span>
+                    <span>
+                      {s.password_required && (
+                        <LockKeyhole size={12} aria-hidden="true" />
+                      )}
+                      {s.password_required ? "密码保护" : "无密码"}
+                    </span>
+                    <span>{date(s.created)}</span>
+                  </span>
+                </div>
+                <div className="row-count">
+                  <strong>
+                    {s.download_count} /{" "}
+                    {s.max_downloads === -1 ? "不限次数" : s.max_downloads}
+                  </strong>
+                  <span className="mobile-count-label">下载资格</span>
+                </div>
+                <span
+                  className={`badge ${s.availability === "available" ? "green" : ""}`}
+                >
+                  {availability[s.availability] || s.availability}
+                </span>
+                <ArrowRight
+                  size={17}
+                  className="row-arrow"
+                  aria-hidden="true"
+                />
+              </a>
+            ))}
+          </div>
+        ) : (
+          <div className="empty">
+            <ParcelEnvelope compact />
+            <p className="empty-title">这里，留给你要分享的文件。</p>
+            <p>上传文件，设置规则，把链接交给需要的人。</p>
+            <a className="button secondary" href="/admin/new">
+              <Plus size={17} aria-hidden="true" />
+              上传文件
+            </a>
+          </div>
+        )}
+        {total > 20 && (
+          <div className="pagination">
+            {page > 1 ? (
+              <a className="button secondary" href={`/admin?page=${page - 1}`}>
+                上一页
+              </a>
+            ) : (
+              <span className="button secondary" aria-disabled="true">
+                上一页
+              </span>
+            )}
+            <span>第 {page} 页</span>
+            {page * 20 < total ? (
+              <a className="button secondary" href={`/admin?page=${page + 1}`}>
+                下一页
+              </a>
+            ) : (
+              <span className="button secondary" aria-disabled="true">
+                下一页
+              </span>
+            )}
+          </div>
+        )}
+      </section>
+    </Shell>
+  );
+}
+
+type SavedUpload = {
+  crypto?: FileContext;
+  passwordSalt?: string;
+  id?: string;
+  key?: string;
+  name: string;
+  size: number;
+  modified: number;
+  ttl?: number;
+  limit?: number;
+  protect?: boolean;
+};
+const savedKey = "parcel.encrypted-upload.v1";
+function loadSaved(): SavedUpload | undefined {
+  try {
+    const v = localStorage.getItem(savedKey);
+    return v ? JSON.parse(v) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function NewShare({ auth }: { auth: Auth }) {
+  const initialSaved = useRef(loadSaved()).current;
+  const [settings, setSettings] = useState<Status>(),
+    [file, setFile] = useState<File>(),
+    [password, setPassword] = useState(""),
+    [protect, setProtect] = useState(initialSaved?.protect || false),
+    [ttl, setTTL] = useState(initialSaved?.ttl || 86400),
+    [limit, setLimit] = useState(initialSaved?.limit || 3),
+    [error, setError] = useState(""),
+    [phase, setPhase] = useState(initialSaved ? "recovering" : "idle"),
+    [hashProgress, setHashProgress] = useState(0),
+    [upload, setUpload] = useState<Upload>(),
+    [saved, setSaved] = useState(initialSaved),
+    [result, setResult] = useState<Share>(),
+    [drag, setDrag] = useState(false),
+    [sending, setSending] = useState<{ offset: number; loaded: number }>(),
+    [rulesDirty, setRulesDirty] = useState(false),
+    [validation, setValidation] = useState<{
+      limit?: string;
+      password?: string;
+    }>({});
+  const limitInput = useRef<HTMLInputElement>(null);
+  const previousLimit = useRef(3);
+  const sharePasswordInput = useRef<HTMLInputElement>(null);
+  useLeaveWarning(!result && (!!file || !!saved || rulesDirty));
+  const input = useRef<HTMLInputElement>(null),
+    pause = useRef(false),
+    xhr = useRef<XMLHttpRequest | undefined>(undefined),
+    hashing = useRef<AbortController | undefined>(undefined),
+    alive = useRef(true),
+    running = useRef(false),
+    generation = useRef(0);
+  useEffect(() => {
+    alive.current = true;
+    api<Status>("/admin/status")
+      .then((s) => {
+        setSettings(s);
+        setTTL(initialSaved?.ttl || s.default_ttl_seconds);
+        setLimit(initialSaved?.limit || s.default_download_limit);
+        previousLimit.current = s.default_download_limit;
+      })
+      .catch((e) => setError(e.message));
+    if (saved)
+      api<Upload>(
+        saved.id ? `/uploads/${saved.id}` : "/uploads/lookup",
+        saved.id ? {} : { headers: { "Idempotency-Key": saved.key || "" } },
+      )
+        .then((u) => {
+          if (!alive.current) return;
+          setUpload(u);
+          setTTL(u.ttl_seconds);
+          setLimit(u.max_downloads);
+          if (u.state === "completed")
+            void done(u).catch((e) => setError(e.message));
+          else if (u.state === "finalizing")
+            void poll(u.id).catch((e) => {
+              setError(e.message);
+              setPhase(
+                e instanceof ApiError && e.code === "upload_not_finalizing"
+                  ? "failed"
+                  : "pending",
+              );
+            });
+          else if (["created", "uploading"].includes(u.state))
+            setPhase("paused");
+          else resetUpload();
+        })
+        .catch((e) => {
+          if (!alive.current) return;
+          if (e instanceof ApiError && e.status === 404) {
+            clearDraft();
+            setPhase("idle");
+          } else {
+            setError(e.message);
+            setPhase("failed");
+          }
+        });
+    return () => {
+      alive.current = false;
+      pause.current = true;
+      xhr.current?.abort();
+      hashing.current?.abort();
+    };
+  }, []);
+  function clearDraft() {
+    localStorage.removeItem(savedKey);
+    setSaved(undefined);
+  }
+  function resetUpload() {
+    clearDraft();
+    setUpload(undefined);
+    setSending(undefined);
+    setFile(undefined);
+    setPhase("idle");
+    setError("");
+    setRulesDirty(false);
+    setValidation({});
+  }
+  function choose(f?: File) {
+    if (!f) return;
+    if (settings && f.size > settings.max_file_bytes) {
+      setError(`单文件不能超过 ${bytes(settings.max_file_bytes)}`);
+      return;
+    }
+    if (
+      saved &&
+      (f.name !== saved.name ||
+        f.size !== saved.size ||
+        f.lastModified !== saved.modified)
+    ) {
+      setError("请选择原来的文件；文件名、大小或修改时间与上传记录不一致。");
+      return;
+    }
+    setFile(f);
+    setError("");
+  }
+  async function done(u: Upload, epoch = generation.current) {
+    const context = loadSaved()?.crypto;
+    if (!context)
+      throw new Error(
+        "本机上传密钥缺失，无法生成可解密链接。请勿清理此浏览器的网站数据。",
+      );
+    await retainShareContext(u.share_id, context);
+    const s = await localShare(await api<Share>(`/admin/shares/${u.share_id}`));
+    if (!alive.current || epoch !== generation.current) return;
+    setError("");
+    setResult(s);
+    setPhase("done");
+    localStorage.removeItem(savedKey);
+    setSaved(undefined);
+  }
+  async function poll(id: string, epoch = generation.current) {
+    if (!alive.current || epoch !== generation.current) return;
+    setPhase("checking");
+    const deadline = Date.now() + 120_000;
+    for (;;) {
+      if (!alive.current || epoch !== generation.current) return;
+      if (Date.now() >= deadline)
+        throw new Error(
+          "发布确认超时，上传任务已保留。可稍后查询结果，无需重新上传文件。",
+        );
+      let u: Upload;
+      try {
+        u = await api<Upload>(`/uploads/${id}`, {
+          signal: AbortSignal.timeout(30_000),
+        });
+      } catch (e) {
+        if (!alive.current || epoch !== generation.current) return;
+        throw new Error(
+          e instanceof ApiError
+            ? e.message
+            : "暂时无法查询发布结果，上传任务已保留。请稍后再查询。",
+        );
+      }
+      if (!alive.current || epoch !== generation.current) return;
+      setUpload(u);
+      if (u.state === "completed") {
+        await done(u, epoch);
+        return;
+      }
+      if (u.state !== "finalizing")
+        throw new ApiError(
+          u.error || "上传已经失效，请重新上传",
+          409,
+          "upload_not_finalizing",
+        );
+      if (u.error)
+        throw new Error(`${u.error}。上传任务已保留，可稍后查询结果。`);
+      await sleep(1000);
+    }
+  }
+  async function chunk(u: Upload, blob: Blob, epoch: number): Promise<number> {
+    const direct = u.storage_backend === "r2";
+    const legacyPut = direct && u.part_bytes === 0;
+    setSending(undefined);
+    const target: { url: string; headers?: Record<string, string> } = direct
+      ? await api<{ url: string; headers?: Record<string, string> }>(
+          legacyPut
+            ? `/uploads/${u.id}/object`
+            : `/uploads/${u.id}/parts/${Math.floor(u.offset / u.part_bytes) + 1}`,
+          { method: "POST" },
+          auth.csrf,
+        )
+      : { url: `/api/v1/uploads/${u.id}` };
+    if (pause.current || !alive.current || epoch !== generation.current)
+      throw new Error("上传已暂停");
+    await new Promise<void>((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      xhr.current = x;
+      x.open(direct ? "PUT" : "PATCH", target.url);
+      if (!direct) {
+        x.setRequestHeader("X-CSRF-Token", auth.csrf);
+        x.setRequestHeader("Upload-Offset", String(u.offset));
+      }
+      // XHR appends repeated headers; signed headers must be sent exactly once.
+      const headers = new Headers(target.headers);
+      if (!headers.has("Content-Type"))
+        headers.set("Content-Type", "application/octet-stream");
+      headers.forEach((value, name) => x.setRequestHeader(name, value));
+      x.timeout = legacyPut ? 900000 : 125000;
+      const updateProgress = (loaded: number) => {
+        if (alive.current && epoch === generation.current && xhr.current === x)
+          setSending({
+            offset: u.offset,
+            loaded: Math.min(
+              u.size - u.offset,
+              (Math.max(0, blob.size - 28) * loaded) / blob.size,
+            ),
+          });
+      };
+      x.upload.onprogress = (e) => updateProgress(e.loaded);
+      const releaseRequest = () => {
+        if (xhr.current === x) xhr.current = undefined;
+      };
+      x.onload = () => {
+        if (x.status >= 200 && x.status < 300) {
+          updateProgress(blob.size);
+          releaseRequest();
+          resolve();
+        } else if (direct) {
+          releaseRequest();
+          const code = new DOMParser()
+            .parseFromString(x.responseText, "application/xml")
+            .querySelector("Code")?.textContent;
+          const reason =
+            code === "SignatureDoesNotMatch"
+              ? "上传签名校验失败"
+              : code === "AccessDenied"
+                ? "存储访问被拒绝"
+                : "存储服务拒绝了请求";
+          reject(
+            new ApiError(
+              `R2 ${legacyPut ? "整文件" : "分块"}上传失败（HTTP ${x.status}）：${reason}。上传任务已保留。`,
+              x.status,
+              code === "RequestExpired" || code === "ExpiredToken"
+                ? "r2_url_expired"
+                : "r2_upload_rejected",
+            ),
+          );
+        } else {
+          releaseRequest();
+          try {
+            const data = JSON.parse(x.responseText);
+            reject(
+              new ApiError(data.message || "上传失败", x.status, data.code),
+            );
+          } catch {
+            reject(new Error("服务器响应异常"));
+          }
+        }
+      };
+      x.onerror = () => {
+        releaseRequest();
+        reject(new Error("连接中断或 R2 CORS 未配置"));
+      };
+      x.ontimeout = () => {
+        releaseRequest();
+        reject(new Error(legacyPut ? "整文件传输超时" : "分块传输超时"));
+      };
+      x.onabort = () => {
+        releaseRequest();
+        reject(new Error("上传已暂停"));
+      };
+      x.send(blob);
+    });
+    return u.offset + Math.max(0, blob.size - 28);
+  }
+  async function start() {
+    if (!settings || running.current) return;
+    if (upload?.state === "finalizing") {
+      running.current = true;
+      const epoch = ++generation.current;
+      setError("");
+      try {
+        await poll(upload.id, epoch);
+      } catch (e) {
+        if (alive.current && epoch === generation.current) {
+          setError((e as Error).message);
+          setPhase(
+            e instanceof ApiError && e.code === "upload_not_finalizing"
+              ? "failed"
+              : "pending",
+          );
+        }
+      } finally {
+        running.current = false;
+      }
+      return;
+    }
+    if (!file) return;
+    if (!upload) {
+      const errors = {
+        limit:
+          !Number.isInteger(limit) ||
+          (limit !== -1 && (limit < 1 || limit > 100))
+            ? "请输入 1 到 100 之间的整数。"
+            : undefined,
+        password:
+          protect && new TextEncoder().encode(password).length < 4
+            ? "分享密码至少需要 4 字节，例如 abcd。"
+            : undefined,
+      };
+      setValidation(errors);
+      if (errors.limit || errors.password) {
+        (errors.limit ? limitInput : sharePasswordInput).current?.focus();
+        return;
+      }
+    }
+    if (
+      !upload &&
+      file.size > (settings.upload_confirmation_bytes ?? 100_000_000) &&
+      !window.confirm(
+        `文件超过 100 MB（100,000,000 字节），大小为 ${bytes(file.size)}。确认继续上传？`,
+      )
+    )
+      return;
+    running.current = true;
+    const epoch = ++generation.current;
+    pause.current = false;
+    setPhase("uploading");
+    setError("");
+    let u = upload;
+    try {
+      if (!u && saved?.key) {
+        try {
+          u = await api<Upload>("/uploads/lookup", {
+            headers: { "Idempotency-Key": saved.key },
+          });
+          setUpload(u);
+        } catch (lookupError) {
+          if (!(lookupError instanceof ApiError) || lookupError.status !== 404)
+            throw lookupError;
+        }
+      }
+      let context = saved?.crypto || loadSaved()?.crypto;
+      const hadRetainedContext = !!context;
+      if (u && !context)
+        throw new Error(
+          "续传密钥已丢失，无法安全恢复本次上传。请取消任务后重新创建分享。",
+        );
+      setPhase("verifying");
+      setHashProgress(0);
+      hashing.current = new AbortController();
+      if (context)
+        await verifyOriginalFile(
+          file,
+          context,
+          setHashProgress,
+          hashing.current.signal,
+        );
+      else
+        context = await createFileContext(
+          file,
+          protect ? password : "",
+          setHashProgress,
+          hashing.current.signal,
+        );
+      hashing.current = undefined;
+      if (pause.current || epoch !== generation.current || !alive.current)
+        return;
+      setPhase("uploading");
+      if (!u) {
+        // A retained draft may predate the current password field after a
+        // rejected/uncertain create request. Rewrap locally before the API.
+        if (hadRetainedContext)
+          context = await rewrapPassword(context, protect ? password : "");
+        const key = saved?.key || randomPassword();
+        const draft: SavedUpload = {
+          key,
+          name: file.name,
+          size: file.size,
+          modified: file.lastModified,
+          ttl,
+          limit,
+          protect,
+          crypto: context,
+          passwordSalt: saved?.passwordSalt || passwordSalt(),
+        };
+        localStorage.setItem(savedKey, JSON.stringify(draft));
+        setSaved(draft);
+        if (protect && settings.password_protocol !== PASSWORD_PROTOCOL)
+          throw new Error(
+            "服务器不支持独立的客户端密码验证协议，已停止创建分享。",
+          );
+        const protectedBody = await passwordBody(
+          protect ? password : "",
+          settings.password_protocol,
+          draft.passwordSalt,
+        );
+        if (epoch !== generation.current || !alive.current) return;
+        u = await api<Upload>(
+          "/uploads",
+          {
+            method: "POST",
+            headers: { "Idempotency-Key": key },
+            body: JSON.stringify({
+              confirm_large:
+                file.size > (settings.upload_confirmation_bytes ?? 100_000_000),
+              size: file.size,
+              encryption: context.encryption,
+              ...protectedBody,
+              ttl_seconds: ttl,
+              max_downloads: limit,
+            }),
+          },
+          auth.csrf,
+        );
+        if (epoch !== generation.current || !alive.current) return;
+        const s = { ...draft, id: u.id };
+        localStorage.setItem(savedKey, JSON.stringify(s));
+        setSaved(s);
+        setUpload(u);
+      }
+      if (u.state === "finalizing") {
+        await poll(u.id, epoch);
+        return;
+      }
+      u = await api<Upload>(`/uploads/${u.id}`);
+      if (epoch !== generation.current || !alive.current) return;
+      setUpload(u);
+      if (u.state === "completed") {
+        await done(u, epoch);
+        return;
+      }
+      if (u.state === "finalizing") {
+        await poll(u.id, epoch);
+        return;
+      }
+      let retry = 0;
+      while (
+        (u.offset < u.size ||
+          (u.storage_backend === "r2" &&
+            u.size === 0 &&
+            (u.part_bytes === 0 ? !u.object_uploaded : !u.parts?.length))) &&
+        !pause.current
+      ) {
+        try {
+          const encryptedPart = await encryptFilePart(
+            file,
+            context,
+            Math.floor(u.offset / u.part_bytes),
+          );
+          const retainedDraft = loadSaved();
+          if (retainedDraft)
+            localStorage.setItem(
+              savedKey,
+              JSON.stringify({ ...retainedDraft, crypto: context }),
+            );
+          const offset = await chunk(u, new Blob([encryptedPart]), epoch);
+          if (epoch !== generation.current || !alive.current) return;
+          u =
+            u.storage_backend === "r2"
+              ? await api<Upload>(`/uploads/${u.id}`)
+              : { ...u, offset };
+          setUpload(u);
+          if (
+            u.storage_backend === "r2" &&
+            (u.part_bytes === 0 || u.size <= u.part_bytes) &&
+            ["created", "uploading"].includes(u.state) &&
+            (u.part_bytes === 0
+              ? !u.object_uploaded
+              : !u.parts?.length || u.offset !== u.size)
+          )
+            throw new ApiError(
+              "R2 已响应上传成功，但服务端尚未确认完整对象。任务已保留，请稍后继续；不会自动重传整个文件。",
+              409,
+              "r2_upload_unverified",
+            );
+          setSending(undefined);
+          retry = 0;
+        } catch (e) {
+          setSending(undefined);
+          if (pause.current) break;
+          if (
+            ++retry > 3 ||
+            (e instanceof ApiError &&
+              e.code !== "r2_url_expired" &&
+              [400, 401, 403, 409, 413, 507].includes(e.status))
+          )
+            throw e;
+          setPhase("retrying");
+          await sleep(500 * 2 ** retry);
+          if (pause.current) break;
+          u = await api<Upload>(`/uploads/${u.id}`);
+          if (epoch !== generation.current || !alive.current) return;
+          setUpload(u);
+          setPhase("uploading");
+        }
+      }
+      if (epoch !== generation.current || !alive.current) return;
+      if (pause.current) {
+        setPhase("paused");
+        return;
+      }
+      setPhase("checking");
+      u = await api<Upload>(
+        `/uploads/${u.id}/complete`,
+        { method: "POST", signal: AbortSignal.timeout(90_000) },
+        auth.csrf,
+      );
+      if (epoch !== generation.current || !alive.current) return;
+      setUpload(u);
+      await poll(u.id, epoch);
+    } catch (e) {
+      if (alive.current && epoch === generation.current) {
+        // A definite rejection never created a task. Network/5xx uncertainty
+        // retains the idempotency key so a lost success can still be recovered.
+        if (
+          !u &&
+          e instanceof ApiError &&
+          [400, 401, 403, 413, 429, 507].includes(e.status)
+        )
+          clearDraft();
+        setError(pause.current ? "" : (e as Error).message);
+        setPhase(
+          pause.current
+            ? "paused"
+            : e instanceof ApiError && e.code === "upload_not_finalizing"
+              ? "failed"
+              : u?.state === "finalizing"
+                ? "pending"
+                : u
+                  ? "paused"
+                  : "failed",
+        );
+      }
+    } finally {
+      running.current = false;
+      setSending(undefined);
+      hashing.current = undefined;
+    }
+  }
+  async function cancel() {
+    if (
+      !window.confirm(
+        "取消这次上传？已上传的数据和续传记录将被删除，无法恢复。",
+      )
+    )
+      return;
+    const epoch = ++generation.current;
+    pause.current = true;
+    xhr.current?.abort();
+    hashing.current?.abort();
+    setPhase("canceling");
+    let current = upload;
+    try {
+      if (!current && saved?.key) {
+        current = await api<Upload>("/uploads/lookup", {
+          headers: { "Idempotency-Key": saved.key },
+          signal: AbortSignal.timeout(30_000),
+        });
+      }
+      if (current) {
+        await api(
+          `/uploads/${current.id}`,
+          {
+            method: "DELETE",
+            signal: AbortSignal.timeout(90_000),
+          },
+          auth.csrf,
+        );
+      }
+      if (alive.current && epoch === generation.current) resetUpload();
+    } catch (e) {
+      if (!alive.current || epoch !== generation.current) return;
+      if (e instanceof ApiError && e.status === 404) {
+        resetUpload();
+        return;
+      }
+      // Cancellation stopped the old poll. Reconcile with the server instead
+      // of leaving the page in checking with no operation able to finish it.
+      if (current) {
+        try {
+          current = await api<Upload>(`/uploads/${current.id}`, {
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!alive.current || epoch !== generation.current) return;
+          setUpload(current);
+          if (current.state === "completed") {
+            await done(current, epoch);
+            return;
+          }
+        } catch {
+          // Keep the task and allow a later explicit query/retry.
+        }
+      }
+      if (!alive.current || epoch !== generation.current) return;
+      setPhase(current?.state === "finalizing" ? "pending" : "paused");
+      setError((e as Error).message);
+    }
+  }
+  const backend = upload?.storage_backend ?? settings?.storage_backend;
+  const busy = [
+    "uploading",
+    "retrying",
+    "checking",
+    "canceling",
+    "recovering",
+    "verifying",
+  ].includes(phase);
+  // The active request has its own start offset. Adding to a freshly confirmed
+  // upload.offset would count that request twice during the handoff to R2.
+  const transferred = upload
+    ? Math.min(
+        upload.size,
+        Math.max(upload.offset, sending ? sending.offset + sending.loaded : 0),
+      )
+    : 0;
+  const emptyTransferred =
+    upload &&
+    (upload.object_uploaded ||
+      !!upload.parts?.length ||
+      ["finalizing", "completed"].includes(upload.state));
+  const ratio = upload
+    ? upload.size
+      ? transferred / upload.size
+      : emptyTransferred
+        ? 1
+        : 0
+    : 0;
+  if (result)
+    return (
+      <Shell auth={auth}>
+        <div className="success-card">
+          <div className="symbol success">
+            <CheckCircle2 size={35} aria-hidden="true" />
+          </div>
+          <h1>文件已装好，交给对方吧。</h1>
+          <p className="muted">
+            {result.name} · {bytes(result.size)}
+          </p>
+          <p className="note">
+            链接的 #
+            后含解密密钥，请完整发送。密钥仅保存在本机浏览器；丢失后服务器无法找回。
+          </p>
+          <KeyBackup id={result.id} />
+          <CopyField
+            value={result.url}
+            name={result.name}
+            password={protect ? password : undefined}
+            passwordRequired={result.password_required}
+          >
+            {protect && password && (
+              <div className="password-display">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <span>分享密码</span>
+                <code>{password}</code>
+              </div>
+            )}
+            <div className="rule-grid">
+              <div>
+                <Clock3 size={18} aria-hidden="true" />
+                <strong>{date(result.expires)}</strong>
+                <span>到期自动失效</span>
+              </div>
+              <div>
+                <ArrowDown size={18} aria-hidden="true" />
+                <strong>
+                  {result.max_downloads === -1
+                    ? "不限次数"
+                    : `${result.max_downloads} 次`}
+                </strong>
+                <span>新下载资格</span>
+              </div>
+            </div>
+          </CopyField>
+          <a
+            className="button secondary full"
+            href={`/admin/shares/${result.id}`}
+          >
+            查看分享详情 <ArrowRight size={17} aria-hidden="true" />
+          </a>
+          <a className="back-link" href="/admin">
+            返回我的分享
+          </a>
+        </div>
+      </Shell>
+    );
+  return (
+    <Shell auth={auth}>
+      <a className="back-link" href="/admin">
+        <ArrowLeft size={16} aria-hidden="true" />
+        我的分享
+      </a>
+      <section className="page-heading compact">
+        <div>
+          <h1>新建分享</h1>
+          <p className="muted">选一份文件，设好规则，就可以发送链接了。</p>
+        </div>
+      </section>
+      <ErrorMessage message={error} />
+      <div className="new-grid">
+        <section className="panel upload-panel">
+          <div className="panel-title">
+            <h2>选择文件</h2>
+            <span className="muted">单文件分享</span>
+          </div>
+          <input
+            ref={input}
+            type="file"
+            name="share-file"
+            className="sr-only"
+            tabIndex={-1}
+            aria-label="选择文件"
+            onChange={(e) => choose(e.target.files?.[0])}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            aria-label="选择要分享的文件"
+            className={`dropzone ${drag ? "drag" : ""}`}
+            disabled={busy}
+            onClick={() => input.current?.click()}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDrag(false);
+              if (!busy) choose(e.dataTransfer.files[0]);
+            }}
+          >
+            <ParcelEnvelope compact />
+            <strong>
+              {file
+                ? file.name
+                : saved
+                  ? `重新选择 ${saved.name}`
+                  : "把文件放在这里"}
+            </strong>
+            <span>
+              {file
+                ? bytes(file.size)
+                : settings
+                  ? `支持单个文件，最大 ${bytes(settings.max_file_bytes)}`
+                  : "正在读取服务器配置…"}
+            </span>
+            <span className="choose-file-label">
+              <Plus size={16} aria-hidden="true" />
+              {file ? "重新选择文件" : "点击选择，或拖入文件"}
+            </span>
+          </button>
+          {saved && !file && (
+            <p className="note">
+              发现未完成加密上传。重新选择原文件后会校验完整
+              SHA-256，再续传未完成的块。请保留此浏览器的网站数据。
+            </p>
+          )}
+          {upload?.storage_backend === "local" &&
+            settings?.storage_backend === "r2" && (
+              <p className="note">
+                这是启用 R2 前创建的本地上传任务，继续上传仍会经过服务器。
+                如需直传 R2，请取消这次上传后新建任务。
+              </p>
+            )}
+          {upload && (
+            <div className="progress-card">
+              <div>
+                <strong role="status" aria-live="polite" aria-atomic="true">
+                  {phase === "checking"
+                    ? "传输完成，正在发布…"
+                    : phase === "pending"
+                      ? "等待发布结果"
+                      : phase === "failed"
+                        ? "上传未完成"
+                        : phase === "paused"
+                          ? "上传已暂停"
+                          : phase === "retrying"
+                            ? "等待重试…"
+                            : ratio === 1
+                              ? "传输完成，正在确认…"
+                              : "正在上传…"}
+                </strong>
+                <span>{Math.floor(ratio * 100)}%</span>
+              </div>
+              <div
+                className="meter"
+                role="progressbar"
+                aria-label="文件上传进度"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.floor(ratio * 100)}
+              >
+                <span
+                  style={{
+                    transform: `scaleX(${ratio})`,
+                    transition: ratio === 1 ? "none" : undefined,
+                  }}
+                />
+              </div>
+              <small>
+                已上传 {bytes(transferred)} / {bytes(upload.size)}
+              </small>
+              {phase === "checking" && (
+                <p className="note">
+                  <Loader2 size={15} className="spin" aria-hidden="true" />
+                  正在核对文件并生成分享链接，无需重新上传。
+                </p>
+              )}
+            </div>
+          )}
+          {phase === "verifying" && (
+            <p className="note" role="status">
+              正在本机校验原文件并准备加密… {Math.floor(hashProgress * 100)}%
+            </p>
+          )}
+          <div className="upload-bottom">
+            <ShieldCheck size={18} aria-hidden="true" />
+            <p>
+              {backend === "r2"
+                ? "浏览器分块加密后直传私有 R2，服务器不接收文件密钥和原始文件名。分享失效后自动回收密文。"
+                : "当前服务必须支持端到端加密协议后才能创建分享。"}
+            </p>
+          </div>
+        </section>
+        <section className="panel rules-panel">
+          <div className="panel-title">
+            <h2>分享规则</h2>
+          </div>
+          <fieldset disabled={busy || !!upload || !settings}>
+            <label htmlFor="share-ttl">有效期</label>
+            <select
+              id="share-ttl"
+              name="share-ttl"
+              autoComplete="off"
+              value={ttl}
+              onChange={(e) => {
+                setTTL(Number(e.target.value));
+                setRulesDirty(true);
+              }}
+            >
+              {Array.from(
+                new Set([
+                  3600,
+                  86400,
+                  604800,
+                  settings?.default_ttl_seconds || 86400,
+                ]),
+              )
+                .filter((v) => !settings || v <= settings.max_ttl_seconds)
+                .map((v) => (
+                  <option key={v} value={v}>
+                    {v === 3600
+                      ? "1 小时"
+                      : v === 86400
+                        ? "24 小时"
+                        : v === 604800
+                          ? "7 天"
+                          : `${v} 秒`}
+                  </option>
+                ))}
+            </select>
+            <small>从文件校验并发布成功时开始计算。</small>
+            <label htmlFor="share-limit">下载次数</label>
+            <input
+              ref={limitInput}
+              id="share-limit"
+              name="share-limit"
+              autoComplete="off"
+              aria-invalid={!!validation.limit}
+              aria-describedby={
+                validation.limit ? "share-limit-error" : undefined
+              }
+              type="number"
+              min={1}
+              max={100}
+              disabled={limit === -1}
+              value={limit === -1 ? "" : limit}
+              placeholder={limit === -1 ? "不限次数…" : undefined}
+              onChange={(e) => {
+                setLimit(Number(e.target.value));
+                setRulesDirty(true);
+                setValidation((v) => ({ ...v, limit: undefined }));
+              }}
+            />
+            <label className="toggle-row" htmlFor="unlimited-downloads">
+              <span>不限下载次数</span>
+              <input
+                id="unlimited-downloads"
+                name="unlimited-downloads"
+                type="checkbox"
+                checked={limit === -1}
+                onChange={(e) => {
+                  if (e.target.checked) previousLimit.current = limit;
+                  setLimit(e.target.checked ? -1 : previousLimit.current);
+                  setRulesDirty(true);
+                  setValidation((v) => ({ ...v, limit: undefined }));
+                }}
+              />
+            </label>
+            <small>
+              {limit === -1
+                ? "有效期内可不限次数下载，密码保护仍然生效。"
+                : backend === "r2"
+                  ? "获取下载地址消耗一次，同一会话续签不重复计数。"
+                  : "首次准许传输消耗一次，同一会话续传不重复计数。"}
+            </small>
+            <div id="share-limit-error">
+              <ErrorMessage message={validation.limit || ""} />
+            </div>
+            <label className="toggle-row" htmlFor="protect">
+              <span>密码保护</span>
+              <input
+                id="protect"
+                name="protect"
+                type="checkbox"
+                checked={protect}
+                onChange={(e) => {
+                  setProtect(e.target.checked);
+                  setRulesDirty(true);
+                  setValidation((v) => ({ ...v, password: undefined }));
+                  if (e.target.checked && !password)
+                    setPassword(randomPassword());
+                }}
+              />
+            </label>
+            {protect && (
+              <div className="password-field">
+                <input
+                  ref={sharePasswordInput}
+                  name="share-password"
+                  spellCheck={false}
+                  aria-invalid={!!validation.password}
+                  aria-describedby={
+                    validation.password ? "share-password-error" : undefined
+                  }
+                  aria-label="分享密码"
+                  type="text"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setRulesDirty(true);
+                    setValidation((v) => ({ ...v, password: undefined }));
+                  }}
+                  placeholder="例如 abcd…"
+                  autoComplete="off"
+                />
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setPassword(randomPassword());
+                    setRulesDirty(true);
+                    setValidation((v) => ({ ...v, password: undefined }));
+                  }}
+                  type="button"
+                >
+                  换一个
+                </button>
+              </div>
+            )}
+            <div id="share-password-error">
+              <ErrorMessage message={validation.password || ""} />
+            </div>
+            {protect && (
+              <p className="note">
+                建议保留随机长密码，并通过与分享链接不同的渠道发送。拿到完整链接和密文的人可离线尝试密码。
+              </p>
+            )}
+          </fieldset>
+          <div className="actions">
+            {["uploading", "retrying", "verifying"].includes(phase) ? (
+              <button
+                className="button secondary full"
+                onClick={() => {
+                  pause.current = true;
+                  xhr.current?.abort();
+                  hashing.current?.abort();
+                }}
+              >
+                <Pause size={17} aria-hidden="true" />
+                暂停上传
+              </button>
+            ) : (
+              <button
+                className="button primary full"
+                onClick={start}
+                disabled={
+                  (!file && upload?.state !== "finalizing") ||
+                  !settings ||
+                  ["checking", "canceling", "recovering", "verifying"].includes(
+                    phase,
+                  )
+                }
+              >
+                {phase === "checking" ? (
+                  <Loader2 className="spin" size={18} aria-hidden="true" />
+                ) : (
+                  <UploadCloud size={18} aria-hidden="true" />
+                )}
+                {phase === "checking"
+                  ? backend === "r2"
+                    ? "正在完成上传…"
+                    : "正在校验…"
+                  : upload?.state === "finalizing"
+                    ? "查询发布结果"
+                    : upload
+                      ? "继续上传"
+                      : "上传并创建分享"}
+              </button>
+            )}
+            {(upload || saved) && (
+              <button
+                className="text-button danger cancel-upload"
+                onClick={cancel}
+                disabled={phase === "canceling" || phase === "recovering"}
+              >
+                <X size={16} aria-hidden="true" />
+                取消这次上传
+              </button>
+            )}
+          </div>
+        </section>
+      </div>
+    </Shell>
+  );
+}
+function KeyBackup({
+  id,
+  encryption,
+  onChange,
+}: {
+  id: string;
+  encryption?: Share["encryption"];
+  onChange?: () => void;
+}) {
+  const [passphrase, setPassphrase] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  async function exportKey() {
+    setError("");
+    setMessage("");
+    setBusy(true);
+    try {
+      const context = await shareContext(id);
+      if (!context)
+        throw new Error("此浏览器没有这份分享的密钥，请先导入密钥备份。");
+      const text = await exportFileContext(context, passphrase);
+      const url = URL.createObjectURL(
+        new Blob([text], { type: "application/json" }),
+      );
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `parcel-key-${id}.json`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setPassphrase("");
+      setMessage("加密密钥备份已导出。请离线保存，并单独保管备份口令。");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function importKey(file?: File) {
+    if (!file) return;
+    setError("");
+    setMessage("");
+    setBusy(true);
+    try {
+      if (file.size > 32_768) throw new Error("密钥备份文件过大。");
+      const context = await importFileContext(await file.text(), passphrase);
+      const current =
+        encryption || (await api<Share>(`/admin/shares/${id}`)).encryption;
+      if (
+        !current ||
+        current.file_id !== context.encryption.file_id ||
+        current.plain_size !== context.encryption.plain_size
+      )
+        throw new Error("该备份不属于这份分享。");
+      await retainShareContext(id, { ...context, encryption: current });
+      setPassphrase("");
+      setMessage("密钥已导入此浏览器。现在可以复制完整链接和管理密码。");
+      onChange?.();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+  return (
+    <details className="key-backup">
+      <summary>备份 / 导入本机分享密钥</summary>
+      <p className="note">
+        文件密钥仅保存在创建分享的浏览器。换设备或清除网站数据前，请导出加密备份。服务器和管理员登录都不能找回丢失的密钥。
+      </p>
+      <label htmlFor={`backup-passphrase-${id}`}>
+        备份口令（至少 12 字节）
+      </label>
+      <input
+        id={`backup-passphrase-${id}`}
+        type="password"
+        autoComplete="new-password"
+        value={passphrase}
+        onChange={(e) => setPassphrase(e.target.value)}
+      />
+      <div className="key-backup-actions">
+        <button
+          type="button"
+          className="button secondary"
+          disabled={busy}
+          onClick={exportKey}
+        >
+          {busy ? "正在处理…" : "导出加密备份"}
+        </button>
+        <button
+          type="button"
+          className="button secondary"
+          disabled={busy}
+          onClick={() => input.current?.click()}
+        >
+          导入备份文件
+        </button>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept=".json,application/json"
+        className="sr-only"
+        aria-label="导入密钥备份"
+        onChange={(e) => void importKey(e.target.files?.[0])}
+      />
+      <ErrorMessage message={error} />
+      {message && (
+        <p className="note" role="status">
+          {message}
+        </p>
+      )}
+    </details>
+  );
+}
+function ShareDetail({ auth, id }: { auth: Auth; id: string }) {
+  const [share, setShare] = useState<Share>(),
+    [copyPassword, setCopyPassword] = useState<string>(),
+    [error, setError] = useState(""),
+    [password, setPassword] = useState(""),
+    [message, setMessage] = useState(""),
+    [confirm, setConfirm] = useState(false),
+    [busy, setBusy] = useState(false),
+    [passwordError, setPasswordError] = useState("");
+  const passwordInput = useRef<HTMLInputElement>(null);
+  useLeaveWarning(!!password);
+  async function load() {
+    try {
+      setShare(await localShare(await api<Share>(`/admin/shares/${id}`)));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  useEffect(() => {
+    void load();
+    const t = setInterval(load, 10000);
+    return () => clearInterval(t);
+  }, [id]);
+  async function revoke() {
+    setBusy(true);
+    try {
+      await api(`/admin/shares/${id}`, { method: "DELETE" }, auth.csrf);
+      setConfirm(false);
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordError("");
+    if (password && new TextEncoder().encode(password).length < 4) {
+      setPasswordError("分享密码至少需要 4 字节，例如 abcd。");
+      passwordInput.current?.focus();
+      return;
+    }
+    setError("");
+    setBusy(true);
+    setMessage("");
+    try {
+      const previous = await shareContext(id);
+      if (!previous || !share?.encryption)
+        throw new Error("此浏览器没有文件密钥。请导入加密备份后再修改密码。");
+      if (password && auth.password_protocol !== PASSWORD_PROTOCOL)
+        throw new Error("服务器未提供安全的密码验证协议。");
+      const next = await rewrapPassword(
+        { ...previous, encryption: share.encryption },
+        password,
+      );
+      await api(
+        `/admin/shares/${id}/password`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            encryption: next.encryption,
+            version: share.version,
+            ...(await passwordBody(password, auth.password_protocol)),
+          }),
+        },
+        auth.csrf,
+      );
+      await retainShareContext(id, next);
+      setMessage(
+        password
+          ? "密码已更新，无需重传文件。旧下载授权已失效；已持有旧密钥与密文的人仍可读取已有副本。"
+          : "密码保护已关闭，旧下载授权已失效。完整链接仍包含解密密钥。",
+      );
+      setCopyPassword(password || undefined);
+      setPassword("");
+      await load();
+    } catch (e) {
+      setPasswordError((e as Error).message);
+      passwordInput.current?.focus();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Shell auth={auth}>
+      <a className="back-link" href="/admin">
+        <ArrowLeft size={16} aria-hidden="true" />
+        我的分享
+      </a>
+      <ErrorMessage message={error} />
+      {share ? (
+        <>
+          <section className="page-heading compact">
+            <div>
+              <h1>分享详情</h1>
+              <p className="filename-title" translate="no">
+                {share.name}
+              </p>
+              <p className="muted">
+                {bytes(share.size)} · 创建于 {date(share.created)}
+              </p>
+            </div>
+            <span
+              className={`badge ${share.availability === "available" ? "green" : ""}`}
+            >
+              {availability[share.availability]}
+            </span>
+          </section>
+          <div className="detail-grid">
+            <section className="panel detail-main">
+              {share.key_available ? (
+                <CopyField
+                  value={share.url}
+                  name={share.name}
+                  password={share.password_required ? copyPassword : undefined}
+                  passwordRequired={share.password_required}
+                />
+              ) : (
+                <p className="note">
+                  此浏览器没有解密密钥，无法显示文件名或复制可用链接。可以撤销分享，或从原设备导出密钥备份后在下方导入。
+                </p>
+              )}
+              <div className="rule-grid">
+                <div>
+                  <Clock3 size={20} aria-hidden="true" />
+                  <strong>{date(share.expires)}</strong>
+                  <span>到期时间</span>
+                </div>
+                <div>
+                  <ArrowDown size={20} aria-hidden="true" />
+                  <strong>
+                    {share.download_count} /{" "}
+                    {share.max_downloads === -1
+                      ? "不限次数"
+                      : share.max_downloads}
+                  </strong>
+                  <span>已用下载资格</span>
+                </div>
+                <div>
+                  <LockKeyhole size={20} aria-hidden="true" />
+                  <strong>
+                    {share.password_required ? "已启用" : "未启用"}
+                  </strong>
+                  <span>密码保护</span>
+                </div>
+              </div>
+              <label>
+                {share.storage_backend === "r2" ? "R2 ETag" : "SHA-256"}
+              </label>
+              <code className="hash">
+                {share.storage_backend === "r2" ? share.etag : share.sha256}
+              </code>
+              {share.storage_backend === "r2" && (
+                <p className="muted">
+                  服务端仅核验密文大小及上传任务；浏览器解密时会校验每块认证标签和原文件
+                  SHA-256。ETag 不是 SHA-256。
+                </p>
+              )}
+              <p className="note">
+                次数用完后，已开始的有效会话仍可续传；会话结束后再回收文件。
+              </p>
+              {share.error && <ErrorMessage message={share.error} />}
+              {share.key_available && (
+                <a
+                  className="button secondary"
+                  href={share.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  打开接收页 <ArrowRight size={16} aria-hidden="true" />
+                </a>
+              )}
+            </section>
+            <section className="panel detail-tools">
+              <h2>管理分享</h2>
+              <KeyBackup
+                id={id}
+                encryption={share.encryption}
+                onChange={load}
+              />
+              {share.state === "active" && share.availability !== "expired" ? (
+                <>
+                  <form onSubmit={changePassword}>
+                    <label htmlFor="new-password">修改分享密码</label>
+                    <input
+                      ref={passwordInput}
+                      id="new-password"
+                      name="new-password"
+                      spellCheck={false}
+                      aria-invalid={!!passwordError}
+                      aria-describedby={
+                        passwordError ? "new-password-error" : undefined
+                      }
+                      type="text"
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setPasswordError("");
+                      }}
+                      placeholder="例如 abcd；留空关闭密码保护…"
+                      autoComplete="off"
+                    />
+                    <div id="new-password-error">
+                      <ErrorMessage message={passwordError} />
+                    </div>
+                    <button
+                      className="button secondary full"
+                      disabled={busy || !share.key_available}
+                    >
+                      {busy && (
+                        <Loader2
+                          className="spin"
+                          size={18}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {busy ? "正在保存…" : "保存密码设置"}
+                    </button>
+                    {message && (
+                      <p className="note" role="status">
+                        {message}
+                      </p>
+                    )}
+                  </form>
+                  <div className="divider" />
+                  {confirm ? (
+                    <div className="confirm">
+                      <p>撤销后，链接立即失效，文件将进入清理流程。</p>
+                      <button
+                        className="button destructive full"
+                        onClick={revoke}
+                        disabled={busy}
+                      >
+                        确认撤销
+                      </button>
+                      <button
+                        className="text-button"
+                        onClick={() => setConfirm(false)}
+                      >
+                        保留分享
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="button danger-outline full"
+                      onClick={() => setConfirm(true)}
+                    >
+                      <Trash2 size={17} aria-hidden="true" />
+                      撤销分享
+                    </button>
+                  )}
+                </>
+              ) : (
+                <p className="muted">
+                  此分享已失效。需要重新分享时，请创建新的分享。
+                </p>
+              )}
+            </section>
+          </div>
+        </>
+      ) : error ? (
+        <section className="panel detail-main">
+          <h1>无法读取分享</h1>
+          <p className="note">请检查链接，或返回我的分享重新选择。</p>
+        </section>
+      ) : (
+        <Loading />
+      )}
+    </Shell>
+  );
+}
+function Receive({ id }: { id: string }) {
+  return (
+    <Shell>
+      <EncryptedReceive id={id} />
+    </Shell>
+  );
+}
+
+function App() {
+  const path = location.pathname,
+    [auth, setAuth] = useState<Auth>(),
+    [ready, setReady] = useState(false),
+    [error, setError] = useState("");
+  const admin = path.startsWith("/admin");
+  useEffect(() => {
+    if (!admin) {
+      setReady(true);
+      return;
+    }
+    api<Auth>("/auth/session")
+      .then((a) => {
+        setAuth(a);
+        setReady(true);
+      })
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 401)
+          location.replace("/login");
+        else {
+          setError(e.message);
+          setReady(true);
+        }
+      });
+  }, [admin]);
+  if (path === "/login" || path === "/") return <Login />;
+  if (path.startsWith("/s/")) return <Receive id={path.split("/")[2]} />;
+  if (!ready)
+    return (
+      <Shell>
+        <Loading />
+      </Shell>
+    );
+  if (error)
+    return (
+      <Shell>
+        <h1>暂时无法连接</h1>
+        <p className="note">请刷新页面重试，或稍后再次打开。</p>
+        <ErrorMessage message={error} />
+      </Shell>
+    );
+  if (auth?.auth_mode === "totp" && path === "/admin/security")
+    return (
+      <Shell auth={auth}>
+        <div className="auth-card auth-security">
+          <NativeAdminForm
+            csrf={auth.csrf}
+            security
+            onAuthenticated={(csrf) => setAuth({ ...auth, csrf })}
+          />
+          <a className="text-button auth-recover" href="/admin">
+            返回我的分享
+          </a>
+        </div>
+      </Shell>
+    );
+  if (auth && path === "/admin/new") return <NewShare auth={auth} />;
+  if (auth && path.startsWith("/admin/shares/"))
+    return <ShareDetail auth={auth} id={path.split("/")[3]} />;
+  if (auth && path === "/admin") return <Dashboard auth={auth} />;
+  return (
+    <Shell>
+      <div className="empty">
+        <h1>页面不存在</h1>
+        <a href="/" className="button secondary">
+          返回 Parcel
+        </a>
+      </div>
+    </Shell>
+  );
+}
+createRoot(document.getElementById("root")!).render(<App />);

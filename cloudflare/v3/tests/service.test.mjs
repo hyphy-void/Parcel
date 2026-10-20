@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fixture, passwordProof } from "./fixture.mjs";
+import { fixture, passwordProof, encryptionManifest } from "./fixture.mjs";
 import { legacyPassword, wrapLegacyPassword } from "../password.mjs";
 
 test("V3 actual workerd serves assets and verifies Access/CSRF, rejects origin bypass", async (t) => {
@@ -60,8 +60,8 @@ test("V3 actual workerd serves assets and verifies Access/CSRF, rejects origin b
   assert.equal(f.unexpected, 0);
 });
 test("D1 concurrent creation never over-reserves quota, idempotency survives restart", async (t) => {
-  const f = await fixture(t, { config: { STORAGE_QUOTA_BYTES: "10" } });
-  const body = { name: "配额.bin", size: 7 };
+  const f = await fixture(t, { config: { STORAGE_QUOTA_BYTES: "40" } });
+  const body = { size: 7, encryption: encryptionManifest(7) };
   const responses = await Promise.all(
     [1, 2, 3].map(() =>
       f.api("/api/v1/uploads", {
@@ -74,7 +74,7 @@ test("D1 concurrent creation never over-reserves quota, idempotency survives res
   assert.deepEqual(responses.map((r) => r.status).sort(), [201, 507, 507]);
   assert.equal(
     (await f.db.prepare("SELECT reserved FROM storage_usage").first()).reserved,
-    7,
+    35,
   );
   const r = responses.find((r) => r.status === 201),
     u = await r.json();
@@ -90,8 +90,8 @@ test("D1 concurrent creation never over-reserves quota, idempotency survives res
     await f.api("/api/v1/uploads", {
       method: "POST",
       body: {
-        name: "测试资料.bin",
         size: 7,
+        encryption: first.encryption,
         ttl_seconds: 3600,
         max_downloads: 3,
       },
@@ -102,7 +102,7 @@ test("D1 concurrent creation never over-reserves quota, idempotency survives res
   assert.equal(first.id, repeated.id);
   await f.api("/api/v1/uploads", {
     method: "POST",
-    body: { name: "different.bin", size: 7 },
+    body: { size: 8, encryption: encryptionManifest(8) },
     headers: { "Idempotency-Key": key },
     expected: 409,
   });
@@ -118,7 +118,7 @@ test("16 MiB multipart validates server sizes, last chunk and signed Content-Len
     })
   ).json();
   const url = new URL(signed.url);
-  assert.equal(signed.size, 3);
+  assert.equal(signed.size, 31);
   assert.equal(url.searchParams.get("partNumber"), "2");
   assert.equal(
     url.searchParams.get("X-Amz-SignedHeaders"),
@@ -143,7 +143,7 @@ test("16 MiB multipart validates server sizes, last chunk and signed Content-Len
   const usage = await f.db
     .prepare("SELECT used,reserved FROM storage_usage")
     .first();
-  assert.deepEqual(usage, { used: u.size, reserved: 0 });
+  assert.deepEqual(usage, { used: u.stored_size, reserved: 0 });
   await f.api(`/api/v1/uploads/${u.id}/complete`, {
     method: "POST",
     expected: 202,
@@ -177,7 +177,8 @@ test("zero-byte files publish and finalizing object recovers after complete-befo
     .bind(u.id)
     .all();
   assert.equal(shares.results.length, 1);
-  assert.equal(shares.results[0].size, 7);
+  assert.equal(shares.results[0].size, 35);
+  assert.equal(shares.results[0].plaintext_size, 7);
   assert.equal(f.unexpected, 0);
 });
 test("twenty parallel download admissions consume exactly the final D1 slot; refresh does not recount", async (t) => {
@@ -386,7 +387,11 @@ test("password protection preserves Go Argon2id hashes, grants and sessions are 
   const newProof = await passwordProof("new-password");
   await f.api(`/api/v1/admin/shares/${s.id}/password`, {
     method: "PATCH",
-    body: { password_proof: newProof },
+    body: {
+      password_proof: newProof,
+      encryption: encryptionManifest(7, true),
+      version: 1,
+    },
     expected: 200,
   });
   await f.api(`/api/v1/shares/${s.id}/download-sessions`, {
@@ -409,7 +414,7 @@ test("password protection preserves Go Argon2id hashes, grants and sessions are 
   });
   await f.api(`/api/v1/admin/shares/${s.id}/password`, {
     method: "PATCH",
-    body: { password: "" },
+    body: { password: "", encryption: encryptionManifest(7), version: 2 },
     expected: 200,
   });
   assert.equal(
@@ -444,7 +449,7 @@ test("D1 batch failure rolls back reservation and session count together", async
   );
   assert.deepEqual(
     await f.db.prepare("SELECT used,reserved FROM storage_usage").first(),
-    { used: 7, reserved: 0 },
+    { used: 35, reserved: 0 },
   );
 });
 
@@ -600,7 +605,7 @@ test("mismatched immutable R2 object never publishes and quota is released by co
   );
   assert.equal(
     (await f.db.prepare("SELECT reserved FROM storage_usage").first()).reserved,
-    7,
+    35,
   );
   await f.db
     .prepare("UPDATE uploads SET retry_at=0 WHERE id=?")
@@ -643,7 +648,7 @@ test("R2 deletion failure preserves charged usage and retries durable cleanup af
   assert.equal(row.delete_attempts, 1);
   assert.equal(
     (await f.db.prepare("SELECT used FROM storage_usage").first()).used,
-    7,
+    35,
   );
   assert.ok(await f.bucket.head(row.storage_key));
   await f.restart();

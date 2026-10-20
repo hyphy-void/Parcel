@@ -48,7 +48,8 @@ const text = chinese
       invalidAccount: "请输入 32 位小写十六进制账户 ID（0–9、a–f）。",
       invalidBucket:
         "请输入 3–63 位小写字母、数字或连字符，首尾须为字母或数字。",
-      generated: "配置已生成。请按所选认证方式保存密钥并完成初始化。",
+      generated:
+        "配置已生成。完成管理员初始化后，先验收加密分享与本机密钥备份。E2EE 不新增服务端密钥。",
       stale: "输入已修改，请重新生成配置后再复制。",
       copied: "已复制。",
       copiedButton: "已复制",
@@ -64,7 +65,7 @@ const text = chinese
       invalidBucket:
         "Use 3–63 lowercase letters, digits, or hyphens. Start and end with a letter or digit.",
       generated:
-        "Config generated. Save the secrets and finish setup for your chosen login mode.",
+        "Config generated. Finish admin setup, then test encrypted shares and local key backups. E2EE adds no server secret.",
       stale: "Your inputs changed. Generate the config again before copying.",
       copied: "Copied.",
       copiedButton: "Copied",

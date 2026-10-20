@@ -1449,3 +1449,38 @@ footer a {
 footer a:hover {
   color: var(--ink);
 }
+.key-backup {
+  margin: 24px 0;
+  padding: 20px;
+  background: var(--subtle);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.key-backup summary {
+  cursor: pointer;
+  font-weight: 650;
+  min-height: 44px;
+  display: list-item;
+}
+.key-backup summary:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 4px;
+}
+.key-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+.key-backup-actions .button {
+  flex: 1 1 180px;
+}
+.encrypted-receive .note {
+  text-align: left;
+}
+.encrypted-progress {
+  margin: 24px 0;
+}
+.encrypted-receive .filename-title {
+  overflow-wrap: anywhere;
+}

@@ -1,7 +1,12 @@
 import type { PasswordParameters } from "./password";
+import type { FileEncryption } from "./e2ee";
 export type Upload = {
   storage_backend: "local" | "r2";
   part_bytes: number;
+  stored_size?: number;
+  stored_offset?: number;
+  stored_part_bytes?: number;
+  encryption?: FileEncryption;
   object_uploaded?: boolean;
   parts?: { number: number; size: number; etag: string }[];
   id: string;
@@ -28,6 +33,10 @@ export type Share = {
   state: string;
   error: string;
   password_required: boolean;
+  encryption?: FileEncryption;
+  stored_size?: number;
+  version?: number;
+  key_available?: boolean;
   password_protocol?: string;
   password_kdf?: PasswordParameters;
   locked?: boolean;
@@ -74,41 +83,59 @@ export async function api<T>(
   const headers = new Headers(options.headers);
   if (options.body) headers.set("Content-Type", "application/json");
   if (csrf) headers.set("X-CSRF-Token", csrf);
-  const response = await fetch(`/api/v1${path}`, {
-    ...options,
-    headers,
-    credentials: "same-origin",
-    redirect: "manual",
-  });
-  if (
-    response.type === "opaqueredirect" ||
-    (response.status >= 300 && response.status < 400)
-  ) {
-    if (path !== "/auth/session" && /^\/(auth|admin|uploads)(\/|$)/.test(path))
+  const signal = options.signal || AbortSignal.timeout(30_000);
+  try {
+    const response = await fetch(`/api/v1${path}`, {
+      ...options,
+      signal,
+      headers,
+      credentials: "same-origin",
+      redirect: "manual",
+    });
+    if (
+      response.type === "opaqueredirect" ||
+      (response.status >= 300 && response.status < 400)
+    ) {
+      if (
+        path !== "/auth/session" &&
+        /^\/(auth|admin|uploads)(\/|$)/.test(path)
+      )
+        location.assign("/login");
+      throw new ApiError("登录已失效，请重新验证身份", 401, "access_required");
+    }
+    if (!response.headers.get("Content-Type")?.includes("application/json"))
+      throw new ApiError(
+        "服务响应不正确，请稍后重试",
+        response.status || 502,
+        "invalid_response",
+      );
+    const data = await response.json();
+    if (
+      response.status === 401 &&
+      data.code === "access_required" &&
+      path !== "/auth/session" &&
+      /^\/(auth|admin|uploads)(\/|$)/.test(path)
+    )
       location.assign("/login");
-    throw new ApiError("登录已失效，请重新验证身份", 401, "access_required");
+    if (!response.ok)
+      throw new ApiError(
+        data.message || "请求失败，请重试",
+        response.status,
+        data.code,
+      );
+    return data as T;
+  } catch (error) {
+    // Abort covers both receiving headers and reading the JSON body. A server
+    // can already have committed a mutation (and set a cookie) before its body
+    // stalls, so callers must reconcile uncertain mutations when appropriate.
+    if (signal.aborted && signal.reason?.name === "TimeoutError")
+      throw new ApiError(
+        "请求超时，请检查网络后重试。已提交的操作可能已经生效。",
+        504,
+        "request_timeout",
+      );
+    throw error;
   }
-  if (!response.headers.get("Content-Type")?.includes("application/json"))
-    throw new ApiError(
-      "服务响应不正确，请稍后重试",
-      response.status || 502,
-      "invalid_response",
-    );
-  const data = await response.json();
-  if (
-    response.status === 401 &&
-    data.code === "access_required" &&
-    path !== "/auth/session" &&
-    /^\/(auth|admin|uploads)(\/|$)/.test(path)
-  )
-    location.assign("/login");
-  if (!response.ok)
-    throw new ApiError(
-      data.message || "请求失败，请重试",
-      response.status,
-      data.code,
-    );
-  return data as T;
 }
 export function bytes(n = 0): string {
   if (n < 1024) return `${new Intl.NumberFormat("zh-CN").format(n)}\u00a0B`;

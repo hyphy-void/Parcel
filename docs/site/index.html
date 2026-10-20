@@ -61,7 +61,7 @@
             <p>
               Deploy <span translate="no">Parcel</span> to your own Cloudflare
               account.<br class="hero-break" />
-              Files go straight to private R2. You stay in control.
+              Your browser encrypts files before they reach private R2.
             </p>
             <p class="note hero-note">
               MIT open source · Workers Free supported
@@ -86,10 +86,10 @@
         aria-labelledby="security-title"
       >
         <div class="section-heading">
-          <h2 id="security-title">How protection works</h2>
+          <h2 id="security-title">How files stay private</h2>
           <p>
-            Files travel over HTTPS. Passwords are processed in your browser.
-            Each has a separate job.
+            Cloudflare V3 encrypts files in the sender’s browser and decrypts
+            them in the recipient’s browser. File keys stay at those endpoints.
           </p>
         </div>
         <figure class="transfer-figure">
@@ -104,10 +104,10 @@
                 />
               </svg>
               <p class="flow-node-title">Your browser</p>
-              <span>Original file in and out</span>
+              <span>Encrypt before upload · Decrypt after download</span>
             </div>
             <div class="transfer-route">
-              <p class="flow-node-title">HTTPS / TLS</p>
+              <p class="flow-node-title">AES-GCM blocks</p>
               <svg class="flow-arrow" aria-hidden="true" viewBox="0 0 160 40">
                 <path
                   d="M4 20h148m-18-14 18 14-18 14"
@@ -115,7 +115,7 @@
                   stroke="currentColor"
                   stroke-width="4"
                 /></svg
-              ><span>Multipart upload · Signed download</span>
+              ><span>16 MiB plaintext → Ciphertext over HTTPS</span>
             </div>
             <div class="transfer-store">
               <svg aria-hidden="true" viewBox="0 0 120 112">
@@ -136,60 +136,72 @@
                 />
               </svg>
               <p class="flow-node-title">Private R2</p>
-              <span>Storage keys managed by Cloudflare</span>
+              <span>Ciphertext only · No file decryption key</span>
             </div>
             <div class="transfer-control">
               <p class="transfer-title">Parcel Worker + D1</p>
               <p>
-                Checks permissions, expiry, and download limits. Issues file
-                URLs valid for up to 5 minutes. File bytes bypass the Worker.
+                Checks permissions, expiry, and download limits. Issues short
+                signed URLs for ciphertext. No plaintext file keys or filenames.
               </p>
             </div>
           </div>
           <figcaption>
-            Files travel between the browser and R2 over HTTPS. R2 automatically
-            encrypts stored objects with keys managed by Cloudflare.
+            Each file has a random 256-bit key. Each block uses a fresh 12-byte
+            nonce and a 16-byte authentication tag: 28 extra bytes per block.
+            Authentication binds the file identity, block order, and length.
           </figcaption>
         </figure>
         <p class="security-truth">
-          This version does not encrypt file contents in the browser or decrypt
-          downloads locally. It is not end-to-end encryption: operators with
-          permission to read bucket objects, and the storage provider, can
-          access file contents. A share password controls download
-          authorization; it is not a file decryption key.
+          File contents, original filenames, media types, and the plaintext
+          SHA-256 are encrypted. The server still sees file sizes, share IDs,
+          expiry, download counts, and request metadata. This end-to-end
+          encryption applies to Cloudflare V3; the separate Go and origin-backed
+          Pages builds retain their earlier transfer protocol.
         </p>
         <div class="password-explainer">
-          <h3>Passwords take another path</h3>
+          <h3>A link key, plus your password</h3>
           <ol class="password-flow">
             <li>
-              <strong>Derive in the browser</strong>
+              <strong>Keep the link complete</strong>
               <p>
-                Password + random salt → Argon2id. V3 sends a derived credential
-                to the API, rather than the original password.
+                A random 32-byte secret sits after # in the share link. URL
+                fragments are not sent in HTTP requests. Parcel does not put
+                this secret in its API calls. Without it, the server cannot
+                unwrap the file key.
               </p>
             </li>
             <li>
-              <strong>Verify in the Worker</strong>
+              <strong>Unwrap locally</strong>
               <p>
-                The credential travels over HTTPS. AES-GCM encrypts it before D1
-                storage. The Worker holds the server key needed to decrypt and
-                verify it.
+                For password-protected shares, an independent Argon2id salt
+                derives password material. HKDF combines it with the link secret
+                to wrap the file key and metadata using AES-GCM. The recipient
+                needs both the complete link and the password.
               </p>
             </li>
             <li>
-              <strong>Authorize access</strong>
+              <strong>Gate downloads separately</strong>
               <p>
-                A valid share password grants restricted download access. An
-                administrator must also supply a TOTP code to establish an admin
-                session.
+                Another separately salted password credential goes to the Worker
+                over HTTPS for online authorization. That credential is not the
+                wrapping key. Expiry, limits, revocation, and admin TOTP remain
+                server-side checks.
               </p>
             </li>
           </ol>
         </div>
         <p class="note">
-          The derived value is itself a sensitive credential; browser derivation
-          does not replace HTTPS. Preserve SESSION_SECRET: it protects password
-          verification material and TOTP secrets.
+          Changing a share password rewraps the small key envelope; it does not
+          reupload the file. Anyone who already obtained the old file key and
+          ciphertext can keep decrypting their copy. Revocation cannot retrieve
+          saved files or keys.
+        </p>
+        <p class="note">
+          This assumes a trustworthy browser, device, and delivered webpage.
+          Maliciously changed webpage code, extensions, or local malware can
+          access keys at an endpoint. HTTPS and Cloudflare’s storage encryption
+          remain additional layers, rather than substitutes for endpoint trust.
         </p>
         <p class="security-sources">
           <a
@@ -198,7 +210,7 @@
           >
           ·
           <a
-            href="https://github.com/hyphy-void/Parcel/blob/main/cloudflare/v3/password.mjs"
+            href="https://github.com/hyphy-void/Parcel/blob/main/web/src/e2ee.ts"
             >Read the implementation</a
           >
         </p>
@@ -229,6 +241,7 @@
                 <a href="#r2">Create R2 credentials</a>
                 <a href="#variables">Save variables and secrets</a>
                 <a href="#cors">Allow browser uploads</a>
+                <a href="#encrypted-sharing">Use encrypted shares</a>
                 <a href="#config">Config tool</a>
                 <a href="#verify">Launch checks</a>
                 <a href="#faq">Troubleshooting</a>
@@ -697,6 +710,62 @@
                 </p>
               </div>
             </article>
+            <article id="encrypted-sharing">
+              <h3>Use encrypted shares</h3>
+              <div class="answer">
+                <p>
+                  Choose a file and optional share password. The browser first
+                  hashes the whole original file, then encrypts and uploads one
+                  16 MiB plaintext block at a time. Memory use stays bounded;
+                  the final block may be smaller. Empty files have one
+                  authenticated 28-byte encrypted block.
+                </p>
+                <p>
+                  Pause or refresh without clearing site data. Select the
+                  original file again to resume: Parcel checks its entire
+                  SHA-256, rather than trusting its name or size. Completed
+                  blocks stay in R2; retries use fresh nonces. The browser must
+                  retain its local upload key and the task must remain valid.
+                </p>
+                <p>
+                  Copy the complete share link, including <code>#k=…</code>, and
+                  send the optional password separately. Keep a copy of the
+                  link. On the share page, use “Back up / import local share
+                  keys” to export a small encrypted key backup with a separate
+                  passphrase of at least 12 bytes. Import it before managing
+                  passwords on another browser. An administrator session alone
+                  cannot recover missing keys or filenames.
+                </p>
+                <p>
+                  The recipient unlocks the file locally and downloads
+                  authenticated ciphertext blocks into this browser’s IndexedDB.
+                  After reception, “Save decrypted file” verifies, decrypts, and
+                  streams the original file to disk; it never builds one
+                  whole-file Blob. Refreshing can resume from complete cached
+                  blocks. Repeated requests in the same valid download session
+                  do not consume another download qualification.
+                </p>
+                <p>
+                  Allow space for both the temporary ciphertext and final file,
+                  roughly twice the file size plus headroom. Browser storage
+                  quotas, private mode, device free space, download permissions,
+                  and storage eviction can limit large files. Long-term storage
+                  permission is optional and does not block reception. Keep the
+                  page open while saving; clear its local resume cache after
+                  confirming the file is saved.
+                </p>
+                <p>
+                  Keys in the creating browser’s site data are not protected
+                  against someone who controls that browser. Back them up before
+                  clearing site data or changing devices. Losing all local keys,
+                  complete links, and backups is unrecoverable by the server.
+                  Earlier unencrypted V3 shares are not compatible and must be
+                  uploaded again; the upgrade does not delete existing D1 or R2
+                  data. Go and origin-backed Pages remain separate, non-E2EE
+                  modes.
+                </p>
+              </div>
+            </article>
           </div>
         </div>
       </section>
@@ -863,17 +932,27 @@
               emails.
             </li>
             <li>
-              Sign in as an administrator, upload a file, and create shares with
-              and without a password.
+              Upload empty, small, and multi-block files, with and without a
+              password. Pause, refresh, and select the original file to resume.
+              Check that R2 contains ciphertext and D1 has no original filename
+              or plaintext file key.
             </li>
             <li>
-              Open shares while signed out. Test correct and incorrect
-              passwords, downloading, and Range resume. Refreshing a valid
-              download session must not consume another download.
+              Open complete links while signed out. Test correct and incorrect
+              passwords and missing fragment keys. Pause and refresh reception,
+              save the decrypted file, and compare its SHA-256 with the
+              original. A lost initial response or retry in the same valid
+              session must not consume another download.
             </li>
             <li>
               Revoke a share and check that it cannot issue new signed URLs.
               Previously signed URLs can remain valid for up to five minutes.
+              Copies of ciphertext and keys already obtained cannot be recalled.
+            </li>
+            <li>
+              Export and import an encrypted key backup. Change the share
+              password without uploading the file again; confirm that a fresh
+              recipient needs the new password and complete link.
             </li>
             <li>
               Wait for Cron. Confirm that quota is released after object
@@ -920,6 +999,24 @@
               Check that the CORS origin exactly matches PUBLIC_URL and that the
               FILES binding, R2_BUCKET_NAME, and S3 credential scope use the
               same bucket. An API token cannot replace the S3 Secret Access Key.
+            </p>
+          </details>
+          <details id="faq-screenshots" name="troubleshooting">
+            <summary>Which screenshots need updating?</summary>
+            <p>
+              Update any Parcel app screenshots of upload creation and progress,
+              complete share links, password changes and key backups, and the
+              recipient’s unlock, ciphertext reception, and decrypted-save flow.
+              Use disposable demo files and keys, and never publish a real full
+              link, password, key backup, or authenticator secret.
+            </p>
+            <p>
+              The eight Cloudflare configuration screenshots remain applicable:
+              bindings, template build, optional Access, R2 token, variables,
+              adding secrets, CORS, and production builds. E2EE introduces no
+              new runtime secret or CORS header. Build screenshots may be
+              refreshed to show the new revision. The TOTP binding illustration
+              stays an illustration; no real enrollment screenshot is needed.
             </p>
           </details>
           <details id="faq-updates" name="troubleshooting">

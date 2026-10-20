@@ -10,9 +10,23 @@ const envelope = (data) => {
     sha256: createHash("sha256").update(payload).digest("hex"),
   });
 };
+// These fixtures model the retired Go protocol. New E2EE objects have different
+// byte accounting and cannot be converted into a Go rollback snapshot.
+async function legacyRows(f) {
+  await f.db.batch([
+    f.db.prepare(
+      "UPDATE uploads SET size=plaintext_size,offset=plaintext_size,part_bytes=16777216,encryption=''",
+    ),
+    f.db.prepare("UPDATE shares SET size=plaintext_size,encryption=''"),
+    f.db.prepare(
+      "UPDATE storage_usage SET used=(SELECT coalesce(sum(size),0) FROM shares WHERE deleted_at=0),reserved=0 WHERE id=1",
+    ),
+  ]);
+}
 test("migration is resumable and exact on real D1, refuses merging a second authority", async (t) => {
   const f = await fixture(t),
     s = await f.publish(7);
+  await legacyRows(f);
   const rows = {};
   for (const table of [
     "uploads",
@@ -94,6 +108,8 @@ test("migration checksum, upload state and format are validated", () => {
     () => manifest(JSON.stringify({ payload: "{}", sha256: "bad" })),
     /checksum/,
   );
+  data.rows.uploads = [{ state: "completed", encryption: "{}" }];
+  assert.throws(() => manifest(envelope(data)), /not a legacy Go/);
 });
 
 test("D1 rollback export requires maintenance drain and no outstanding jobs", async (t) => {
@@ -132,6 +148,11 @@ test("D1 rollback export requires maintenance drain and no outstanding jobs", as
     method: "POST",
     expected: 201,
   });
+  await assert.rejects(
+    exportSnapshot(config, api),
+    /encrypted files cannot be exported/,
+  );
+  await legacyRows(f);
   const envelope = await exportSnapshot(config, api),
     data = JSON.parse(envelope.payload);
   assert.equal(data.source, "d1-v3");
@@ -145,6 +166,7 @@ test("protected Go migration encrypts D1 verifiers, resumes old imports and expo
   const { exportSnapshot } = await import("../../../scripts/export-d1-v3.mjs");
   const f = await fixture(t),
     share = await f.publish(7);
+  await legacyRows(f);
   const secret = "ab".repeat(32);
   const legacy =
     "$argon2id$v=19$m=32768,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$A3W+APQ22i3uCifCT3RkV4zNYn7bSDZepRuL9Off/ao";

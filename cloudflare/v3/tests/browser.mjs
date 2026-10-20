@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import {
@@ -8,8 +8,16 @@ import {
   firefox,
   expect,
 } from "../../../web/node_modules/@playwright/test/index.mjs";
-import { fixture } from "./fixture.mjs";
+import { fixture as rawFixture } from "./fixture.mjs";
 import { totp } from "../totp.mjs";
+
+const fixture = (t, options = {}) =>
+  rawFixture(t, {
+    ...options,
+    ...(process.env.PARCEL_V3_BROWSER_ASSETS
+      ? { assetDirectory: process.env.PARCEL_V3_BROWSER_ASSETS }
+      : {}),
+  });
 
 for (const [name, engine, viewport] of [
   ["chromium", chromium, { width: 1440, height: 1000 }],
@@ -188,14 +196,378 @@ for (const [name, engine, viewport] of [
   );
 }
 
+for (const [name, viewport] of [
+  ["chromium", { width: 1440, height: 1000 }],
+  ["mobile", { width: 390, height: 844 }],
+]) {
+  test(
+    `E2EE password rewrap, encrypted key backup and ciphertext authentication (${name})`,
+    { timeout: 120000 },
+    async (t) => {
+      const f = await fixture(t),
+        browser = await chromium.launch({ headless: true });
+      t.after(() => browser.close());
+      const context = await browser.newContext({
+        viewport,
+        acceptDownloads: true,
+      });
+      const page = await context.newPage(),
+        errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      const original = Buffer.from(
+        "Synthetic browser confidentiality and backup acceptance.\n".repeat(32),
+      );
+      const privateName = "sensitive-browser-file.txt",
+        oldPassword = "first-download-password",
+        newPassword = "replacement-download-password";
+      let puts = 0,
+        cipherGets = 0,
+        unlockCalls = 0,
+        corrupt = false,
+        unexpectedFileDownloads = 0;
+      await page.addInitScript(() => {
+        window.__parcelTestSaves = 0;
+        window.showSaveFilePicker = async () => {
+          window.__parcelTestSaves++;
+          throw new Error(
+            "Corrupt ciphertext must never reach the file writer",
+          );
+        };
+      });
+      page.on("download", (download) => {
+        if (!download.suggestedFilename().startsWith("parcel-key-"))
+          unexpectedFileDownloads++;
+      });
+      await context.route("**/*", async (route) => {
+        const request = route.request(),
+          url = new URL(request.url());
+        if (url.origin === f.config.PUBLIC_URL) {
+          const headers = {
+            ...request.headers(),
+            "CF-Connecting-IP": "198.51.100.9",
+          };
+          if (
+            /^\/(admin|login|api\/v1\/(auth|admin|uploads))(\/|$)/.test(
+              url.pathname,
+            )
+          )
+            headers["Cf-Access-Jwt-Assertion"] = f.jwt;
+          for (const key of [
+            "host",
+            "content-length",
+            "transfer-encoding",
+            "accept-encoding",
+            "connection",
+          ])
+            delete headers[key];
+          const body = request.postDataBuffer();
+          if (body) {
+            assert.ok(
+              !body.includes(Buffer.from(privateName)),
+              "plaintext filename must not enter any API body",
+            );
+            assert.ok(
+              !body.includes(Buffer.from(oldPassword)) &&
+                !body.includes(Buffer.from(newPassword)),
+              "plaintext sharing password must not enter any API body",
+            );
+          }
+          if (url.pathname.endsWith("/unlock")) unlockCalls++;
+          const response = await f.mf.dispatchFetch(request.url(), {
+            method: request.method(),
+            headers,
+            body: body || undefined,
+          });
+          const outputHeaders = Object.fromEntries(response.headers);
+          const cookies = response.headers.getSetCookie();
+          if (cookies.length) outputHeaders["set-cookie"] = cookies.join("\n");
+          return route.fulfill({
+            status: response.status,
+            headers: outputHeaders,
+            body: Buffer.from(await response.arrayBuffer()),
+          });
+        }
+        assert.equal(url.origin, f.config.R2_ENDPOINT);
+        const key = decodeURIComponent(
+          url.pathname.slice(`/${f.config.R2_BUCKET_NAME}/`.length),
+        );
+        if (request.method() === "PUT") {
+          const row = await f.db
+            .prepare("SELECT id FROM uploads WHERE storage_key=?")
+            .bind(key)
+            .first();
+          const ciphertext = request.postDataBuffer();
+          assert.ok(ciphertext && ciphertext.length === original.length + 28);
+          assert.ok(!ciphertext.includes(original.subarray(0, 64)));
+          const result = await f.put(
+            row.id,
+            Number(url.searchParams.get("partNumber")),
+            ciphertext,
+          );
+          puts++;
+          return route.fulfill({
+            status: 200,
+            headers: {
+              "Access-Control-Allow-Origin": f.config.PUBLIC_URL,
+              "Access-Control-Expose-Headers": "ETag",
+              ETag: `"${result.etag}"`,
+            },
+            body: "",
+          });
+        }
+        assert.equal(request.method(), "GET");
+        cipherGets++;
+        const object = await f.bucket.get(key),
+          all = Buffer.from(await object.arrayBuffer());
+        const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers().range || "");
+        assert.ok(range);
+        const start = Number(range[1]),
+          end = Number(range[2]);
+        const payload = Buffer.from(all.subarray(start, end + 1));
+        if (corrupt) payload[20] ^= 1;
+        return route.fulfill({
+          status: 206,
+          headers: {
+            "Content-Type": "application/octet-stream",
+            "Access-Control-Allow-Origin": f.config.PUBLIC_URL,
+            "Access-Control-Expose-Headers": "Content-Range,Content-Length",
+            "Content-Range": `bytes ${start}-${end}/${all.length}`,
+            "Content-Length": String(payload.length),
+          },
+          body: payload,
+        });
+      });
+      await page.goto(f.config.PUBLIC_URL + "/admin/new");
+      await page.getByLabel("选择文件", { exact: true }).setInputFiles({
+        name: privateName,
+        mimeType: "text/plain",
+        buffer: original,
+      });
+      await page.getByLabel("密码保护", { exact: true }).check();
+      await page.getByLabel("分享密码", { exact: true }).fill(oldPassword);
+      await page
+        .getByRole("button", { name: "上传并创建分享", exact: true })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
+      ).toBeVisible({ timeout: 30000 });
+      const share = await f.db.prepare("SELECT * FROM shares").first();
+      const fullURL = await page
+        .getByLabel("分享链接", { exact: true })
+        .inputValue();
+      assert.equal(puts, 1);
+
+      await page.goto(f.config.PUBLIC_URL + `/admin/shares/${share.id}`);
+      await page.getByLabel("修改分享密码", { exact: true }).fill(newPassword);
+      await page
+        .getByRole("button", { name: "保存密码设置", exact: true })
+        .click();
+      await expect(
+        page.getByText("密码已更新，无需重传文件。", { exact: false }),
+      ).toBeVisible({ timeout: 30000 });
+      const updated = await f.db
+        .prepare("SELECT * FROM shares WHERE id=?")
+        .bind(share.id)
+        .first();
+      assert.equal(updated.version, 2);
+      assert.equal(updated.etag, share.etag);
+      assert.equal(updated.size, share.size);
+      assert.equal(
+        puts,
+        1,
+        "password changes must not re-upload file ciphertext",
+      );
+      assert.notDeepEqual(
+        JSON.parse(updated.encryption).envelope,
+        JSON.parse(share.encryption).envelope,
+      );
+      const localEncryption = await page.evaluate(
+        (id) =>
+          new Promise((resolve, reject) => {
+            const open = indexedDB.open("parcel-e2ee-v1");
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const db = open.result,
+                request = db
+                  .transaction("records")
+                  .objectStore("records")
+                  .get(`share-key:${id}`);
+              request.onerror = () => reject(request.error);
+              request.onsuccess = () => {
+                resolve(request.result?.encryption);
+                db.close();
+              };
+            };
+          }),
+        share.id,
+      );
+      assert.deepEqual(
+        localEncryption,
+        JSON.parse(updated.encryption),
+        "retained local key context must contain the current envelope",
+      );
+
+      await page.getByText("备份 / 导入本机分享密钥", { exact: true }).click();
+      const backupPassphrase = "offline-backup-passphrase-2026";
+      await page
+        .getByLabel("备份口令（至少 12 字节）", { exact: true })
+        .fill(backupPassphrase);
+      const exportedPromise = page.waitForEvent("download");
+      await page
+        .getByRole("button", { name: "导出加密备份", exact: true })
+        .click();
+      const exported = await exportedPromise,
+        backupBytes = await readFile(await exported.path());
+      const backup = JSON.parse(backupBytes.toString());
+      assert.equal(backup.format, "parcel-e2ee-key-backup");
+      assert.equal(backup.version, 1);
+      for (const value of [
+        privateName,
+        backupPassphrase,
+        fullURL.split("#k=")[1],
+        newPassword,
+      ])
+        assert.ok(
+          !backupBytes.includes(Buffer.from(value)),
+          "key backup must contain only authenticated ciphertext",
+        );
+      await page.evaluate(
+        (id) =>
+          new Promise((resolve, reject) => {
+            const open = indexedDB.open("parcel-e2ee-v1");
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+              const db = open.result,
+                tx = db.transaction("records", "readwrite");
+              tx.objectStore("records").delete(`share-key:${id}`);
+              tx.oncomplete = () => {
+                db.close();
+                resolve();
+              };
+              tx.onerror = () => reject(tx.error);
+            };
+          }),
+        share.id,
+      );
+      await page.reload();
+      await expect(
+        page.getByText("此浏览器没有解密密钥，无法显示文件名或复制可用链接。", {
+          exact: false,
+        }),
+      ).toBeVisible();
+      await expect(page.getByLabel("分享链接", { exact: true })).toHaveCount(0);
+      await page.getByText("备份 / 导入本机分享密钥", { exact: true }).click();
+      await page
+        .getByLabel("备份口令（至少 12 字节）", { exact: true })
+        .fill("incorrect-backup-passphrase");
+      await page.getByLabel("导入密钥备份", { exact: true }).setInputFiles({
+        name: exported.suggestedFilename(),
+        mimeType: "application/json",
+        buffer: backupBytes,
+      });
+      await expect(
+        page.getByRole("alert").filter({ hasText: "备份密码不正确" }),
+      ).toBeVisible({ timeout: 30000 });
+      await expect(page.getByLabel("分享链接", { exact: true })).toHaveCount(0);
+      await page
+        .getByLabel("备份口令（至少 12 字节）", { exact: true })
+        .fill(backupPassphrase);
+      await page.getByLabel("导入密钥备份", { exact: true }).setInputFiles({
+        name: exported.suggestedFilename(),
+        mimeType: "application/json",
+        buffer: backupBytes,
+      });
+      await expect(page.getByLabel("分享链接", { exact: true })).toHaveValue(
+        fullURL,
+        { timeout: 30000 },
+      );
+      assert.equal(puts, 1);
+
+      await page.goto(fullURL);
+      await expect(
+        page.getByRole("heading", { name: "解锁加密分享", exact: true }),
+      ).toBeVisible();
+      await page.getByLabel("分享密码", { exact: true }).fill(oldPassword);
+      await page.getByRole("button", { name: "解锁文件", exact: true }).click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: "密码或链接密钥不正确" }),
+      ).toBeVisible({ timeout: 30000 });
+      assert.equal(
+        unlockCalls,
+        0,
+        "wrong cryptographic password must fail locally before requesting a server grant",
+      );
+      await page.getByLabel("分享密码", { exact: true }).fill(newPassword);
+      await page.getByRole("button", { name: "解锁文件", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "下载文件", exact: true }),
+      ).toBeVisible({ timeout: 30000 });
+      assert.equal(unlockCalls, 1);
+      corrupt = true;
+      await page.getByRole("button", { name: "下载文件", exact: true }).click();
+      await expect(
+        page.getByRole("alert").filter({ hasText: "文件分块认证失败" }),
+      ).toBeVisible({ timeout: 30000 });
+      await expect(
+        page.getByRole("button", { name: "保存解密文件", exact: true }),
+      ).toHaveCount(0);
+      assert.ok(cipherGets >= 1);
+      assert.equal(await page.evaluate(() => window.__parcelTestSaves), 0);
+      assert.equal(unexpectedFileDownloads, 0);
+      assert.equal(
+        await page.evaluate(
+          () =>
+            new Promise((resolve, reject) => {
+              const open = indexedDB.open("parcel-e2ee-v1");
+              open.onerror = () => reject(open.error);
+              open.onsuccess = () => {
+                const db = open.result,
+                  request = db
+                    .transaction("chunks")
+                    .objectStore("chunks")
+                    .count();
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                  db.close();
+                  resolve(request.result);
+                };
+              };
+            }),
+        ),
+        0,
+        "unauthenticated ciphertext must not be persisted as resumable content",
+      );
+      assert.equal(
+        (
+          await f.db
+            .prepare("SELECT download_count FROM shares WHERE id=?")
+            .bind(share.id)
+            .first()
+        ).download_count,
+        1,
+      );
+      assert.deepEqual(errors, []);
+      assert.equal(f.unexpected, 0);
+    },
+  );
+}
+
 for (const [name, engine, viewport] of [
   ["chromium", chromium, { width: 1440, height: 1000 }],
   ["firefox", firefox, { width: 1440, height: 1000 }],
   ["mobile", chromium, { width: 390, height: 844 }],
 ]) {
   test(
-    `V3 frontend actual workerd/D1/R2 upload, password download and revoke (${name})`,
-    { timeout: 120000 },
+    `V3 frontend actual workerd/D1/R2 encrypted upload, password unwrap, streamed save and revoke (${name})`,
+    {
+      timeout: 120000,
+      // Firefox's route interception omits XHR Blob bodies. The real HTTPS
+      // suite exercises its actual ciphertext upload and saving path instead.
+      skip:
+        name === "firefox"
+          ? "Firefox binary transport is covered by e2ee-browser.mjs over real HTTPS"
+          : false,
+    },
     async (t) => {
       const f = await fixture(t),
         browser = await engine.launch({ headless: true });
@@ -205,6 +577,35 @@ for (const [name, engine, viewport] of [
           acceptDownloads: true,
         }),
         page = await context.newPage();
+      // Route.fulfill is not an HTTP origin that can install a Service Worker.
+      // Exercise the native writer contract here; the HTTPS suite separately
+      // proves the real browser Service Worker download path and disk output.
+      await page.addInitScript(() => {
+        window.__parcelTestSaved = [];
+        window.showSaveFilePicker = async ({ suggestedName }) => ({
+          async createWritable() {
+            const record = {
+              name: suggestedName,
+              chunks: [],
+              closed: false,
+              aborted: false,
+            };
+            window.__parcelTestSaved.push(record);
+            return {
+              async write(bytes) {
+                record.chunks.push(bytes.slice());
+              },
+              async close() {
+                record.closed = true;
+              },
+              async abort() {
+                record.aborted = true;
+                record.chunks = [];
+              },
+            };
+          },
+        });
+      });
       const passwordRequests = [];
       let puts = [],
         downloads = 0,
@@ -238,6 +639,12 @@ for (const [name, engine, viewport] of [
             (/\/uploads$/.test(url.pathname) || /\/unlock$/.test(url.pathname))
           ) {
             const payload = JSON.parse(body.toString());
+            if (/\/uploads$/.test(url.pathname)) {
+              assert.equal(payload.name, undefined);
+              assert.equal(payload.sha256, undefined);
+              assert.equal(payload.encryption.version, 1);
+              assert.ok(!body.includes(Buffer.from("v3-file.bin")));
+            }
             if (payload.password_proof) {
               assert.equal(payload.password, undefined);
               assert.ok(!body.includes(Buffer.from("v3-password")));
@@ -268,13 +675,12 @@ for (const [name, engine, viewport] of [
               .bind(key)
               .first();
             assert.ok(u);
-            const bytes =
-              req.postDataBuffer() ||
-              source.slice(
-                (Number(url.searchParams.get("partNumber")) - 1) * (16 << 20),
-                Number(url.searchParams.get("partNumber")) * (16 << 20),
-              );
+            const bytes = req.postDataBuffer();
             assert.ok(bytes);
+            assert.ok(
+              !bytes.includes(source.subarray(0, 1024)),
+              "R2 must receive ciphertext rather than the original file",
+            );
             const result = await f.put(
               u.id,
               Number(url.searchParams.get("partNumber")),
@@ -295,14 +701,26 @@ for (const [name, engine, viewport] of [
           downloads++;
           const object = await f.bucket.get(key);
           assert.ok(object);
+          const bytes = Buffer.from(await object.arrayBuffer());
+          const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers().range || "");
+          assert.ok(
+            range,
+            "encrypted downloads request complete authenticated chunks",
+          );
+          const start = Number(range[1]),
+            end = Number(range[2]);
+          assert.ok(end < bytes.length);
           return route.fulfill({
-            status: 200,
+            status: 206,
             headers: {
               "Content-Type": "application/octet-stream",
-              "Content-Disposition": "attachment; filename=v3-file.bin",
+              "Content-Disposition": "attachment; filename=encrypted.parcel",
               "Access-Control-Allow-Origin": f.config.PUBLIC_URL,
+              "Access-Control-Expose-Headers": "Content-Range, Content-Length",
+              "Content-Range": `bytes ${start}-${end}/${bytes.length}`,
+              "Content-Length": String(end - start + 1),
             },
-            body: Buffer.from(await object.arrayBuffer()),
+            body: bytes.subarray(start, end + 1),
           });
         }
         throw new Error(`Unexpected browser dependency: ${url.origin}`);
@@ -353,9 +771,12 @@ for (const [name, engine, viewport] of [
       await expect(
         page.getByRole("heading", { name: "文件已装好，交给对方吧。" }),
       ).toBeVisible({ timeout: 30000 });
-      assert.deepEqual(puts, [16 << 20, 3]);
+      assert.deepEqual(puts, [(16 << 20) + 28, 31]);
       const share = await f.db.prepare("SELECT * FROM shares").first();
-      assert.equal(share.size, bytes.length);
+      assert.equal(share.size, bytes.length + 56);
+      assert.equal(share.plaintext_size, bytes.length);
+      assert.equal(share.name, "encrypted.parcel");
+      assert.ok(!JSON.stringify(share).includes("v3-file.bin"));
       assert.equal(share.download_count, 0);
       assert.equal(share.max_downloads, unlimited ? -1 : 3);
       if (unlimited) {
@@ -369,9 +790,13 @@ for (const [name, engine, viewport] of [
           fullPage: true,
         });
       }
-      await page.goto(f.config.PUBLIC_URL + "/s/" + share.id);
+      const fullURL = await page
+        .getByLabel("分享链接", { exact: true })
+        .inputValue();
+      assert.match(fullURL, new RegExp(`/s/${share.id}#k=[A-Za-z0-9_-]{43}$`));
+      await page.goto(fullURL);
       await expect(
-        page.getByRole("heading", { name: "输入密码，打开这份分享。" }),
+        page.getByRole("heading", { name: "解锁加密分享" }),
       ).toBeVisible();
       await page.getByLabel("分享密码", { exact: true }).fill("v3-password");
       await page.getByRole("button", { name: "解锁文件", exact: true }).click();
@@ -390,20 +815,54 @@ for (const [name, engine, viewport] of [
       );
       assert.ok(!browserStorage.includes(passwordRequests[0].key));
       assert.ok(!browserStorage.includes("v3-password"));
-      const downloadPromise = page.waitForEvent("download");
       await page.getByRole("button", { name: "下载文件", exact: true }).click();
-      const download = await downloadPromise,
-        actual = await readFile(await download.path());
+      await expect(
+        page.getByRole("button", { name: "保存解密文件", exact: true }),
+      ).toBeVisible({ timeout: 30000 });
+      await page
+        .getByRole("button", { name: "保存解密文件", exact: true })
+        .click();
+      await expect(
+        page.getByRole("button", { name: "再次保存解密文件", exact: true }),
+      ).toBeVisible({ timeout: 30000 });
+      const saved = await page.evaluate(async () => {
+        const record = window.__parcelTestSaved[0];
+        const all = new Uint8Array(
+          record.chunks.reduce((n, chunk) => n + chunk.length, 0),
+        );
+        let offset = 0;
+        for (const chunk of record.chunks) {
+          all.set(chunk, offset);
+          offset += chunk.length;
+        }
+        const digest = await crypto.subtle.digest("SHA-256", all);
+        return {
+          name: record.name,
+          closed: record.closed,
+          aborted: record.aborted,
+          chunkLengths: record.chunks.map((chunk) => chunk.length),
+          hash: Array.from(new Uint8Array(digest), (value) =>
+            value.toString(16).padStart(2, "0"),
+          ).join(""),
+        };
+      });
+      assert.equal(saved.name, "v3-file.bin");
+      assert.equal(saved.closed, true);
+      assert.equal(saved.aborted, false);
+      assert.deepEqual(saved.chunkLengths, [16 << 20, 3]);
       assert.equal(
-        createHash("sha256").update(actual).digest("hex"),
+        saved.hash,
         createHash("sha256").update(bytes).digest("hex"),
       );
-      await expect(
-        page.getByRole("button", { name: "再次下载 / 继续" }),
-      ).toBeVisible();
-      const again = page.waitForEvent("download");
-      await page.getByRole("button", { name: "再次下载 / 继续" }).click();
-      await again;
+      await page
+        .getByRole("button", { name: "再次保存解密文件", exact: true })
+        .click();
+      await expect
+        .poll(() => page.evaluate(() => window.__parcelTestSaved.length))
+        .toBe(2);
+      await expect
+        .poll(() => page.evaluate(() => window.__parcelTestSaved[1]?.closed))
+        .toBe(true);
       assert.equal(
         (
           await f.db
@@ -423,7 +882,7 @@ for (const [name, engine, viewport] of [
       await expect(
         page.getByText("已撤销", { exact: true }).first(),
       ).toBeVisible();
-      await page.goto(f.config.PUBLIC_URL + "/s/" + share.id);
+      await page.goto(fullURL);
       await expect(
         page.getByRole("heading", { name: "已撤销", exact: true }),
       ).toBeVisible();

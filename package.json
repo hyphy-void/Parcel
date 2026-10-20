@@ -10,6 +10,8 @@
     "deploy": "node scripts/deploy-template.mjs",
     "deploy:bootstrap": "node scripts/deploy-v3.mjs",
     "test:v3": "npm --prefix cloudflare run test:v3",
+    "test:crypto": "node --experimental-strip-types --test web/tests/e2ee-crypto.mts",
+    "test:e2ee:https": "npm --prefix cloudflare run test:e2ee:https",
     "test:v3:r2-live": "node scripts/probe-v3-r2.mjs",
     "build:production": "node scripts/prepare-worker-build.mjs && ./scripts/build-v3.sh",
     "deploy:production": "node scripts/deploy-production.mjs",
@@ -21,10 +23,10 @@
         "description": "Parcel 的状态数据库，保存分享、上传任务和下载会话。"
       },
       "FILES": {
-        "description": "私有 R2 存储，文件直接上传/下载。"
+        "description": "私有 R2 存储；V3 浏览器分块加密后直传，接收端本机解密。"
       },
       "PUBLIC_URL": {
-        "description": "正式 HTTPS 地址，无结尾斜杠；须为此地址配置管理员 Access 应用及 R2 CORS。"
+        "description": "正式 HTTPS 地址，无结尾斜杠；为此地址配置 R2 CORS，选择原生 TOTP 或 Access 管理员登录。"
       },
       "ACCESS_TEAM_DOMAIN": {
         "description": "Zero Trust 组织的 https://your-team.cloudflareaccess.com 地址；见图文部署手册。"

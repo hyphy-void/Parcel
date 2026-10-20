@@ -38,6 +38,7 @@ export function NativeAdminForm({
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -82,11 +83,20 @@ export function NativeAdminForm({
   }, [enrollment]);
 
   const setup = config?.auth_mode === "totp" && !config.initialized;
+  function enterAdministration() {
+    setAuthenticated(true);
+    setPassword("");
+    setConfirmation("");
+    setSetupToken("");
+    setCode("");
+    location.replace("/admin");
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!config || busy) return;
     setBusy(true);
     setError("");
+    let loginAttempted = false;
     try {
       if (enrollment) {
         const result = await api<{ recovery_codes: string[]; csrf: string }>(
@@ -114,6 +124,7 @@ export function NativeAdminForm({
             : security
               ? "enroll"
               : "login";
+        loginAttempted = action === "login";
         const result = await api<Enrollment>(
           `/auth/${action}`,
           {
@@ -133,10 +144,26 @@ export function NativeAdminForm({
         setConfirmation("");
         setSetupToken("");
         setCode("");
-        if (action === "login") location.assign("/admin");
+        if (action === "login") enterAdministration();
         else setEnrollment(result);
       }
     } catch (e) {
+      if (loginAttempted) {
+        // The login cookie can arrive even when the response body is lost or
+        // stalls. Reconcile before asking for another TOTP code, which may
+        // already have been consumed by the successful first request.
+        try {
+          const session = await api<{ csrf: string }>("/auth/session", {
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (session.csrf) {
+            enterAdministration();
+            return;
+          }
+        } catch {
+          /* The original error remains actionable. */
+        }
+      }
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -158,6 +185,19 @@ export function NativeAdminForm({
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  if (authenticated)
+    return (
+      <>
+        <h1>登录成功</h1>
+        <p className="muted">
+          正在进入管理页面。若页面未跳转，可使用下方链接。
+        </p>
+        <a className="button primary full" href="/admin">
+          进入管理页面 <ArrowRight size={18} aria-hidden="true" />
+        </a>
+      </>
+    );
 
   if (!config)
     return (
