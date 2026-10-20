@@ -54,5 +54,5 @@ web/index.html: ✓ pass
 - axe-core 对 12 种页面状态 × 2 种主题 × 4 个宽度（1440、768、390、320）检查，共 96 组，0 违规、0 横向溢出。规则包含 WCAG 2 A/AA、2.1 AA 与 best-practice。
 - 96 组截图和原始检查报告位于忽略目录 `.taste-skill/app-review/`；原始三宽度 inspector 输出位于 `.taste-skill/app-final/`。
 
-生产实例使用 Cloudflare Worker 与 main 分支自动构建部署；部署时核对该提交的构建结果、正式资源、公开接收 API 和管理员 Access 跳转。无需为此次界面更新更改 D1 schema、运行变量或存储对象。
+本记录描述 2026-10-19 的界面调整。当前生产验收应核对 main 分支构建结果、正式资源、加密接收 API 与管理员密码 + TOTP 登录；传输、运行时配置和数据库迁移以 [V3 部署说明](v3-deployment.md)为准。
 
