@@ -15,8 +15,8 @@
     <link rel="alternate" hreflang="en" href="./" />
     <link rel="alternate" hreflang="zh-CN" href="zh.html" />
     <link rel="canonical" href="https://parcelwiki.pages.dev/zh.html" />
-    <link rel="stylesheet" href="style.css" />
-    <script src="guide.js" defer></script>
+    <link rel="stylesheet" href="style.css?v=20261020-totp-e2ee" />
+    <script src="guide.js?v=20261020-totp-e2ee" defer></script>
   </head>
   <body id="top">
     <a class="skip-link" href="#main">跳转到正文</a>
@@ -83,15 +83,16 @@
         aria-labelledby="security-title"
       >
         <div class="section-heading">
-          <h2 id="security-title">文件怎样被保护</h2>
+          <h2 id="security-title">文件在浏览器加密</h2>
           <p>
-            Cloudflare V3
-            在发送者浏览器加密、接收者浏览器解密。文件密钥留在两端。
+            端到端加密：明文只在发送者和接收者的浏览器出现。Cloudflare
+            接收、保存和返回的都是密文，明文文件密钥不会上传。
           </p>
         </div>
-        <figure class="transfer-figure">
-          <div class="transfer-map">
-            <div class="transfer-browser">
+        <figure class="e2ee-figure">
+          <div class="e2ee-flow" data-e2ee-flow>
+            <div class="e2ee-endpoint e2ee-sender">
+              <p class="flow-node-title">发送者浏览器</p>
               <svg aria-hidden="true" viewBox="0 0 96 112">
                 <path
                   d="M16 4h42l24 24v80H16zM58 4v26h24M30 52h38M30 68h38M30 84h24"
@@ -100,52 +101,70 @@
                   stroke-width="5"
                 />
               </svg>
-              <p class="flow-node-title">你的浏览器</p>
-              <span>上传前加密，下载后解密</span>
+              <strong class="e2ee-file-label">原始文件</strong>
+              <p>
+                本机生成随机文件密钥，按 16 MiB 原文分块，用 AES-256-GCM
+                加密后上传。
+              </p>
             </div>
-            <div class="transfer-route">
-              <p class="flow-node-title">AES-GCM 分块</p>
-              <svg class="flow-arrow" aria-hidden="true" viewBox="0 0 160 40">
+            <div class="e2ee-route">
+              <span>上传密文</span
+              ><svg class="flow-arrow" aria-hidden="true" viewBox="0 0 160 40">
                 <path
                   d="M4 20h148m-18-14 18 14-18 14"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="4"
-                /></svg
-              ><span>16 MiB 原文 → HTTPS 传输密文</span>
+                />
+              </svg>
             </div>
-            <div class="transfer-store">
-              <svg aria-hidden="true" viewBox="0 0 120 112">
-                <ellipse
-                  cx="60"
-                  cy="20"
-                  rx="48"
-                  ry="15"
+            <div class="e2ee-cloud">
+              <p class="flow-node-title">Cloudflare</p>
+              <p class="e2ee-cipher">密文</p>
+              <p>
+                私有 R2 保存加密数据；D1 保存加密密钥信封。Worker
+                检查权限、有效期和次数，签发短期下载地址。
+              </p>
+              <p class="e2ee-keyless">云端没有明文文件密钥</p>
+            </div>
+            <div class="e2ee-route">
+              <span>下载密文</span
+              ><svg class="flow-arrow" aria-hidden="true" viewBox="0 0 160 40">
+                <path
+                  d="M4 20h148m-18-14 18 14-18 14"
                   fill="none"
                   stroke="currentColor"
-                  stroke-width="5"
+                  stroke-width="4"
                 />
+              </svg>
+            </div>
+            <div class="e2ee-endpoint e2ee-recipient">
+              <p class="flow-node-title">接收者浏览器</p>
+              <svg aria-hidden="true" viewBox="0 0 96 112">
                 <path
-                  d="M12 20v68c0 20 96 20 96 0V20M12 54c0 20 96 20 96 0"
+                  d="M16 4h42l24 24v80H16zM58 4v26h24M30 52h38M30 68h38M30 84h24"
                   fill="none"
                   stroke="currentColor"
                   stroke-width="5"
                 />
               </svg>
-              <p class="flow-node-title">私有 R2</p>
-              <span>仅保存密文，不持有文件解密密钥</span>
-            </div>
-            <div class="transfer-control">
-              <p class="transfer-title">Parcel Worker + D1</p>
+              <strong class="e2ee-file-label">还原文件</strong>
               <p>
-                验证权限、有效期与下载次数，签发短期密文访问地址。
-                不接收明文文件密钥与原始文件名。
+                用完整链接和可选分享密码在本机解开密钥信封，验证分块后解密保存，并核对完整
+                SHA-256。
               </p>
             </div>
           </div>
+          <div class="e2ee-key-route">
+            <p class="flow-node-title">解密材料由你交给对方</p>
+            <p>
+              完整链接中的 #k=…，加上你设置的分享密码 →
+              接收者浏览器。片段密钥不随 HTTP 请求发送，也不进入 Parcel API。
+            </p>
+          </div>
           <figcaption>
-            每个文件使用独立的随机 256 位密钥。每个分块使用新的 12 字节随机
-            nonce 和 16 字节认证标签，额外占用 28
+            每个文件使用独立的随机 256 位密钥。每块使用新的 12 字节随机 nonce 和
+            16 字节认证标签，额外占用 28
             字节；认证同时绑定文件身份、块顺序与长度。
           </figcaption>
         </figure>
@@ -159,23 +178,24 @@
           <h3>链接密钥与分享密码</h3>
           <ol class="password-flow">
             <li>
-              <strong>保留完整链接</strong>
+              <h4>保留完整链接</h4>
               <p>
                 分享链接的 # 后保存随机 32 字节密钥材料。URL 片段不会随 HTTP
                 请求发送；Parcel 也不会把它加入
-                API。缺少这部分，服务器无法解包文件密钥。
+                API。缺少这部分，接收者无法解包文件密钥，服务器也无法代为恢复。
               </p>
             </li>
             <li>
-              <strong>本机解包密钥</strong>
+              <h4>本机解包密钥</h4>
               <p>
-                有密码时，浏览器用独立随机盐运行 Argon2id，再由 HKDF
-                结合链接密钥材料，用 AES-GCM
-                包裹文件密钥和元信息。接收者需要完整链接与密码。
+                无密码时，链接材料经 HKDF
+                派生信封密钥。有密码时，浏览器先用独立随机盐运行
+                Argon2id，再与链接材料共同经 HKDF 派生，用 AES-GCM
+                包裹文件密钥和元信息。接收者需要完整链接与所设置的密码。
               </p>
             </li>
             <li>
-              <strong>单独验证下载权限</strong>
+              <h4>单独验证下载权限</h4>
               <p>
                 另一份使用不同盐的密码派生凭据，经 HTTPS 交给 Worker
                 做在线授权；它不是解包密钥。有效期、次数、撤销和管理员 TOTP
@@ -193,8 +213,8 @@
         </p>
         <p class="security-sources">
           <a
-            href="https://developers.cloudflare.com/r2/reference/data-security/"
-            >查看 R2 加密说明</a
+            href="https://github.com/hyphy-void/Parcel/blob/main/docs/e2ee-protocol.md"
+            >查看端到端加密协议</a
           >
           ·
           <a
@@ -223,8 +243,7 @@
               <nav aria-label="部署章节">
                 <a href="#prepare">准备账户</a>
                 <a href="#button">创建应用</a>
-                <a href="#totp">密码与动态码</a
-                ><a href="#access">Access（可选）</a>
+                <a href="#totp">密码与动态码</a>
                 <a href="#r2">创建 R2 凭据</a>
                 <a href="#variables">保存变量与密钥</a>
                 <a href="#cors">允许浏览器直传</a>
@@ -240,10 +259,9 @@
               <h3>准备账户</h3>
               <div class="answer">
                 <p>
-                  准备 GitHub 与 Cloudflare 账户，先启用 R2 与 Workers
-                  子域名。已有账户无需重复创建。选择 Access 认证时才需要建立
-                  Zero Trust 组织；TOTP 模式不需要。R2
-                  可能要求添加付款方式；请本人完成套餐和付款设置。
+                  准备 GitHub 与 Cloudflare 账户，开通 R2 并设置 Workers
+                  子域名。已有账户无需重复创建。R2
+                  可能要求绑定付款方式；请自行完成套餐与付款设置。
                 </p>
                 <p>
                   本教程适用于新实例。现有 Go、Pages 或 V3
@@ -276,9 +294,9 @@
                   <code translate="no">R2_BUCKET_NAME</code>。
                 </p>
                 <p>
-                  关闭“启用预览构建”。部署页面的“使用 Cloudflare Access
-                  保护”保持关闭，让公开分享正常访问。接下来设置
-                  ADMIN_AUTH=totp；如果选择 Access 方案，只保护管理员路径。
+                  关闭“启用预览构建”，并在 Worker 的运行时变量中明确设置
+                  <code translate="no">ADMIN_AUTH=totp</code
+                  >。管理员使用密码与认证器动态码登录，公开分享页供接收者访问。
                 </p>
                 <p>
                   首次保持
@@ -314,7 +332,8 @@
                   <figcaption>
                     正式 parcel 实例的成功构建：Build settings 显示 npm run
                     build:production、npm run deploy:production 与根目录
-                    /；顶部绿色勾号表示构建成功，图中提交为 9c5abf2。这是既有实例的生产构建示例；新用户按钮部署应使用
+                    /；顶部绿色勾号表示构建成功，图中提交为
+                    9c5abf2。这是既有实例的生产构建示例；新用户按钮部署应使用
                     npm run build 与 npm run deploy，不能照抄这里带 :production
                     的命令。
                   </figcaption>
@@ -325,11 +344,10 @@
               <h3>密码与动态码登录</h3>
               <div class="answer">
                 <p>
-                  推荐使用 Parcel 自带的管理员密码 + TOTP，不需要邮箱验证码。在
-                  Worker 运行时设置
+                  管理员使用 Parcel 自带的密码 + TOTP 登录。在 Worker
+                  的运行时变量里设置
                   <code translate="no">ADMIN_AUTH=totp</code
-                  >。未设置时，程序仍默认使用下面的 Access
-                  方案；仅更新代码不会自动切换。
+                  >；此项必填，代码更新不会自动补充控制台变量。按下面的步骤完成首次初始化。
                 </p>
                 <figure class="binding-figure">
                   <div class="binding-map">
@@ -430,77 +448,13 @@
                   </li>
                 </ol>
                 <p>
-                  现有实例从 Access 切换时，先在已有 Access
-                  会话中完成绑定，再解除 Parcel
-                  的七个管理路径拦截（见下方路径清单）。用新的无痕窗口验证密码 +
-                  TOTP 登录与匿名 API 401 后，再开放实例。其他服务的 Access
-                  配置无需修改。
+                  初始化完成后，用新的无痕窗口验证密码 + TOTP
+                  登录、错误凭据被拒绝，以及匿名管理 API 返回
+                  401。确认上传和公开分享都正常后，再开放实例。
                 </p>
               </div>
             </article>
-            <article id="access">
-              <h3>Access（可选）</h3>
-              <div class="answer">
-                <p>
-                  仅在使用
-                  <code translate="no">ADMIN_AUTH=access</code
-                  >（或未设置认证模式）时执行本节。TOTP
-                  模式跳过本节，不需要管理员邮箱和 Access JWT。
-                </p>
-                <p>
-                  进入 Zero Trust → Access controls → Applications，添加
-                  Self-hosted 应用。使用准备访问的 HTTPS 域名，可先用自己的
-                  <code translate="no">worker.账户.workers.dev</code> 地址。
-                </p>
-                <p>为同一个应用添加以下七个路径，避免保护整个域名：</p>
-                <pre
-                  tabindex="0"
-                  role="region"
-                  aria-label="管理员 Access 路径"
-                ><code translate="no">/admin
-/admin/*
-/login
-/api/v1/auth/*
-/api/v1/admin/*
-/api/v1/uploads
-/api/v1/uploads/*</code></pre>
-                <p>
-                  创建 Allow 策略，Include 选择 Emails 并填写管理员邮箱。启用
-                  One-time PIN 或你自己的身份提供商。不要添加
-                  Bypass，也不要把整个域名设为管理员应用；首页与
-                  <code translate="no">/s/*</code> 分享页需要公开访问。
-                </p>
-                <figure>
-                  <a href="images/access.webp"
-                    ><img
-                      src="images/access.webp"
-                      alt="parcel-admin 自托管 Access 应用的七个公共主机名路径，域名已替换为 example.com"
-                      width="2522"
-                      height="1311"
-                      loading="lazy"
-                  /></a>
-                  <figcaption>
-                    Access controls → Applications → parcel-admin → Edit →
-                    Public
-                    hostnames。图中七条路径属于同一个应用；真实域名已实色覆盖并替换为
-                    example.com。为自己的应用配置相同路径，Allow
-                    策略仅包含管理员邮箱。
-                  </figcaption>
-                </figure>
-                <p>
-                  复制应用的 AUD，记录组织 Team domain，如
-                  <code translate="no"
-                    >https://your-team.cloudflareaccess.com</code
-                  >。分别填入 Worker 的
-                  <code translate="no">ACCESS_AUD</code> 和
-                  <code translate="no">ACCESS_TEAM_DOMAIN</code>，<code
-                    translate="no"
-                    >ADMIN_EMAILS</code
-                  >
-                  与策略邮箱保持一致。多个管理员用逗号分隔。
-                </p>
-              </div>
-            </article>
+
             <article id="r2">
               <h3>创建 R2 凭据</h3>
               <div class="answer">
@@ -601,33 +555,13 @@
                   普通变量至少填写 <code translate="no">PUBLIC_URL</code>、<code
                     translate="no"
                     >ADMIN_AUTH=totp</code
-                  >、<code translate="no">R2_ENDPOINT</code>、<code
-                    translate="no"
-                    >R2_BUCKET_NAME</code
-                  >。PUBLIC_URL 必须等于实际访问的 HTTPS
-                  origin，无路径、无尾部斜杠。只有 Access 模式才需要
-                  ACCESS_TEAM_DOMAIN、ACCESS_AUD 和 ADMIN_EMAILS；TOTP
-                  首次绑定另需临时 Secret ADMIN_SETUP_TOKEN。
+                  >、<code translate="no">R2_ENDPOINT</code> 和
+                  <code translate="no">R2_BUCKET_NAME</code>。PUBLIC_URL
+                  必须等于实际访问的 HTTPS
+                  origin，无路径、无尾部斜杠。首次绑定还需临时 Secret
+                  <code translate="no">ADMIN_SETUP_TOKEN</code
+                  >；绑定完成后移除。
                 </p>
-                <figure>
-                  <a href="images/variables.webp"
-                    ><img
-                      src="images/variables.webp"
-                      alt="生产环境变量与加密密钥列表，账户与身份信息已实色覆盖并填入示例"
-                      width="1886"
-                      height="2200"
-                      loading="lazy"
-                  /></a>
-                  <figcaption>
-                    Runtime variables and secrets →
-                    Production。更新后的截图已设置
-                    ADMIN_AUTH=totp，绑定完成后已移除 ADMIN_SETUP_TOKEN。原
-                    Access 变量仅为历史保留，不参与 TOTP
-                    认证。身份与账户值已覆盖为示例，密钥显示 Value
-                    encrypted。图中实例 ACTIVE=true、配额
-                    20&nbsp;GiB；新部署先保持 ACTIVE=false，默认配额 9&nbsp;GB。
-                  </figcaption>
-                </figure>
               </div>
             </article>
             <article id="cors">
@@ -644,8 +578,8 @@
                     ><img
                       src="images/r2-cors.webp"
                       alt="私有 R2 桶的 CORS Policy 编辑器，真实来源已替换为示例地址"
-                      width="675"
-                      height="640"
+                      width="1395"
+                      height="1266"
                       loading="lazy"
                   /></a>
                   <figcaption>
@@ -729,13 +663,6 @@
           </div>
           <div class="config-controls">
             <form id="config-form" novalidate hidden>
-              <div class="form-field">
-                <label for="admin-auth">管理员认证方式</label
-                ><select id="admin-auth" name="admin-auth">
-                  <option value="totp">密码 + TOTP（推荐）</option>
-                  <option value="access">Cloudflare Access</option>
-                </select>
-              </div>
               <div class="form-field">
                 <label for="origin">应用 HTTPS 地址</label>
                 <input
@@ -838,9 +765,8 @@
           </div>
           <p>
             <span id="auth-config-help"
-              >TOTP 模式还需保存三项长期密钥，以及仅用于首次绑定的
-              ADMIN_SETUP_TOKEN；Access 模式另填 Team domain、AUD
-              与管理员邮箱。</span
+              >另存三项长期密钥，以及仅用于首次绑定的
+              ADMIN_SETUP_TOKEN。设置管理员密码、绑定认证器并保存恢复码后，移除初始化密钥。</span
             >
           </p>
         </div>
@@ -867,10 +793,10 @@
         <div class="verify-checks">
           <ol>
             <li>
-              无痕窗口打开 <code translate="no">/admin</code>：TOTP
-              模式应直接显示密码与动态码登录，错误密码或动态码均不能通过；匿名管理
-              API 应返回 401。Access 模式则应进入 Access
-              登录，未授权邮箱不能访问。
+              无痕窗口打开
+              <code translate="no">/admin</code
+              >，应显示密码与动态码登录。错误密码或动态码均不能通过；匿名管理
+              API 应返回 401。
             </li>
             <li>
               上传空文件、小文件与多分块文件，分别创建无密码和有密码分享；暂停、刷新、重选原文件续传。
@@ -895,7 +821,7 @@
           </ol>
           <p>
             Workers Free 的 CPU 预算为每次请求 10&nbsp;ms。本地测试不能证明线上
-            CPU、Access 或真实 R2 配置；生产报 1102 时请检查指标。<a
+            CPU 或真实 R2 配置；生产报 1102 时请检查指标。<a
               href="https://developers.cloudflare.com/workers/platform/limits/"
               >查看 Workers 限制</a
             >。
@@ -908,19 +834,20 @@
           <details id="faq-unconfigured" name="troubleshooting">
             <summary>页面返回 serverless_unconfigured</summary>
             <p>
-              按所选模式检查变量与三项长期密钥。TOTP 需 ADMIN_AUTH=totp；Access
-              另需组织域名、AUD 与邮箱白名单。SESSION_SECRET 必须为 64
-              位十六进制；PUBLIC_URL 和 R2_ENDPOINT 必须是无路径、无尾部斜杠的
-              HTTPS 地址。
+              检查
+              <code translate="no">ADMIN_AUTH=totp</code>
+              与三项长期密钥。SESSION_SECRET 必须为 64 位十六进制；PUBLIC_URL 和
+              R2_ENDPOINT 必须是无路径、无尾部斜杠的 HTTPS 地址。未初始化时还需
+              ADMIN_SETUP_TOKEN。
             </p>
           </details>
           <details id="faq-login-loop" name="troubleshooting">
             <summary>返回 host_denied 或登录循环</summary>
             <p>
-              访问域名须等于 PUBLIC_URL。TOTP 模式若仍跳转邮箱验证，检查是否有
-              Access 应用覆盖这七个管理路径。Access 模式核对应用域名、AUD、Team
-              domain 与管理员邮箱。切换 Parcel 应用域名时同步更新 PUBLIC_URL 与
-              R2 CORS；教程站点迁移不需要修改应用域名。
+              访问域名须等于 PUBLIC_URL，并允许站点保存会话
+              Cookie。动态码不通过时，检查认证器设备是否自动同步时间；每个 30
+              秒时间步只使用一次。登录请求超时后，页面会检查是否已建立会话，可按提示进入管理页或重新登录。应用域名变更时，同步更新
+              PUBLIC_URL 与 R2 CORS；教程站点迁移不改变应用域名。
             </p>
           </details>
           <details id="faq-upload-errors" name="troubleshooting">
@@ -939,11 +866,10 @@
               使用可丢弃的演示文件与密钥，不公开真实完整链接、密码、密钥备份或认证器密钥。
             </p>
             <p>
-              教程中的八张 Cloudflare 配置图仍适用：绑定、模板构建、可选
-              Access、R2 凭据、 变量、添加密钥、CORS 与生产构建。E2EE
-              不新增运行时密钥或 CORS 请求头；
-              两张构建图可按需刷新为新版本的发布证据。TOTP
-              绑定继续使用网页示意，无需真实扫码截图。
+              教程保留六张 Cloudflare 配置图：绑定、构建成功详情、R2
+              凭据、添加密钥、CORS
+              与生产构建设置。运行时变量由配置工具直接生成。端到端加密不新增服务端文件密钥或
+              CORS 请求头。TOTP 绑定使用网页示意，无需真实扫码截图。
             </p>
           </details>
           <details id="faq-updates" name="troubleshooting">

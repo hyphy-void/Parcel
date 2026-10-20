@@ -125,19 +125,11 @@ for (const locale of ["index.html", "zh.html"]) {
       await page.locator("#vars-output").textContent(),
       /\nADMIN_AUTH=totp\n/,
     );
-    await page.locator("#admin-auth").selectOption("access");
-    assert.equal(await page.locator("#config-result").isVisible(), false);
-    await page.locator('button[type="submit"]').click();
-    assert.match(
+    assert.equal(await page.locator("#admin-auth").count(), 0);
+    assert.doesNotMatch(
       await page.locator("#vars-output").textContent(),
-      /\nADMIN_AUTH=access\n/,
+      /ACCESS_TEAM_DOMAIN|ACCESS_AUD|ADMIN_EMAILS/,
     );
-    assert.match(
-      await page.locator("#auth-config-help").textContent(),
-      /ACCESS_TEAM_DOMAIN/,
-    );
-    await page.locator("#admin-auth").selectOption("totp");
-    await page.locator('button[type="submit"]').click();
     assert.match(
       await page.locator("#auth-config-help").textContent(),
       /ADMIN_SETUP_TOKEN/,
@@ -405,7 +397,7 @@ test("without JavaScript the guide, chapter links, screenshots, and CORS example
         "X-Amz-Meta-Parcel-Upload",
       ),
     );
-    assert.equal(await page.locator("img").count(), 8);
+    assert.equal(await page.locator("img").count(), 6);
   }
   await page.close();
 });

@@ -11,10 +11,6 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 # Mask coordinates and font sizes use the review viewport; scale to source pixels.
 REVIEWED = {
-    'access': ((2522, 1311), (2048, 1065), [
-        ((724, y, 1280, y + 40), 'example.com', 25)
-        for y in (214, 328, 448, 568, 688, 808, 928)
-    ]),
     'add-secret': ((1217, 680), (1217, 680), []),
     'bindings': ((1788, 636), (1788, 636), [
         ((823, 222, 1510, 279), 'Namespace ID: YOUR_ADMIN_NAMESPACE_ID', 28),
@@ -23,34 +19,17 @@ REVIEWED = {
     'builds': ((1840, 2457), (1366, 1824), [
         ((590, 1310, 1203, 1352), 'YOUR_RESOURCE_CONFIG_JSON', 24),
     ]),
-    'r2-cors': ((1515, 1424), (1515, 1424), [
-        ((306, 410, 809, 451), 'https://parcel.example.com', 26),
+    'r2-cors': ((1395, 1266), (1395, 1266), [
+        ((247, 374, 804, 414), 'https://parcel.example.com', 26),
     ]),
     'r2-token': ((2327, 2345), (2327, 2345), []),
     'template-build': ((2452, 1127), (2452, 1127), []),
-    'variables': ((1750, 1859), (1536, 1631), [
-        ((706, 194, 1340, 243), 'YOUR_ACCESS_AUD', 24),
-        ((706, 289, 1340, 338), 'https://YOUR_TEAM.cloudflareaccess.com', 24),
-        ((706, 481, 1340, 530), 'admin@example.com', 24),
-        ((706, 865, 1340, 914), 'https://parcel.example.com', 24),
-        ((706, 1152, 1340, 1201), 'https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com', 24),
-    ]),
 }
 
-# 2026-10-20 user-provided refresh. Keep original pixel dimensions and redact
-# identity values before publishing. CORS values are completed in the guide's
-# copyable JSON; the source capture is never silently rewritten as dashboard UI.
+# 2026-10-20 user-provided CORS refresh: mask only the origin. Policy values
+# remain the actual dashboard capture, at its original pixel dimensions.
 REFRESHED = {
-    'variables': ((1886, 2200), (1454, 1696), [
-        ((678, 183, 1295, 231), 'YOUR_ACCESS_AUD', 24),
-        ((678, 276, 1295, 324), 'https://YOUR_TEAM.cloudflareaccess.com', 24),
-        ((678, 552, 1295, 602), 'admin@example.com', 24),
-        ((678, 920, 1295, 972), 'https://parcel.example.com', 24),
-        ((678, 1198, 1295, 1250), 'https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com', 24),
-    ]),
-    'r2-cors': ((1414, 1271), (1414, 1271), [
-        ((247, 375, 860, 417), 'https://parcel.example.com', 26),
-    ]),
+    'r2-cors': REVIEWED['r2-cors'],
 }
 
 
@@ -58,7 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
     parser.add_argument('--only', nargs='+', choices=sorted(REVIEWED), help='Encode only the selected reviewed captures')
-    parser.add_argument('--refresh', action='store_true', help='Encode the reviewed 2026-10-20 variables and CORS captures only')
+    parser.add_argument('--refresh', action='store_true', help='Encode the reviewed 2026-10-20 CORS capture only')
     parser.add_argument('--cors-complete', type=Path, help='Use the reviewed 1396x719 native dashboard capture after saving the complete CORS policy')
     default_font = 'C:/Windows/Fonts/segoeui.ttf'
     parser.add_argument('--font', default=default_font if Path(default_font).is_file() else 'DejaVuSans.ttf')

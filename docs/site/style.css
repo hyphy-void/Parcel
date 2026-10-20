@@ -403,17 +403,73 @@ select {
 .security-section {
   background: var(--surface);
 }
-.transfer-figure {
+.e2ee-figure {
   margin: 0 0 40px;
 }
-.transfer-map {
+.e2ee-flow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 24px 4vw;
+  grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1.12fr) 88px minmax(
+      0,
+      1fr
+    );
+  gap: 16px;
 }
-.transfer-browser,
-.transfer-store,
+.e2ee-endpoint,
+.e2ee-cloud {
+  padding: 28px;
+  min-width: 0;
+}
+.e2ee-endpoint {
+  background: var(--paper);
+}
+.e2ee-endpoint > svg {
+  width: 64px;
+  height: 76px;
+  margin: 24px 0 16px;
+}
+.e2ee-file-label {
+  display: block;
+  font-size: 20px;
+}
+.e2ee-endpoint > p:last-child,
+.e2ee-cloud > p:last-child {
+  margin-bottom: 0;
+}
+.e2ee-cloud {
+  background: var(--bg);
+}
+.e2ee-cipher {
+  font-size: var(--subheading);
+  font-weight: 800;
+  line-height: 1.1;
+  margin: 32px 0;
+}
+.e2ee-keyless {
+  font-weight: 700;
+}
+.e2ee-route {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  font-size: 16px;
+  text-align: center;
+}
+.e2ee-key-route {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 32px;
+  padding: 28px;
+  margin-top: 24px;
+  background: var(--ink);
+  color: var(--paper);
+}
+.e2ee-key-route > p {
+  margin: 0;
+}
+.e2ee-key-route .flow-node-title {
+  color: var(--bg);
+}
 .binding-screen,
 .binding-phone {
   display: flex;
@@ -422,18 +478,8 @@ select {
   gap: 12px;
   min-width: 0;
 }
-.transfer-browser,
-.transfer-store {
-  padding: 32px;
-}
-.transfer-browser {
-  background: var(--paper);
-}
-.transfer-store {
-  background: var(--bg);
-}
 .flow-node-title,
-.password-flow strong {
+.password-flow h4 {
   display: block;
   font-size: var(--lead);
   line-height: 1.3;
@@ -442,13 +488,6 @@ select {
   margin: 0;
   font-weight: 700;
 }
-.transfer-browser > svg,
-.transfer-store > svg {
-  height: 100px;
-  width: 110px;
-  margin-bottom: 12px;
-}
-.transfer-route,
 .binding-route {
   display: flex;
   flex-direction: column;
@@ -458,23 +497,6 @@ select {
   display: block;
   width: 100%;
   height: 40px;
-}
-.transfer-control {
-  grid-column: 2 / -1;
-  padding: 28px 32px;
-  background: var(--ink);
-  color: var(--paper);
-}
-.transfer-control .transfer-title {
-  color: var(--bg);
-  font-size: var(--lead);
-  font-weight: 700;
-  line-height: 1.3;
-  margin: 0;
-}
-.transfer-control p {
-  margin: 12px 0 0;
-  max-width: 56ch;
 }
 .security-truth {
   max-width: 84ch;
@@ -499,8 +521,9 @@ select {
 .password-flow li::marker {
   font-weight: 700;
 }
-.password-flow strong {
+.password-flow h4 {
   display: inline;
+  margin: 0;
 }
 .password-flow p {
   margin: 12px 0 0;
@@ -538,28 +561,43 @@ select {
 .binding-recovery .flow-node-title {
   color: var(--bg);
 }
+@media (max-width: 1050px) {
+  .e2ee-flow,
+  .e2ee-key-route {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .e2ee-route {
+    align-items: center;
+    gap: 8px;
+    padding-block: 8px;
+  }
+  .e2ee-route .flow-arrow {
+    width: 64px;
+    transform: rotate(90deg);
+    margin-block: 8px;
+  }
+  .e2ee-key-route {
+    gap: 16px;
+  }
+}
 @media (max-width: 600px) {
-  .transfer-map,
   .binding-map,
   .password-explainer {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
   }
-  .transfer-browser,
-  .transfer-store,
-  .transfer-control,
+  .e2ee-endpoint,
+  .e2ee-cloud,
+  .e2ee-key-route,
   .binding-map {
     padding: 24px;
   }
-  .transfer-control,
   .binding-recovery {
     grid-column: 1;
   }
-  .transfer-route,
   .binding-route {
     gap: 8px;
   }
-  .transfer-route .flow-arrow,
   .binding-route .flow-arrow {
     width: 60px;
     transform: rotate(90deg);

@@ -198,7 +198,7 @@ Cloudflare 构建的 API Token 使用已拥有的部署 Token，或另行配置�
 
 ## 教程截图更新清单
 
-[中英图文教程](https://parcelwiki.pages.dev) 的原有八张 Cloudflare 配置图继续适用：`bindings.webp`、`template-build.webp`、`access.webp`、`r2-token.webp`、`variables.webp`、`add-secret.webp`、`r2-cors.webp`、`builds.webp`。E2EE 无新增环境变量、服务端 Secret 或 CORS 请求头；其中 Access 图仍仅为可选方案。两张构建图可按需重拍为新提交的发布证据，现有 TOTP 绑定示意保留，不需要真实扫码截图。
+[中英图文教程](https://parcelwiki.pages.dev) 统一使用管理员密码 + TOTP，保留六张 Cloudflare 配置图：`bindings.webp`、`template-build.webp`、`r2-token.webp`、`add-secret.webp`、`r2-cors.webp`、`builds.webp`。运行时变量由配置工具固定生成 `ADMIN_AUTH=totp`；旧认证步骤及包含废弃字段的变量截图已撤下。E2EE 无新增环境变量、服务端文件密钥或 CORS 请求头。构建成功详情与 CORS 图已使用 2026-10-20 的截图更新，TOTP 绑定示意保留，不需要真实扫码截图。
 
 需要更新或新增的应用侧截图是：上传创建与本机哈希/加密进度、成功页完整链接提示、分享详情的密码修改与加密密钥备份、接收页密码解锁、密文接收/暂停/续传、解密保存与本机缓存清理。只使用可丢弃演示文件和密钥；公开图片必须遮住真实 `#k=…`、分享密码、备份口令/内容、TOTP 和恢复码。原理图继续使用网页绘制，不把真实密钥截图用作说明。
 
