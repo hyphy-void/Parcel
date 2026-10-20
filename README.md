@@ -1,86 +1,102 @@
 <h1 align="center">Parcel</h1>
 
-<p align="center"><strong>Upload. Share. Disappear.</strong></p>
-<p align="center">End-to-end encrypted file sharing on your own Cloudflare account.<br>Encrypt in the browser. Share a link. Let expired files clean themselves up.</p>
+<p align="center"><strong>上传。分享。到期清理。</strong></p>
+<p align="center">在自己的 Cloudflare 账户上，搭建端到端加密的临时文件分享站。<br>浏览器加密，链接分享，到期自动清理。</p>
 
-<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center"><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
 
 <p align="center">
-  <a href="https://github.com/hyphy-void/Parcel/actions/workflows/ci.yml"><img src="https://github.com/hyphy-void/Parcel/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
-  <a href="docs/e2ee-protocol.md"><img src="https://img.shields.io/badge/encryption-AES--256--GCM-2ea44f" alt="Encryption: AES-256-GCM"></a>
+  <a href="https://github.com/hyphy-void/Parcel/actions/workflows/ci.yml"><img src="https://github.com/hyphy-void/Parcel/actions/workflows/ci.yml/badge.svg" alt="持续集成"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT 许可证"></a>
+  <a href="docs/e2ee-protocol.md"><img src="https://img.shields.io/badge/encryption-AES--256--GCM-2ea44f" alt="AES-256-GCM 加密"></a>
 </p>
 
 <p align="center">
-  <a href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare"></a>
+  <a href="https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel"><img src="https://deploy.workers.cloudflare.com/button" alt="部署到 Cloudflare"></a>
 </p>
 
 <p align="center">
-  <a href="https://parcelwiki.pages.dev/">English guide</a> ·
-  <a href="https://parcelwiki.pages.dev/zh">中文教程</a> ·
-  <a href="#deploy-your-own">Deploy your own</a> ·
-  <a href="docs/e2ee-protocol.md">Encryption protocol</a>
+  <a href="https://parcelwiki.pages.dev/zh">中文图文教程</a> ·
+  <a href="#开始部署">开始部署</a> ·
+  <a href="docs/v3-deployment.md">部署与维护</a> ·
+  <a href="docs/e2ee-protocol.md">加密协议</a>
 </p>
 
 ---
 
-Send a large file, hand over a link, and decide how long it stays available. Parcel gives you a temporary file drop with browser-side encryption, resumable transfers, and automatic cleanup—all running in your own Cloudflare account.
+发一份大文件，给对方一个链接，再为这次分享设定结束时间。Parcel 将端到端加密、断点续传和自动清理放进同一个分享流程，运行在你自己的 Cloudflare 账户中。
 
-The sender's browser encrypts the file before it leaves the device. Private R2 stores ciphertext. The recipient's browser decrypts and saves it locally. File keys and original filenames stay inside an encrypted envelope that the server cannot unlock.
+文件在发送者的浏览器中加密，直传私有 R2；接收者在浏览器中解密并保存。文件密钥与原始文件名封装在加密信封里，服务端无法解包读取。
 
-## Why Parcel?
+## 架构概览
 
-- **Encrypt before upload.** Each file gets a random 256-bit key. AES-256-GCM authenticates every chunk; a full-file SHA-256 check verifies the saved content.
-- **Share with an expiry date.** Set a share password, choose a lifetime, and cap download admissions—or allow unlimited downloads. Revoke a share whenever you need to.
-- **Pick up where you left off.** Resume uploads after reselecting and verifying the original file. Downloads reuse complete cached chunks after a refresh.
-- **Move large files in chunks.** Streaming encryption and saving keep memory use bounded. The default per-file limit is **8 GiB**, configurable for your deployment.
-- **Keep administration protected.** Administrator password + TOTP, QR or manual authenticator enrollment, and eight recovery codes. Share passwords are managed separately.
-- **Run it in your account.** Workers serves the UI and API, D1 tracks state, and private R2 stores encrypted files. Scheduled cleanup reclaims storage after shares expire, are revoked, or reach their download limit.
+![Parcel 架构：发送者浏览器加密，私有 R2 保存密文，Workers + D1 管理访问授权，接收者浏览器验证、解密并保存文件。](docs/images/architecture.zh-CN.png)
 
-## From file to link
+## 操作预览
 
-1. **Upload.** Sign in, select a file, and choose its password, expiry, and download limit. Parcel hashes the file, encrypts it in chunks, and uploads the ciphertext directly to R2.
-2. **Share.** Copy the complete link, including `#k=…`. Send the optional password separately.
-3. **Receive.** The recipient opens the link, enters the password if needed, and receives encrypted chunks. Once reception finishes, **Save decrypted file** verifies, decrypts, and streams the file to disk.
-4. **Manage.** Revoke access or change the password from your dashboard. Password changes rewrap the key envelope without uploading the file again; the managing browser needs the local share key or an imported backup.
+### 新建分享
 
-> **Keep the full link and back up your share keys.** Export an encrypted key backup before clearing site data or switching devices. Administrator login cannot recover missing file keys.
+选择文件，设置有效期、下载次数与可选的分享密码，然后上传并创建分享。
 
-## How it works
+![新建分享：选择文件，设置有效期、下载次数与密码保护。](docs/images/new-share-zh-CN.png)
 
-![Parcel architecture: browsers encrypt and decrypt locally, private R2 stores ciphertext, and Workers + D1 authorizes access.](docs/images/architecture.webp)
+### 我的分享
 
-Files are encrypted in **16 MiB chunks**. Filenames, media types, modification times, plaintext hashes, and file keys are sealed in an authenticated metadata envelope. The `#k=…` fragment carries random link material; URL fragments are not sent with HTTP requests, and Parcel keeps it out of its API calls. An optional password adds Argon2id-based protection to the envelope.
+查看存储用量和分享记录，进入分享详情，按需撤销分享。
 
-The service can see file sizes, share IDs, access rules, download counts, and request metadata. Encryption relies on the page code you load, your browser, and your device. For the format, key derivation, trust boundaries, and test coverage, read the [encryption protocol](docs/e2ee-protocol.md).
+![我的分享：存储配额、分享记录、已用下载资格与分享状态。](docs/images/my-shares-zh-CN.png)
 
-## Deploy your own
+## 为什么选择 Parcel？
 
-You need a Cloudflare account with Workers, D1, and R2 enabled, plus Node.js 24 and Bash for the local setup commands. On Windows, use Git Bash or WSL.
+- **先加密，再上传。** 每份文件使用独立随机 256 位密钥，通过 AES-256-GCM 逐块加密认证，保存时再核对完整文件的 SHA-256。
+- **为分享设定结束时间。** 设置分享密码、有效期和下载次数，也可选择不限次数；需要提前结束时，随时撤销分享。
+- **中断之后，接着传。** 上传可在重选并校验原文件后续传；下载会保留完整缓存块，刷新页面后继续接收。
+- **大文件，分块处理。** 加密和保存采用分块、流式处理，内存占用不随文件总大小增长。默认单文件上限为 **8 GiB**，可按部署需求调整。
+- **管理员入口，双重验证。** 密码 + TOTP 登录，支持扫码或手动绑定认证器，并提供八个恢复码。管理员密码与分享密码分别管理。
+- **部署在自己的账户里。** Workers 托管页面与 API，D1 管理状态，私有 R2 保存密文。分享到期、撤销或下载次数耗尽后，由定时任务清理并回收存储空间。
 
-The [illustrated guide](https://parcelwiki.pages.dev/) walks through every dashboard step and includes a [configuration generator](https://parcelwiki.pages.dev/#config) for runtime variables and R2 CORS.
+## 从文件到链接
 
-### 1. Create the application
+1. **上传。** 登录后选择文件，设置分享密码、有效期和下载上限。浏览器先计算完整哈希，再逐块加密并直传 R2。
+2. **分享。** 复制包含 `#k=…` 的完整链接。设置了分享密码时，建议通过另一条渠道发送密码。
+3. **接收。** 对方打开完整链接，按需输入密码，接收加密文件块。接收完成后，点击“保存解密文件”，浏览器逐块验证、解密并流式写入磁盘。
+4. **管理。** 在管理页面撤销分享或修改密码。更换密码会重新封装密钥信封并更新在线授权凭据，无需重传文件；操作浏览器需持有本机分享密钥，或先导入密钥备份。
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
+> **保留完整链接，备份本机分享密钥。** 清理网站数据或更换设备前，请导出加密密钥备份。管理员登录不能找回丢失的文件密钥。
 
-Use Node **24**, repository root `/`, build command `npm run build`, and deploy command `npm run deploy`. The deployment applies D1 migrations. Keep **`ACTIVE=false`** during setup.
+## 文件如何受到保护
 
-### 2. Connect your storage and URL
+文件按 **16 MiB** 分块加密。文件名、媒体类型、修改时间、原文哈希与文件密钥一起保存在经过认证的加密信封中。分享链接的 `#k=…` 片段携带随机链接材料；URL 片段不随 HTTP 请求发送，Parcel 也不会把它传入 API。设置分享密码后，信封还会获得基于 Argon2id 的密码保护。
 
-Use the [configuration generator](https://parcelwiki.pages.dev/#config) to set `PUBLIC_URL`, the R2 endpoint, and bucket name. Apply its CORS policy to the private bucket. Keep **`ADMIN_AUTH=totp`** for administrator password + authenticator login.
+服务端可见文件大小、分享 ID、访问规则、下载次数与请求元信息。加密机制信任实际加载的页面代码、浏览器和设备。文件格式、密钥派生、信任边界与测试范围见[加密协议](docs/e2ee-protocol.md)。
 
-Save these long-lived Worker Secrets:
+## 开始部署
 
-| Secret | Value |
+准备一个已开通 Workers、D1 和 R2 的 Cloudflare 账户，以及用于本机初始化的 Node.js 24 与 Bash。Windows 可使用 Git Bash 或 WSL。
+
+[中文图文教程](https://parcelwiki.pages.dev/zh)提供完整的控制台操作步骤，配套[配置工具](https://parcelwiki.pages.dev/zh#config)可生成运行时变量与 R2 CORS 策略。
+
+### 1. 创建应用
+
+[![部署到 Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
+
+使用 Node **24**、仓库根目录 `/`、构建命令 `npm run build` 和部署命令 `npm run deploy`。部署过程会应用 D1 迁移；首次配置期间保持 **`ACTIVE=false`**。
+
+### 2. 配置访问地址与存储
+
+通过[配置工具](https://parcelwiki.pages.dev/zh#config)填写 `PUBLIC_URL`、R2 地址与桶名，并将生成的 CORS 策略应用到私有桶。保持 **`ADMIN_AUTH=totp`**，使用管理员密码与认证器动态码登录。
+
+保存以下长期 Worker Secrets：
+
+| Secret | 用途与要求 |
 | --- | --- |
-| `SESSION_SECRET` | An independent random 64-character hexadecimal value. Preserve it across deployments. |
-| `R2_ACCESS_KEY_ID` | An R2 S3 credential scoped to the application's bucket. |
-| `R2_SECRET_ACCESS_KEY` | The matching R2 S3 secret, with Object Read & Write access. |
+| `SESSION_SECRET` | 独立生成的 64 位十六进制随机值，后续部署保持不变。 |
+| `R2_ACCESS_KEY_ID` | 限定到应用所用存储桶的 R2 S3 Access Key ID。 |
+| `R2_SECRET_ACCESS_KEY` | 与 Access Key ID 配套的 R2 S3 Secret，凭据需具备 Object Read & Write 权限。 |
 
-### 3. Enroll the administrator
+### 3. 初始化管理员
 
-Generate a temporary setup token locally:
+在本机生成临时初始化令牌：
 
 ```bash
 git clone https://github.com/hyphy-void/Parcel.git
@@ -88,42 +104,42 @@ cd Parcel
 npm run admin:setup-token
 ```
 
-Copy the contents of the ignored `.parcel-v3/admin-setup-token.txt` file into a temporary Worker Secret named `ADMIN_SETUP_TOKEN`. Open `/login`, set an administrator password of at least 12 characters, and enroll your authenticator by QR code or manual entry. Confirm with a six-digit TOTP code.
+将 Git 忽略文件 `.parcel-v3/admin-setup-token.txt` 的内容保存为临时 Worker Secret `ADMIN_SETUP_TOKEN`。打开应用的 `/login` 页面，设置至少 12 位管理员密码，扫码或手动绑定认证器，再输入六位 TOTP 动态码确认。
 
-### 4. Save recovery codes and activate
+### 4. 保存恢复码，启用分享
 
-Store the **eight recovery codes** separately, then remove `ADMIN_SETUP_TOKEN`. Verify password + TOTP login in a new window. Set **`ACTIVE=true`**, deploy, and test an encrypted upload, a decrypted download, and revocation. Maintenance mode permits administrator enrollment and login while file transfers remain disabled.
+单独保存**八个恢复码**，然后移除 `ADMIN_SETUP_TOKEN`。在新窗口验证密码与 TOTP 登录后，将 **`ACTIVE=true`** 并部署，完成加密上传、解密下载与撤销分享测试。维护状态允许管理员初始化与登录，文件传输在激活后开放。
 
-The template defaults to a **9 GB application storage quota** and an **8 GiB per-file limit**. These are application settings; Cloudflare account allowances and billing are separate.
+模板默认应用存储配额为 **9 GB**，单文件上限为 **8 GiB**。这两项属于应用配置；Cloudflare 账户额度与账单另行计算。
 
-Prefer the CLI? Follow the [deployment reference](docs/v3-deployment.md) to prepare a local configuration, then use `npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`. Complete administrator enrollment in maintenance mode before deploying with `--activate`.
+也可按[部署文档](docs/v3-deployment.md)准备本机配置后，运行 `npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`。先在维护状态完成管理员绑定，再加 `--activate` 部署激活。
 
-## Know before you send
+## 分享与接收须知
 
-| Topic | What to expect |
+| 事项 | 使用方式 |
 | --- | --- |
-| **Local disk space** | Receiving stages ciphertext in browser storage before saving the decrypted file. Allow roughly twice the file size, plus headroom. Browser quotas, private browsing, and available disk space affect capacity. Keep the page open while saving. |
-| **Transfer recovery** | Keep site data to retain upload keys and cached download chunks. Upload recovery also requires the original file; expired sessions or evicted browser data may require a new transfer. |
-| **Download limits** | Counts track admitted transfers, rather than successful saves or unique people. Retries, resumes, and URL renewals within the same valid session do not consume another admission. Interrupted transfers do not refund one. |
-| **Revocation and expiry** | Stop new download admissions. Previously issued URLs remain usable until they expire; files, keys, and ciphertext already obtained cannot be recalled. Cleanup waits for outstanding access before deleting objects. |
-| **Key backups** | Export local share keys as encrypted JSON with a separate 12–256 UTF-8-byte passphrase. Keep the backup and passphrase secure; losing all usable keys, full links, and backups makes server-side recovery impossible. |
+| **本机存储空间** | 接收时先缓存密文，再保存解密文件，通常需要约两倍文件大小的空间并预留余量。浏览器配额、无痕模式与可用磁盘空间会影响容量；保存期间保持页面打开。 |
+| **断点续传** | 保留网站数据，以保存上传密钥与已接收的完整密文块。上传续传还需重新选择原文件；会话过期或浏览器缓存被清理后，可能需要重新发起传输。 |
+| **下载次数** | 统计获准传输的资格，不等同于成功保存次数或独立人数。同一有效会话内的重试、续传和签名地址续签不重复扣次；传输中断不退还已消耗的资格。 |
+| **撤销与到期** | 停止发放新下载资格。已签发地址在有效期内仍可使用，已取得的文件、密钥与密文副本无法收回；清理任务会等待已签发访问失效后删除对象。 |
+| **密钥备份** | 将本机分享密钥导出为加密 JSON，使用独立的 12–256 UTF-8 字节口令，妥善保管备份与口令。可用密钥、完整链接与备份全部丢失后，服务端无法恢复文件。 |
 
-## Updating an existing instance
+## 更新已有实例
 
-For a configured production Worker with a verified custom domain, use the production commands after preparing `PARCEL_WORKER_BUILD_CONFIG` as described in the [update instructions](docs/v3-deployment.md):
+已完成配置并验证自定义域名的正式 Worker，按[更新说明](docs/v3-deployment.md)准备 `PARCEL_WORKER_BUILD_CONFIG` 后执行：
 
 ```bash
 npm run build:production
 npm run deploy:production
 ```
 
-The deployment applies pending D1 migrations before publishing the Worker and retains existing runtime variables, long-lived Secrets, and administrator enrollment. Keep compatible Worker versions and D1/R2 backups for recovery.
+部署会先应用未完成的 D1 迁移，再发布 Worker，保留现有运行时变量、长期 Secrets 与管理员绑定。为恢复准备兼容的 Worker 版本，以及配套的 D1/R2 备份。
 
-Upgrading from an older, unencrypted deployment? Reupload original files to create encrypted shares. Existing migrations do not encrypt or erase old objects. Encrypted shares require a compatible Worker and cannot be served by the independent Go application.
+从旧版未加密部署升级时，请用原文件重新上传，生成新的加密分享。现有迁移不会自动加密或清空旧对象。加密分享需要兼容的 Worker，独立 Go 应用不能提供这类文件的下载。
 
-## Development
+## 开发与验证
 
-The Cloudflare deployment uses React + TypeScript, Workers, D1, and private R2. From the repository root, with Node.js 24 and Bash:
+Cloudflare 部署使用 React + TypeScript、Workers、D1 与私有 R2。在仓库根目录，使用 Node.js 24 和 Bash 执行：
 
 ```bash
 npm run build
@@ -134,24 +150,24 @@ PARCEL_LOGIN_WEB_DIR="$PWD/dist/v3-web" node --test web/tests/login-response.mjs
 npm run test:e2ee:https
 ```
 
-Browser tests require installed Playwright browsers. The real HTTPS suite runs on Linux and needs OpenSSL and NSS `certutil`; see [test prerequisites and optional large-file acceptance](docs/e2ee-protocol.md#acceptance). Verify R2 CORS, signed requests, and transfers on your deployed instance as well.
+浏览器测试需要安装 Playwright 浏览器。真实 HTTPS 套件运行于 Linux，并依赖 OpenSSL 和 NSS `certutil`；环境准备与可选大文件验收见[协议验收说明](docs/e2ee-protocol.md#acceptance)。上线时还需验证实际部署中的 R2 CORS、签名请求与文件传输。
 
-The repository also retains an independent Go/SQLite application using its earlier protocol. Its build and test instructions are in the [operations guide](docs/operations.md); the Cloudflare deployment's TOTP and file encryption features apply to the Worker application described here.
+仓库同时保留采用原有协议的独立 Go/SQLite 应用，其构建与测试步骤见[运维文档](docs/operations.md)。本页介绍的 TOTP 与文件端到端加密功能适用于 Cloudflare 部署。
 
-## Documentation
+## 文档导航
 
-| Start here | What's inside |
+| 文档 | 内容 |
 | --- | --- |
-| [English setup guide](https://parcelwiki.pages.dev/) · [中文教程](https://parcelwiki.pages.dev/zh) | Illustrated deployment, configuration generator, and troubleshooting. |
-| [Deployment reference](docs/v3-deployment.md) | Secrets, CORS, administrator recovery, updates, and backups. |
-| [Encryption protocol](docs/e2ee-protocol.md) | File format, key derivation, trust model, and acceptance tests. |
-| [Acceptance status](docs/v3-plan.md) | Verified behavior and the scope of each check. |
-| [Security policy](SECURITY.md) | How to report vulnerabilities privately. |
+| [中文图文教程](https://parcelwiki.pages.dev/zh) · [English guide](https://parcelwiki.pages.dev/) | 从创建应用到上线验证，附配置工具与常见问题。 |
+| [部署与维护](docs/v3-deployment.md) | Secrets、CORS、管理员恢复、更新与备份。 |
+| [加密协议](docs/e2ee-protocol.md) | 文件格式、密钥派生、信任模型与验收测试。 |
+| [验收状态](docs/v3-plan.md) | 已验证的行为与各项检查的适用范围。 |
+| [安全策略](SECURITY.md) | 安全漏洞的私密报告方式。 |
 
-## Contributing
+## 参与贡献
 
-Issues and pull requests are welcome. Describe the behavior you want to change, include relevant validation, and add screenshots for UI changes. Keep credentials, full share links, private files, and database snapshots out of public reports.
+欢迎提交 Issue 与 Pull Request。请说明希望改进的行为，附上相关验证结果；涉及界面调整时，提供截图。凭据、完整分享链接、私有文件和数据库快照请勿放入公开报告。
 
-## License
+## 许可证
 
-[MIT](LICENSE). Deploy it, adapt it, make it yours.
+[MIT](LICENSE)。自由部署，自由修改，搭建属于你的文件分享站。

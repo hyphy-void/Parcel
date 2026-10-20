@@ -1,0 +1,27 @@
+Use case: text-localization.
+Asset type: Simplified Chinese architecture illustration for the default GitHub README of Parcel.
+Input image: docs/images/architecture.png is the edit target and exact visual reference.
+Primary request: Create a polished Simplified Chinese version of this architecture image. Translate all explanatory English labels into the exact Chinese below, preserving the diagram's architecture, layout, visual identity, icons, node hierarchy, and arrow routing. Use the highest native resolution available, wide landscape approximately 16:9, opaque background, generous margins. Text must be sharp, correct, and readable at an 850px README width.
+Style: precise flat editorial information design. Keep the bold headline, clean sans-serif Chinese typography, simple black outline icons, straight connectors and clear arrowheads. Exact palette: vivid orange #FF8126, paper #F5F5F2, near-black #151715, muted gray #E8EAE5. No gradients, shadows, 3D, texture, watermark, or new decorative elements.
+Layout invariants: left sender browser orange panel, center bounded Cloudflare group containing Private R2 above Workers + D1, right recipient browser panel. Keep the orange dashed link-sharing route below and OUTSIDE the Cloudflare group. Preserve margins and all elements inside the frame. Adjust text size and line breaks naturally for Chinese, while keeping the existing composition and visual balance.
+Replace text exactly as follows:
+"Parcel" -> "Parcel" (unchanged wordmark)
+"Encrypted at both ends." -> "端到端加密。"
+"Sender’s browser" -> "发送者浏览器"
+"Hash + encrypt" -> "计算哈希 + 加密"
+"Your Cloudflare account" -> "你的 Cloudflare 账户"
+"Private R2" -> "私有 R2"
+"Encrypted files" -> "加密文件"
+"Workers + D1" -> "Workers + D1"
+"Access rules + encrypted envelopes" -> "访问规则 + 加密信封"
+"Recipient’s browser" -> "接收者浏览器"
+"Verify + decrypt + save" -> "验证 + 解密 + 保存"
+"Upload ciphertext" -> "上传密文"
+"Download ciphertext" -> "下载密文"
+"Signed upload access" -> "上传签名授权"
+"Signed download access" -> "下载签名授权"
+"Full link + optional password" -> "完整链接 + 可选密码"
+"Link key (#k=...) stays out of API requests." -> "链接密钥（#k=...）不会发送到 API。"
+"AES-256-GCM / 16 MiB chunks / SHA-256 verification" -> "AES-256-GCM / 16 MiB 分块 / SHA-256 校验"
+Technical invariants: solid data arrows from sender browser directly to private R2 and from private R2 directly to recipient browser. File bytes never flow through Workers + D1. Dashed gray authorization arrows from Workers + D1 outward toward both browsers. Orange dashed link arrow from sender browser directly to recipient browser, bypassing all Cloudflare nodes. The recipient verifies and decrypts in their browser. Never depict plaintext, file keys, or link secrets sent to Cloudflare.
+Constraints: Chinese labels exactly as specified, with Parcel, Cloudflare, Workers + D1, R2, AES-256-GCM, MiB, SHA-256, API and #k=... preserved. No extra labels or claims, no historical generation names. Preserve the original illustration's composition and style; localize only the text and fit it cleanly.
