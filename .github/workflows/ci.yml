@@ -33,6 +33,7 @@ jobs:
       - name: Verify V3 Worker, real D1/R2 and deployment/migration tools
         run: |
           ./scripts/build-v3.sh --skip-install
+          npm run test:crypto
           npm --prefix cloudflare run test:v3
           node --test scripts/tests/worker-build.test.mjs scripts/tests/v3-credentials.test.mjs
           node --test scripts/tests/guide.test.mjs
@@ -52,6 +53,12 @@ jobs:
         working-directory: web
       - run: npm --prefix cloudflare run test:browser
       - run: npm --prefix cloudflare run test:browser:v3
+      - name: Verify real browser E2EE transport, saving and login response recovery
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssl libnss3-tools
+          PARCEL_LOGIN_WEB_DIR="$PWD/dist/v3-web" node --test web/tests/login-response.mjs
+          npm run test:e2ee:https
       - uses: actions/upload-artifact@v4
         with:
           name: parcel-linux

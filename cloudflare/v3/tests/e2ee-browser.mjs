@@ -281,6 +281,7 @@ async function harness(t, f, dir) {
         if (response.body) await pipeline(Readable.fromWeb(response.body), res);
         else res.end();
       } catch (error) {
+        if (req.aborted || res.destroyed) return;
         if (!res.headersSent) res.writeHead(500);
         res.end(String(error));
         console.error("acceptance transport:", error.message);
@@ -426,22 +427,6 @@ for (const name of engines)
           });
         }
       }
-      context.on("console", (message) => {
-        if (message.type() === "error")
-          console.log("browser console:", message.text());
-      });
-      context.on("requestfailed", (request) => {
-        if (request.url().includes("/__parcel_download/"))
-          console.log("save request failed:", request.failure());
-      });
-      context.on("response", (response) => {
-        if (response.url().includes("/__parcel_download/"))
-          console.log(
-            "save response:",
-            response.status(),
-            response.fromServiceWorker(),
-          );
-      });
       // Exercise the actual Service Worker fallback, including Chrome where a
       // native picker is normally available. This does not substitute the sink.
       await context.addInitScript(() =>
@@ -524,6 +509,7 @@ for (const name of engines)
         assert.ok(!request.body?.includes("browser-e2ee-private-password"));
       }
       const receiver = await context.newPage();
+      receiver.on("pageerror", (error) => errors.push(error.message));
       receiver.on("dialog", (d) => d.accept());
       await receiver.goto(link.split("#")[0]);
       await expect(
@@ -587,23 +573,6 @@ for (const name of engines)
             .first()
         ).download_count,
         1,
-      );
-      console.log(
-        "saving worker registration:",
-        await receiver.evaluate(async () => {
-          try {
-            const registration = await navigator.serviceWorker.register(
-              "/parcel-download-sw.js",
-              { scope: "/" },
-            );
-            return {
-              active: registration.active?.state,
-              installing: registration.installing?.state,
-            };
-          } catch (error) {
-            return { error: error.message };
-          }
-        }),
       );
       await expect
         .poll(
