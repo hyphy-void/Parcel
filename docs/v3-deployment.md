@@ -1,6 +1,6 @@
 # V3：Workers + D1 + 私有 R2
 
-V3 的页面和 API 由一个带 Static Assets 的 Worker 托管；D1 是分享、上传任务、下载会话和配额的唯一权威数据库。浏览器用 16 MiB Multipart 直接上传 R2，用短期签名 URL 直接下载。Cloudflare Access 认证管理员，Worker 验证 Access JWT、白名单、Origin 和 CSRF。树莓派、Go、SQLite、Tunnel 和内部 Origin 服务令牌退出这条请求链路。Go 部署模式继续保留；正式实例已切换 V3，线上验收与切换记录见 [V3 计划](v3-plan.md)。
+V3 的页面和 API 由一个带 Static Assets 的 Worker 托管；D1 是分享、上传任务、下载会话和配额的唯一权威数据库。浏览器用 16 MiB Multipart 直接上传 R2，用短期签名 URL 直接下载。管理员可使用密码 + TOTP，或继续使用 Cloudflare Access；Worker 校验会话或 Access JWT，并验证 Origin 和 CSRF。树莓派、Go、SQLite、Tunnel 和内部 Origin 服务令牌退出这条请求链路。Go 部署模式继续保留；正式实例已切换 V3，线上验收与切换记录见 [V3 计划](v3-plan.md)。
 
 ```mermaid
 flowchart LR
@@ -175,7 +175,7 @@ D1 快照不是 R2 文件备份；对象删除与数据库恢复必须一起考�
 
 普通 CI 运行 V3 构建、Wrangler dry-run、workerd/D1/R2、迁移和浏览器测试。`Deploy V3 staging Worker` 工作流只通过手动触发部署，使用 GitHub `v3` Environment 的 `PARCEL_V3_CONFIG` JSON 变量及上述四个 Secrets（会话密钥名为 `PARCEL_V3_SESSION_SECRET`，S3 凭据名为 `PARCEL_V3_R2_ACCESS_KEY_ID`、`PARCEL_V3_R2_SECRET_ACCESS_KEY`）。资源 ID 缓存只含非 Secret 状态；设置 Environment 分支限制和审批以控制真正部署。
 
-main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图文部署手册](https://parcel-guide.pages.dev) 配置，静态源文件位于 `docs/site/`，实际控制台截图脱敏后保存为 WebP。Cloudflare 自动创建 D1/R2，`npm run deploy` 按 DB binding 执行 migrations，并保留控制台运行时变量。首次模板为 `ACTIVE=false`，须完成 Access、三项密钥、PUBLIC_URL 和 R2 CORS 后手动启用。新模板配额为 9 GB，不是账单硬上限。[Deploy 按钮](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
+main 提供 MIT 开源源码和 Deploy to Cloudflare 入口。新实例按 [图文部署手册](https://parcelwiki.pages.dev) 配置，静态源文件位于 `docs/site/`，实际控制台截图脱敏后保存为 WebP。Cloudflare 自动创建 D1/R2，`npm run deploy` 按 DB binding 执行 migrations，并保留控制台运行时变量。首次模板为 `ACTIVE=false`，须完成所选管理员认证、三项长期密钥、PUBLIC_URL 和 R2 CORS 后手动启用。新模板配额为 9 GB，不是账单硬上限。[Deploy 按钮](https://developers.cloudflare.com/workers/platform/deploy-buttons/)
 
 新部署的 Worker、D1 数据库和私有 R2 桶默认统一命名为 `parcel`，CLI bootstrap 也使用相同默认名称。已有实例仍须填写自己的实际资源标识；修改模板默认名称不会替已有实例迁移数据。本地 `.parcel-v3/` 目录、源码目录和 `parcel/v3/` 对象前缀继续保留兼容用途，不代表需要创建另一套服务。
 

@@ -121,6 +121,27 @@ for (const locale of ["index.html", "zh.html"]) {
       await page.locator("#vars-output").textContent(),
       /R2_BUCKET_NAME=parcel-test[\s\S]*ACTIVE=false$/,
     );
+    assert.match(
+      await page.locator("#vars-output").textContent(),
+      /\nADMIN_AUTH=totp\n/,
+    );
+    await page.locator("#admin-auth").selectOption("access");
+    assert.equal(await page.locator("#config-result").isVisible(), false);
+    await page.locator('button[type="submit"]').click();
+    assert.match(
+      await page.locator("#vars-output").textContent(),
+      /\nADMIN_AUTH=access\n/,
+    );
+    assert.match(
+      await page.locator("#auth-config-help").textContent(),
+      /ACCESS_TEAM_DOMAIN/,
+    );
+    await page.locator("#admin-auth").selectOption("totp");
+    await page.locator('button[type="submit"]').click();
+    assert.match(
+      await page.locator("#auth-config-help").textContent(),
+      /ADMIN_SETUP_TOKEN/,
+    );
     await page.evaluate(() =>
       Object.defineProperty(navigator, "clipboard", {
         configurable: true,

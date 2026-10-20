@@ -14,6 +14,7 @@
     <title>Parcel — Cloudflare deployment guide</title>
     <link rel="alternate" hreflang="en" href="./" />
     <link rel="alternate" hreflang="zh-CN" href="zh.html" />
+    <link rel="canonical" href="https://parcelwiki.pages.dev/" />
     <link rel="stylesheet" href="style.css" />
     <script src="guide.js" defer></script>
   </head>
@@ -23,7 +24,7 @@
       <a class="wordmark" href="#top" translate="no">Parcel</a>
       <nav aria-label="Main navigation">
         <a href="#steps">Setup</a><a href="#config">Config tool</a
-        ><a href="#verify">Verify</a
+        ><a href="#security">Security</a
         ><a href="https://github.com/hyphy-void/Parcel">GitHub</a>
         <a
           class="language-switch"
@@ -79,6 +80,129 @@
           </div>
         </div>
       </section>
+      <section
+        id="security"
+        class="reading security-section"
+        aria-labelledby="security-title"
+      >
+        <div class="section-heading">
+          <h2 id="security-title">How protection works</h2>
+          <p>
+            Files travel over HTTPS. Passwords are processed in your browser.
+            Each has a separate job.
+          </p>
+        </div>
+        <figure class="transfer-figure">
+          <div class="transfer-map">
+            <div class="transfer-browser">
+              <svg aria-hidden="true" viewBox="0 0 96 112">
+                <path
+                  d="M16 4h42l24 24v80H16zM58 4v26h24M30 52h38M30 68h38M30 84h24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="5"
+                />
+              </svg>
+              <p class="flow-node-title">Your browser</p>
+              <span>Original file in and out</span>
+            </div>
+            <div class="transfer-route">
+              <p class="flow-node-title">HTTPS / TLS</p>
+              <svg class="flow-arrow" aria-hidden="true" viewBox="0 0 160 40">
+                <path
+                  d="M4 20h148m-18-14 18 14-18 14"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="4"
+                /></svg
+              ><span>Multipart upload · Signed download</span>
+            </div>
+            <div class="transfer-store">
+              <svg aria-hidden="true" viewBox="0 0 120 112">
+                <ellipse
+                  cx="60"
+                  cy="20"
+                  rx="48"
+                  ry="15"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="5"
+                />
+                <path
+                  d="M12 20v68c0 20 96 20 96 0V20M12 54c0 20 96 20 96 0"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="5"
+                />
+              </svg>
+              <p class="flow-node-title">Private R2</p>
+              <span>Storage keys managed by Cloudflare</span>
+            </div>
+            <div class="transfer-control">
+              <p class="transfer-title">Parcel Worker + D1</p>
+              <p>
+                Checks permissions, expiry, and download limits. Issues file
+                URLs valid for up to 5 minutes. File bytes bypass the Worker.
+              </p>
+            </div>
+          </div>
+          <figcaption>
+            Files travel between the browser and R2 over HTTPS. R2 automatically
+            encrypts stored objects with keys managed by Cloudflare.
+          </figcaption>
+        </figure>
+        <p class="security-truth">
+          This version does not encrypt file contents in the browser or decrypt
+          downloads locally. It is not end-to-end encryption: operators with
+          permission to read bucket objects, and the storage provider, can
+          access file contents. A share password controls download
+          authorization; it is not a file decryption key.
+        </p>
+        <div class="password-explainer">
+          <h3>Passwords take another path</h3>
+          <ol class="password-flow">
+            <li>
+              <strong>Derive in the browser</strong>
+              <p>
+                Password + random salt → Argon2id. V3 sends a derived credential
+                to the API, rather than the original password.
+              </p>
+            </li>
+            <li>
+              <strong>Verify in the Worker</strong>
+              <p>
+                The credential travels over HTTPS. AES-GCM encrypts it before D1
+                storage. The Worker holds the server key needed to decrypt and
+                verify it.
+              </p>
+            </li>
+            <li>
+              <strong>Authorize access</strong>
+              <p>
+                A valid share password grants restricted download access. An
+                administrator must also supply a TOTP code to establish an admin
+                session.
+              </p>
+            </li>
+          </ol>
+        </div>
+        <p class="note">
+          The derived value is itself a sensitive credential; browser derivation
+          does not replace HTTPS. Preserve SESSION_SECRET: it protects password
+          verification material and TOTP secrets.
+        </p>
+        <p class="security-sources">
+          <a
+            href="https://developers.cloudflare.com/r2/reference/data-security/"
+            >R2 encryption explained</a
+          >
+          ·
+          <a
+            href="https://github.com/hyphy-void/Parcel/blob/main/cloudflare/v3/password.mjs"
+            >Read the implementation</a
+          >
+        </p>
+      </section>
       <section id="steps" class="reading">
         <div class="section-heading">
           <h2>Start from scratch</h2>
@@ -87,8 +211,8 @@
             screens below to set up administrator access and browser uploads.
             <span class="note review-note"
               >Screenshots reviewed
-              <time datetime="2026-10-19" data-review-date
-                >October 19, 2026</time
+              <time datetime="2026-10-20" data-review-date
+                >October 20, 2026</time
               >.</span
             >
           </p>
@@ -100,7 +224,8 @@
               <nav aria-label="Deployment chapters">
                 <a href="#prepare">Prepare your accounts</a>
                 <a href="#button">Create the app</a>
-                <a href="#access">Set up admin Access</a>
+                <a href="#totp">Password + TOTP</a
+                ><a href="#access">Access (optional)</a>
                 <a href="#r2">Create R2 credentials</a>
                 <a href="#variables">Save variables and secrets</a>
                 <a href="#cors">Allow browser uploads</a>
@@ -115,10 +240,11 @@
               <h3>Prepare your accounts</h3>
               <div class="answer">
                 <p>
-                  You need GitHub and Cloudflare accounts. Enable R2, create a
-                  Zero Trust organization, and enable a Workers subdomain. Skip
-                  anything you already have. R2 may ask for a payment method;
-                  complete billing and plan setup yourself.
+                  Prepare GitHub and Cloudflare accounts. Enable R2 and a
+                  Workers subdomain. Existing accounts do not need to repeat
+                  setup. A Zero Trust organization is required only for Access;
+                  TOTP does not need it. R2 may require a payment method;
+                  complete plan and payment setup yourself.
                 </p>
                 <p>
                   This guide is for new instances. To upgrade an existing Go,
@@ -156,10 +282,10 @@
                   <code translate="no">R2_BUCKET_NAME</code>.
                 </p>
                 <p>
-                  Turn off “Enable preview builds.” Leave “Protect with
-                  Cloudflare Access” off on the deployment screen. Configure
-                  Access for administrator paths in the next section so that
-                  share links remain public.
+                  Disable preview builds. Keep “Protect with Cloudflare Access”
+                  off on the deployment page so public shares remain accessible.
+                  Then set ADMIN_AUTH=totp, or use the optional Access
+                  instructions to protect only administrator paths.
                 </p>
                 <p>
                   Keep <code translate="no">ACTIVE=false</code> for the first
@@ -205,9 +331,139 @@
                 </figure>
               </div>
             </article>
-            <article id="access">
-              <h3>Set up admin Access</h3>
+            <article id="totp">
+              <h3>Password + TOTP login</h3>
               <div class="answer">
+                <p>
+                  Use Parcel’s native administrator password and authenticator
+                  codes to avoid email verification. Set the Worker runtime
+                  variable <code translate="no">ADMIN_AUTH=totp</code>. Without
+                  it, the app still defaults to Access below; a code update
+                  alone does not switch modes.
+                </p>
+                <figure class="binding-figure">
+                  <div class="binding-map">
+                    <div class="binding-screen">
+                      <svg aria-hidden="true" viewBox="0 0 160 112">
+                        <path
+                          d="M8 8h144v82H8zM58 104h44M80 90v14"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="5"
+                        />
+                        <path
+                          d="M35 31h26v26H35zM96 31h26v26H96zM72 67h16"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="6"
+                        />
+                      </svg>
+                      <p class="flow-node-title">Parcel binding page</p>
+                      <span>Binding code generated locally</span>
+                    </div>
+                    <div class="binding-route">
+                      <svg
+                        class="flow-arrow"
+                        aria-hidden="true"
+                        viewBox="0 0 160 40"
+                      >
+                        <path
+                          d="M4 20h148m-18-14 18 14-18 14"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="4"
+                        /></svg
+                      ><span>Scan or import manually</span>
+                    </div>
+                    <div class="binding-phone">
+                      <svg aria-hidden="true" viewBox="0 0 80 112">
+                        <rect
+                          x="12"
+                          y="5"
+                          width="56"
+                          height="102"
+                          rx="4"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="5"
+                        />
+                        <path
+                          d="M30 17h20M33 95h14M24 45h32M24 60h32"
+                          stroke="currentColor"
+                          stroke-width="5"
+                        />
+                      </svg>
+                      <p class="flow-node-title">Your authenticator</p>
+                      <span>A new code every 30 seconds</span>
+                    </div>
+                    <div class="binding-recovery">
+                      <p class="flow-node-title">Save recovery codes</p>
+                      <span
+                        >Keep 8 codes separately · Rebinding invalidates old
+                        codes</span
+                      >
+                    </div>
+                  </div>
+                  <figcaption>
+                    Process diagram only: no scannable QR code, real secret, or
+                    valid recovery code.
+                  </figcaption>
+                </figure>
+                <ol>
+                  <li>
+                    Complete the R2, variable, and three permanent secret
+                    settings below first. Keep
+                    <code translate="no">ACTIVE=false</code>. Deployment applies
+                    D1 migrations, including
+                    <code translate="no">0003_admin_totp.sql</code>.
+                  </li>
+                  <li>
+                    Clone the repository locally and use Node 24. Run
+                    <code translate="no">npm run admin:setup-token</code>. It
+                    saves a random initialization secret in
+                    <code translate="no">.parcel-v3/admin-setup-token.txt</code>
+                    without printing it or overwriting an existing file. Store
+                    its contents as Worker Secret
+                    <code translate="no">ADMIN_SETUP_TOKEN</code>, without the
+                    final newline. Preserve the existing
+                    <code translate="no">SESSION_SECRET</code>.
+                  </li>
+                  <li>
+                    Open your <code translate="no">/login</code>, enter the
+                    initialization secret, and set an admin password of at least
+                    12 characters. Scan the binding code with a TOTP
+                    authenticator or import the secret manually. Enter its
+                    6-digit code to confirm. The QR code is generated locally in
+                    the browser, without a third-party QR service.
+                  </li>
+                  <li>
+                    Save the 8 recovery codes securely, then remove
+                    <code translate="no">ADMIN_SETUP_TOKEN</code> from Worker
+                    Secrets. Normal login uses a password and TOTP code. Login
+                    security lets you replace the authenticator; if it is lost,
+                    a password plus one recovery code starts rebinding. Each
+                    recovery code works once.
+                  </li>
+                </ol>
+                <p>
+                  When migrating an existing Access instance, complete
+                  enrollment within an authenticated Access session first. Then
+                  remove interception for Parcel’s seven admin paths listed
+                  below. Verify native login and anonymous API 401 responses in
+                  a fresh private window before launch. Keep other services’
+                  Access settings.
+                </p>
+              </div>
+            </article>
+            <article id="access">
+              <h3>Access (optional)</h3>
+              <div class="answer">
+                <p>
+                  Follow this section only for
+                  <code translate="no">ADMIN_AUTH=access</code> or an unset
+                  mode. Skip it for TOTP, which needs neither an admin email nor
+                  an Access JWT.
+                </p>
                 <p>
                   Go to Zero Trust → Access controls → Applications and add a
                   Self-hosted app. Use the HTTPS hostname you will visit; you
@@ -348,8 +604,9 @@
                 <p>
                   Generate the session secret in your own terminal. Keep it out
                   of Git, issues, screenshots, and webpages. Back it up securely
-                  and preserve it on later deployments; replacing it prevents
-                  existing password-protected shares from being unlocked.
+                  and preserve it on later deployments. Replacing it prevents
+                  decryption of password verification material and TOTP secrets,
+                  affecting share unlock and administrator login.
                 </p>
                 <figure>
                   <a href="images/add-secret.webp"
@@ -369,32 +626,32 @@
                 </figure>
                 <p>
                   At minimum, set <code translate="no">PUBLIC_URL</code>,
-                  <code translate="no">ACCESS_TEAM_DOMAIN</code>,
-                  <code translate="no">ACCESS_AUD</code>,
-                  <code translate="no">ADMIN_EMAILS</code>,
+                  <code translate="no">ADMIN_AUTH=totp</code>,
                   <code translate="no">R2_ENDPOINT</code>, and
                   <code translate="no">R2_BUCKET_NAME</code>. PUBLIC_URL must
                   exactly match the HTTPS origin you visit, without a path or
-                  trailing slash.
+                  trailing slash. Only Access mode requires ACCESS_TEAM_DOMAIN,
+                  ACCESS_AUD, and ADMIN_EMAILS. TOTP enrollment also needs the
+                  temporary ADMIN_SETUP_TOKEN secret.
                 </p>
                 <figure>
                   <a href="images/variables.webp"
                     ><img
                       src="images/variables.webp"
                       alt="Production variables with solid example labels replacing account and identity details"
-                      width="1750"
-                      height="1859"
+                      width="1886"
+                      height="2200"
                       loading="lazy"
                   /></a>
                   <figcaption>
-                    Runtime variables and secrets → Production. Secrets show
-                    Value encrypted. Solid labels permanently cover the original
-                    values and show YOUR_ACCESS_AUD, YOUR_TEAM, YOUR_ACCOUNT_ID,
-                    and example.com addresses. Replace these examples with your
-                    own settings. This existing instance is active and has a
-                    20&nbsp;GiB quota; new instances start with ACTIVE=false and
-                    a 9&nbsp;GB quota. Enable yours after setup and
-                    verification.
+                    Runtime variables and secrets → Production. This refreshed
+                    capture uses ADMIN_AUTH=totp, after enrollment and removal
+                    of ADMIN_SETUP_TOKEN. The remaining Access variables are
+                    historical and do not participate in TOTP authentication.
+                    Identity and account values are replaced with examples;
+                    secrets show Value encrypted. This existing instance is
+                    active with a 20&nbsp;GiB quota; new instances start with
+                    ACTIVE=false and 9&nbsp;GB.
                   </figcaption>
                 </figure>
               </div>
@@ -413,19 +670,17 @@
                     ><img
                       src="images/r2-cors.webp"
                       alt="Private R2 bucket CORS Policy editor with an example origin replacing the real domain"
-                      width="1515"
-                      height="1424"
+                      width="675"
+                      height="640"
                       loading="lazy"
                   /></a>
                   <figcaption>
-                    Settings → CORS Policy → Edit. The original origin is
-                    permanently covered and replaced with
-                    https://parcel.example.com. AllowedOrigins must match your
-                    PUBLIC_URL. The screenshot’s AllowedHeaders lists only
-                    Content-Type and Range; deploy with the complete JSON from
-                    the generator below, which also includes
-                    X-Amz-Meta-Parcel-Upload. CORS does not replace a private
-                    bucket or signed authorization.
+                    Settings → CORS Policy → Edit. Use the same origin as
+                    PUBLIC_URL. Include Content-Type, Range, and
+                    X-Amz-Meta-Parcel-Upload; the generator and no-JavaScript
+                    example below include all three. CORS controls which
+                    cross-origin requests browsers can send. File access still
+                    requires a private bucket and signed authorization.
                   </figcaption>
                 </figure>
                 <p>
@@ -456,6 +711,13 @@
           </div>
           <div class="config-controls">
             <form id="config-form" novalidate hidden>
+              <div class="form-field">
+                <label for="admin-auth">Administrator login</label
+                ><select id="admin-auth" name="admin-auth">
+                  <option value="totp">Password + TOTP (recommended)</option>
+                  <option value="access">Cloudflare Access</option>
+                </select>
+              </div>
               <div class="form-field">
                 <label for="origin">App HTTPS URL</label>
                 <input
@@ -564,8 +826,11 @@
             <p class="copy-message" role="status" aria-live="polite"></p>
           </div>
           <p>
-            You still need to set the Access Team domain, AUD, and admin emails,
-            and save the three secrets separately.
+            <span id="auth-config-help"
+              >For TOTP, save the three permanent secrets and the temporary
+              ADMIN_SETUP_TOKEN for enrollment. Access mode also requires the
+              Team domain, AUD, and admin emails.</span
+            >
           </p>
         </div>
         <noscript
@@ -591,9 +856,11 @@
         <div class="verify-checks">
           <ol>
             <li>
-              Open <code translate="no">/admin</code> in a private window. It
-              should show Access login. An unauthorized email must not reach the
-              admin page.
+              Open <code translate="no">/admin</code> in a private window. TOTP
+              mode must show password and authenticator-code login; incorrect
+              passwords or codes must fail, and anonymous admin APIs must return
+              401. Access mode must show Access login and reject unauthorized
+              emails.
             </li>
             <li>
               Sign in as an administrator, upload a file, and create shares with
@@ -629,18 +896,22 @@
           <details id="faq-unconfigured" name="troubleshooting">
             <summary>The page returns serverless_unconfigured</summary>
             <p>
-              Check the six ordinary variables and three secrets. SESSION_SECRET
-              must contain 64 hexadecimal characters. PUBLIC_URL and R2_ENDPOINT
-              must be HTTPS origins without a path or trailing slash.
+              Check the variables for your chosen mode and the three permanent
+              secrets. TOTP needs ADMIN_AUTH=totp; Access also needs its Team
+              domain, AUD, and email allowlist. SESSION_SECRET must contain 64
+              hexadecimal characters. PUBLIC_URL and R2_ENDPOINT must be HTTPS
+              origins without a path or trailing slash.
             </p>
           </details>
           <details id="faq-login-loop" name="troubleshooting">
             <summary>host_denied or a login loop</summary>
             <p>
-              The hostname you visit must match PUBLIC_URL. The Access app
-              hostname, AUD, Team domain, and admin emails must belong to the
-              same instance. When changing the production domain, update Access,
-              PUBLIC_URL, and R2 CORS together.
+              The hostname you visit must match PUBLIC_URL. If TOTP mode still
+              redirects to email verification, check for Access applications
+              covering the seven admin paths. In Access mode, verify the app
+              hostname, AUD, Team domain, and admin emails. A Parcel app domain
+              change needs updated PUBLIC_URL and R2 CORS; moving this guide
+              does not change the app domain.
             </p>
           </details>
           <details id="faq-upload-errors" name="troubleshooting">

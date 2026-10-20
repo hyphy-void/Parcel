@@ -210,7 +210,7 @@ function Shell({
         <span>
           <ShieldCheck size={16} aria-hidden="true" />
           <span>自托管存储，到期自动清理</span>
-          <a href="https://parcel-guide.pages.dev/zh.html">部署手册</a>
+          <a href="https://parcelwiki.pages.dev/zh.html">部署手册</a>
         </span>
       </footer>
     </div>

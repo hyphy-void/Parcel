@@ -48,7 +48,7 @@ const text = chinese
       invalidAccount: "请输入 32 位小写十六进制账户 ID（0–9、a–f）。",
       invalidBucket:
         "请输入 3–63 位小写字母、数字或连字符，首尾须为字母或数字。",
-      generated: "配置已生成。请另行配置 Access 与三项密钥。",
+      generated: "配置已生成。请按所选认证方式保存密钥并完成初始化。",
       stale: "输入已修改，请重新生成配置后再复制。",
       copied: "已复制。",
       copiedButton: "已复制",
@@ -64,7 +64,7 @@ const text = chinese
       invalidBucket:
         "Use 3–63 lowercase letters, digits, or hyphens. Start and end with a letter or digit.",
       generated:
-        "Config generated. Set up Access and the three secrets separately.",
+        "Config generated. Save the secrets and finish setup for your chosen login mode.",
       stale: "Your inputs changed. Generate the config again before copying.",
       copied: "Copied.",
       copiedButton: "Copied",
@@ -93,6 +93,8 @@ for (const date of document.querySelectorAll("[data-review-date]")) {
 const form = document.querySelector("#config-form");
 const message = document.querySelector("#config-message");
 const result = document.querySelector("#config-result");
+const authMode = document.querySelector("#admin-auth");
+const authHelp = document.querySelector("#auth-config-help");
 const fields = ["origin", "account", "bucket"].map((id) =>
   document.getElementById(id),
 );
@@ -175,7 +177,15 @@ form.addEventListener("submit", (event) => {
     2,
   );
   document.querySelector("#vars-output").textContent =
-    `PUBLIC_URL=${url.origin}\nR2_ENDPOINT=https://${account}.r2.cloudflarestorage.com\nR2_BUCKET_NAME=${bucket}\nSTORAGE_QUOTA_BYTES=9000000000\nMAX_FILE_BYTES=8589934592\nWORKERS_PLAN=free\nCLEANUP_BATCH_SIZE=1\nACTIVE=false`;
+    `PUBLIC_URL=${url.origin}\nADMIN_AUTH=${authMode.value}\nR2_ENDPOINT=https://${account}.r2.cloudflarestorage.com\nR2_BUCKET_NAME=${bucket}\nSTORAGE_QUOTA_BYTES=9000000000\nMAX_FILE_BYTES=8589934592\nWORKERS_PLAN=free\nCLEANUP_BATCH_SIZE=1\nACTIVE=false`;
+  authHelp.textContent =
+    authMode.value === "totp"
+      ? chinese
+        ? "TOTP：另存三项长期密钥，首次绑定时增加 ADMIN_SETUP_TOKEN；设置密码、绑定认证器并保存恢复码后移除它。无需配置邮箱或 Access。"
+        : "TOTP: save the three permanent secrets and add ADMIN_SETUP_TOKEN for enrollment. Set a password, bind an authenticator, save recovery codes, then remove the setup secret. No email or Access setup is needed."
+      : chinese
+        ? "Access：另填 ACCESS_TEAM_DOMAIN、ACCESS_AUD、ADMIN_EMAILS，配置七个管理路径与邮箱策略，并保存三项长期密钥。"
+        : "Access: also set ACCESS_TEAM_DOMAIN, ACCESS_AUD, and ADMIN_EMAILS, protect all seven admin paths, configure the email policy, and save the three permanent secrets.";
   result.hidden = false;
   message.textContent = text.generated;
   for (const note of result.querySelectorAll(".copy-message"))

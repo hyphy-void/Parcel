@@ -6,7 +6,7 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
 
-推荐新用户使用 **Workers + D1 + 私有 R2**。按 [图文部署手册](https://parcel-guide.pages.dev) 完成 Access、R2 凭据、CORS 和运行时配置，再启用实例。教程截图已脱敏并以 WebP 随仓库保存。按钮自动准备资源与 D1 schema；首次部署保持维护模式。Workers Free 不代表 R2 无限免费，新实例默认 9 GB 应用配额，免费额度与账单按账户计算。
+推荐新用户使用 **Workers + D1 + 私有 R2**。按 [图文部署手册](https://parcelwiki.pages.dev) 完成密码 + TOTP（或可选 Access）、R2 凭据、CORS 和运行时配置，再启用实例。教程解释传输加密、密码保护与 R2 静态加密；当前版本不提供文件内容的浏览器端或端到端加密。教程截图已脱敏并以无损 WebP 随仓库保存。按钮自动准备资源与 D1 schema；首次部署保持维护模式。Workers Free 不代表 R2 无限免费，新实例默认 9 GB 应用配额，免费额度与账单按账户计算。
 
 CLI 自动准备部署：`npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`，完整步骤见 [V3 部署说明](docs/v3-deployment.md)。源码按 [MIT](LICENSE) 许可发布。
 

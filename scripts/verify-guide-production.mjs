@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const git = (...args) => execFileSync("git", args, { cwd: root });
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const base = "https://parcel-guide.pages.dev";
+const base = "https://parcelwiki.pages.dev";
 
 try {
   assert.ok(

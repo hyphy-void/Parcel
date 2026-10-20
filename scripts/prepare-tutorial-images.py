@@ -37,16 +37,34 @@ REVIEWED = {
     ]),
 }
 
+# 2026-10-20 user-provided refresh. Keep original pixel dimensions and redact
+# identity values before publishing. CORS values are completed in the guide's
+# copyable JSON; the source capture is never silently rewritten as dashboard UI.
+REFRESHED = {
+    'variables': ((1886, 2200), (1454, 1696), [
+        ((678, 183, 1295, 231), 'YOUR_ACCESS_AUD', 24),
+        ((678, 276, 1295, 324), 'https://YOUR_TEAM.cloudflareaccess.com', 24),
+        ((678, 552, 1295, 602), 'admin@example.com', 24),
+        ((678, 920, 1295, 972), 'https://parcel.example.com', 24),
+        ((678, 1198, 1295, 1250), 'https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com', 24),
+    ]),
+    'r2-cors': ((1414, 1271), (1414, 1271), [
+        ((247, 375, 860, 417), 'https://parcel.example.com', 26),
+    ]),
+}
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
+    parser.add_argument('--refresh', action='store_true', help='Encode the reviewed 2026-10-20 variables and CORS captures only')
+    parser.add_argument('--cors-complete', type=Path, help='Use the reviewed 1396x719 native dashboard capture after saving the complete CORS policy')
     default_font = 'C:/Windows/Fonts/segoeui.ttf'
     parser.add_argument('--font', default=default_font if Path(default_font).is_file() else 'DejaVuSans.ttf')
     args = parser.parse_args()
     target = ROOT / 'docs/site/images'
     target.mkdir(parents=True, exist_ok=True)
-    for name, (expected, review, labels) in REVIEWED.items():
+    for name, (expected, review, labels) in (REFRESHED if args.refresh else REVIEWED).items():
         with Image.open(args.source / f'{name}.png') as source:
             if source.size != expected:
                 raise ValueError(f'{name}: review changed dimensions {source.size} before redacting')
@@ -66,8 +84,26 @@ def main():
                     raise ValueError(f'{name}: label does not fit its reviewed mask')
                 font = ImageFont.truetype(args.font, font_size)
             draw.text((x1 + padding, (y1 + y2) / 2), label, font=font, fill='white', anchor='lm')
-        output.save(target / f'{name}.webp', 'WEBP', lossless=True, method=6)
+        destination = target / f'{name}.webp'
+        output.save(destination, 'WEBP', lossless=True, method=6, exact=True)
+        with Image.open(destination) as encoded:
+            if encoded.convert('RGB').tobytes() != output.tobytes():
+                raise ValueError(f'{name}: lossless pixel verification failed')
         print(f'{name}.webp: {output.width}x{output.height}, {len(labels)} example labels')
+    if args.cors_complete:
+        with Image.open(args.cors_complete) as source:
+            if source.size != (1396, 719):
+                raise ValueError('Review the new CORS capture before applying the crop and origin mask')
+            output = source.convert('RGB').crop((355, 65, 1030, 705))
+        draw = ImageDraw.Draw(output)
+        draw.rectangle((123, 183, 428, 204), fill='#202020')
+        draw.text((130, 194), 'https://parcel.example.com', font=ImageFont.truetype(args.font, 13), fill='white', anchor='lm')
+        destination = target / 'r2-cors.webp'
+        output.save(destination, 'WEBP', lossless=True, method=6, exact=True)
+        with Image.open(destination) as encoded:
+            if encoded.convert('RGB').tobytes() != output.tobytes():
+                raise ValueError('Complete CORS: lossless pixel verification failed')
+        print(f'r2-cors.webp: {output.width}x{output.height}, saved policy with complete request headers')
 
 
 if __name__ == '__main__':

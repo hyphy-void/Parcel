@@ -390,6 +390,189 @@ input {
   font: inherit;
   border-radius: 0;
 }
+select {
+  width: 100%;
+  min-height: 60px;
+  padding: 16px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+}
+.security-section {
+  background: var(--surface);
+}
+.transfer-figure {
+  margin: 0 0 40px;
+}
+.transfer-map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 24px 4vw;
+}
+.transfer-browser,
+.transfer-store,
+.binding-screen,
+.binding-phone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.transfer-browser,
+.transfer-store {
+  padding: 32px;
+}
+.transfer-browser {
+  background: var(--paper);
+}
+.transfer-store {
+  background: var(--bg);
+}
+.flow-node-title,
+.password-flow strong {
+  display: block;
+  font-size: var(--lead);
+  line-height: 1.3;
+}
+.flow-node-title {
+  margin: 0;
+  font-weight: 700;
+}
+.transfer-browser > svg,
+.transfer-store > svg {
+  height: 100px;
+  width: 110px;
+  margin-bottom: 12px;
+}
+.transfer-route,
+.binding-route {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.flow-arrow {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+.transfer-control {
+  grid-column: 2 / -1;
+  padding: 28px 32px;
+  background: var(--ink);
+  color: var(--paper);
+}
+.transfer-control .transfer-title {
+  color: var(--bg);
+  font-size: var(--lead);
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0;
+}
+.transfer-control p {
+  margin: 12px 0 0;
+  max-width: 56ch;
+}
+.security-truth {
+  max-width: 84ch;
+}
+.password-explainer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 4vw;
+  margin: 72px 0 32px;
+}
+.password-explainer h3 {
+  max-width: 13ch;
+}
+.password-flow {
+  list-style-position: inside;
+  padding: 0;
+  margin: 0;
+}
+.password-flow li {
+  margin: 0 0 28px;
+}
+.password-flow li::marker {
+  font-weight: 700;
+}
+.password-flow strong {
+  display: inline;
+}
+.password-flow p {
+  margin: 12px 0 0;
+}
+.security-sources {
+  margin-bottom: 0;
+}
+.binding-map {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 0.7fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 32px;
+  background: var(--surface);
+}
+.binding-screen > svg,
+.binding-phone > svg {
+  width: 140px;
+  height: 112px;
+  max-width: 100%;
+  margin-bottom: 12px;
+}
+.binding-phone > svg {
+  width: 80px;
+}
+.binding-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  grid-column: 1 / -1;
+  padding: 24px;
+  background: var(--ink);
+  color: var(--paper);
+}
+.binding-recovery .flow-node-title {
+  color: var(--bg);
+}
+@media (max-width: 600px) {
+  .transfer-map,
+  .binding-map,
+  .password-explainer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .transfer-browser,
+  .transfer-store,
+  .transfer-control,
+  .binding-map {
+    padding: 24px;
+  }
+  .transfer-control,
+  .binding-recovery {
+    grid-column: 1;
+  }
+  .transfer-route,
+  .binding-route {
+    gap: 8px;
+  }
+  .transfer-route .flow-arrow,
+  .binding-route .flow-arrow {
+    width: 60px;
+    transform: rotate(90deg);
+    margin-block: 8px;
+  }
+  .password-explainer {
+    margin-top: 48px;
+  }
+  .password-explainer h3 {
+    max-width: none;
+    margin-bottom: 0;
+  }
+}
 input::placeholder {
   color: var(--muted);
   opacity: 1;

@@ -39,3 +39,17 @@ test("the guide protects every current administrator API family including the au
     assert.ok(html.includes(required), `Missing Access path ${required}`);
   }
 });
+
+test("both languages explain the actual file and password protection and native enrollment", async () => {
+  for (const locale of ["index.html", "zh.html"]) {
+    const source = await readFile(resolve(root, "docs/site", locale), "utf8");
+    assert.match(source, /id="security"/);
+    assert.match(source, /Argon2id/);
+    assert.match(source, /AES-GCM/);
+    assert.match(source, /not end-to-end encryption|不是端到端加密/);
+    assert.match(source, /id="totp"/);
+    assert.match(source, /ADMIN_SETUP_TOKEN/);
+    assert.match(source, /X-Amz-Meta-Parcel-Upload/);
+    assert.doesNotMatch(source, /otpauth:\/\//);
+  }
+});

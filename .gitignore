@@ -29,6 +29,7 @@ __pycache__/
 /.parcel-v3/
 /wrangler.v3.local.json
 /.taste-skill/
+/newcapture/
 
 # Local production configuration notes and their screenshots; deployment reference.
 /docs/v3-configuration.md
