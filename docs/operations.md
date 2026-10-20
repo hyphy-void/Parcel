@@ -1,5 +1,7 @@
 # Parcel v0.1 安装与运维
 
+> 适用范围：本文件是独立 Go/SQLite 兼容程序的维护资料或历史记录，不描述当前 Cloudflare V3。当前密码 + TOTP、文件端到端加密及部署操作见 [V3 部署说明](v3-deployment.md)；不要据此推断 Go 已具备这些功能。
+
 本服务支持可信局域网部署，以及通过 Caddy 提供公网 HTTPS 分享。下文局域网示例是 Pi4B、64 位 Ubuntu、SSD 上的 ext4 根分区、IPv4 `192.168.5.16/24`；公网部署见[公网部署说明](public-deployment.md)。
 
 ## 1. 构建与初始化
@@ -220,6 +222,6 @@ sudo systemctl disable --now parcel-update.timer
 
 新增私有 R2 配置、CORS、单分块上传、历史单次 PUT 和 Multipart 恢复、9 GB 存储保护、下载会话与跨 schema 回滚流程见 [r2-storage.md](r2-storage.md)。本地存储为默认值，历史文件继续使用本地下载。
 
-## Pages / Access 部署模式
+## 当前 Cloudflare 部署
 
-Pages 静态前端、API 网关、管理员 Access、内部 Origin Service Auth 和 Go 验签的配置、切换与回滚见 [pages-deployment.md](pages-deployment.md)。schema 保持 3。该模式仅支持 R2 文件，旧本地实验文件不迁移。
+当前线上使用 Workers + D1 + 私有 R2，管理员密码 + TOTP 与浏览器端到端加密的部署、更新和恢复统一见 [v3-deployment.md](v3-deployment.md)。本文件的二进制、systemd、SQLite 及本地密码初始化步骤只适用于独立 Go 兼容程序。

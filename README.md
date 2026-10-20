@@ -2,79 +2,77 @@
 
 **Upload. Share. Disappear.**
 
-自托管的临时文件中转站：上传文件，生成分享链接，通过密码、有效期和下载次数控制分享，失效后自动清理。
+自托管的临时文件中转站。当前 Cloudflare V3 在发送者浏览器加密文件，私有 R2 保存密文，接收者在浏览器解密并流式保存。分享可设置密码、有效期和下载次数，失效后自动清理。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
 
-推荐新用户使用 **Workers + D1 + 私有 R2**。Cloudflare V3 的新分享使用浏览器端到端加密：文件在上传前分块加密，R2 保存密文，接收者在浏览器解密并流式保存。按 [图文部署手册](https://parcelwiki.pages.dev) 完成密码 + TOTP（或可选 Access）、R2 凭据、CORS 和运行时配置，再启用实例。教程截图已脱敏并以无损 WebP 随仓库保存。按钮自动准备资源与 D1 schema；首次部署保持维护模式。Workers Free 不代表 R2 无限免费，新实例默认 9 GB 应用配额，免费额度与账单按账户计算。
+当前部署流程统一使用 **Workers + D1 + 私有 R2、管理员密码 + TOTP**。支持认证器扫码或手动绑定、一次性恢复码和更换认证器。管理员密码与分享密码分别管理。
 
-CLI 自动准备部署：`npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`，完整步骤见 [V3 部署说明](docs/v3-deployment.md)。源码按 [MIT](LICENSE) 许可发布。
+- [中英图文教程](https://parcelwiki.pages.dev/zh)
+- [部署、更新与恢复](docs/v3-deployment.md)
+- [端到端加密协议](docs/e2ee-protocol.md)
+- [验收状态与范围](docs/v3-plan.md)
 
-v0.1 采用 Go + React/TypeScript + SQLite，前端内嵌在单个二进制中，局域网运行时无需 Node、数据库服务或反向代理。默认文件存储在本机 SSD 上，可选用私有 R2 直传/直下载。Go 模式可通过 Cloudflare Tunnel 与 Caddy 提供网页、鉴权及管理 API，详见 [Tunnel 部署说明](docs/tunnel-deployment.md)。Pages 模式采用静态前端 + API Gateway + Access 身份验证，接入步骤见 [Pages 部署说明](docs/pages-deployment.md)。
+## 部署与首次登录
 
-V3 支持 Workers Free 的 Cloudflare 原生部署模式：Workers 托管前端与 API，D1 负责权威状态和原子事务，密文在浏览器和 R2 之间直传，核心链路不依赖树莓派。端到端加密严格限定 Cloudflare V3；独立 Go 和连接 Origin 的 Pages 构建保留原 UI 与传输协议，未提供文件 E2EE。构建、自动部署与升级限制见 [V3 部署说明](docs/v3-deployment.md)。
+1. 点击部署按钮，创建自己的 Worker、D1 和私有 R2。使用 Node 24、根目录 `/`，构建命令 `npm run build`，部署命令 `npm run deploy`。脚本应用 D1 迁移，首次保持 `ACTIVE=false`。
+2. 按[配置工具](https://parcelwiki.pages.dev/zh#config)填写 `PUBLIC_URL`、**`ADMIN_AUTH=totp`**、R2 地址与桶名。此认证变量必须明确设置，更新代码不会自动补充控制台变量。新模板默认应用配额为 9 GB、单文件上限为 8 GiB；账户免费额度与账单另行计算。
+3. 保存三项长期 Secret：`SESSION_SECRET`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`，配置 R2 CORS。`SESSION_SECRET` 是独立的 64 位十六进制随机值，后续部署保持不变。
+4. 本机克隆仓库，执行 `npm run admin:setup-token`，把忽略文件 `.parcel-v3/admin-setup-token.txt` 的内容保存为临时 Secret `ADMIN_SETUP_TOKEN`。打开应用 `/login`，设置至少 12 位管理员密码，扫码或手动绑定 TOTP，输入 6 位动态码确认。
+5. 单独保存 8 个恢复码，移除 `ADMIN_SETUP_TOKEN`。日常使用密码和认证器动态码；认证器丢失时，用密码与一个未使用的恢复码重新绑定。完成加密上传、解密下载和撤销验收后，再设 `ACTIVE=true` 并部署。
 
-V3 管理员可选择 Access 或“管理员密码 + TOTP 动态验证码”：支持认证器扫码绑定、一次性恢复码和更换认证器。现有实例须设置 `ADMIN_AUTH=totp`、完成初始化并解除管理路径的 Access 拦截，才会停止邮箱验证码登录。切换步骤见 [V3 管理员认证](docs/v3-deployment.md#管理员密码--totp-登录替代邮箱验证码)。
+新实例按按钮流程准备资源；已有正式实例使用 `npm run build:production` / `npm run deploy:production` 更新。变量、CORS、备份及恢复的完整步骤见[部署文档](docs/v3-deployment.md)。
 
-管理员登录后上传单个文件，设置可选密码、有效期与下载次数（可选不限次数），生成一个分享链接。不限次数时仍保留有效期与密码保护。支持分块上传恢复、HTTP Range 下载、原子下载计数、自动清理与崩溃恢复。
+## 使用加密分享
 
-### Cloudflare V3 端到端加密
+1. **上传。** 登录后选择单个文件，设置可选分享密码、有效期及下载上限，也可选择不限次数。浏览器先计算完整 SHA-256，再逐块加密上传。暂停或刷新后保留网站数据，重选原文件并核对完整哈希，再继续缺失块。
+2. **分享与备份。** 复制包含 **`#k=…`** 的完整链接，可选密码分开发送。创建者保留链接，并在清理网站数据或换设备前，通过“备份 / 导入本机分享密钥”导出加密 JSON，使用独立的 12–256 UTF-8 字节口令。
+3. **接收与保存。** 接收者在本机用完整链接和可选密码解包密钥，验证密文并暂存 IndexedDB。接收完成后点“保存解密文件”，逐块验证、解密、流式写盘并核对完整 SHA-256。刷新可从完整缓存块继续；确认保存后可清理本机缓存。
+4. **管理。** 修改分享密码只重包密钥信封，不重传文件；操作浏览器须持有本机分享密钥或导入备份。撤销、到期或次数耗尽后不再发放新下载资格。已取得的明文、密钥和密文副本无法收回。
 
-每份文件使用独立随机 256 位密钥，按 16 MiB 原文分块执行 AES-GCM；每块增加 12 字节随机 nonce 和 16 字节认证标签。文件名、媒体类型和原文 SHA-256 与文件密钥一起密封。完整链接的 `#k=…` 保存随机 32 字节密钥材料，不进入 HTTP 请求或 Parcel API；有密码时，独立盐的 Argon2id 与链接材料经 HKDF 保护密钥信封。另一份不同盐的密码凭据只用于服务端在线授权，不能当作解密密钥。
+大文件按块处理，内存占用不会随总大小增长。本机通常需同时容纳密文缓存与最终文件，约两倍文件大小并预留余量。浏览器配额、无痕模式、磁盘空间、下载权限和缓存清理会影响可用容量；保存期间保持页面打开。
 
-上传刷新后需保留网站数据、重选原文件并核验完整 SHA-256。接收端先把密文暂存 IndexedDB，再逐块解密、校验并流式写盘，需约两份文件的磁盘空间及浏览器存储配额。创建者须保留完整链接，并在换设备或清理网站数据前导出带独立口令的加密密钥备份。服务器、管理员登录或 `SESSION_SECRET` 都不能恢复丢失的文件密钥。修改密码只重包密钥，不重传文件；已取得密钥和密文的副本无法撤回。
+下载次数统计获准传输的资格，不是成功保存次数或独立人数。同一有效会话的重试、续传和签名地址续签不重复扣次；网络中断不退还已消耗的资格。
 
-服务器仍可见大小、分享 ID、次数、有效期和请求元信息；此方案信任加载的网页、浏览器与终端，不能抵抗恶意网页更新、扩展或本机攻击。升级新增 `0004_e2ee.sql` 与 `0005_download_admissions.sql`，迁移本身不删除现有 D1/R2 数据；旧 V3 未加密分享返回不兼容状态，需要重新上传。不能把新版加密分享回滚为 Go 可读文件。
+## 文件怎样被保护
 
-## 本地启动
-
-构建需要 Go 1.26 或更新的兼容版本、Node 24 和 npm。Go 的自动工具链下载可以从已安装的旧版 Go 启动构建。
-
-```bash
-./scripts/build.sh
-./bin/parcel admin-password
-./bin/parcel serve
+```mermaid
+flowchart LR
+  S[发送者浏览器：原文件与随机密钥] -->|AES-256-GCM 分块加密后上传| R[私有 R2：密文]
+  R -->|下载密文| C[接收者浏览器：验证、解密、保存]
+  W[Worker + D1：权限、次数与加密密钥信封] -->|短期密文访问地址| C
+  S -.->|完整链接与可选分享密码| C
 ```
 
-默认访问 `http://127.0.0.1:8080`。管理员密码交互输入，数据默认保存到 `./data`；无内置默认密码。
+每份文件使用独立随机 256 位密钥，按 16 MiB 原文分块执行 AES-256-GCM。每块增加 12 字节随机 nonce 和 16 字节认证标签；空文件也有一个 28 字节认证块。文件名、媒体类型、修改时间、原文 SHA-256 和文件密钥保存在加密信封中，云端不持有明文文件密钥。
 
-局域网运行示例：
+链接的 `#k=…` 保存随机 32 字节链接材料，片段不随 HTTP 请求发送，也不进入 Parcel API。无密码时，由链接材料经 HKDF 派生信封密钥；有密码时，再加入独立盐的 Argon2id 结果。另一份不同盐的密码凭据仅用于服务端在线授权，不能代替解密密钥。布局、认证范围和参数见[协议文档](docs/e2ee-protocol.md)。
 
-```bash
-export PARCEL_LISTEN_ADDR=192.168.5.16:8080
-export PARCEL_BASE_URL=http://192.168.5.16:8080
-./bin/parcel serve
-```
+服务端仍可见大小、分享 ID、有效期、次数与请求元信息。机制信任实际加载的网页代码、浏览器和设备；恶意网页更新、扩展或已控制的终端仍可能读取密钥。拥有完整链接与信封的人可以离线尝试分享密码，因此应使用强密码。
 
-只允许绑定明确的内网或回环 IP，不允许 `0.0.0.0` 或公网 IP。HTTP 模式适用于可信局域网；链接只对能到达该内网地址的接收者有效。
+**管理员登录与 `SESSION_SECRET` 不能找回文件密钥。** 本机密钥、完整链接和可用备份全部丢失后，服务器无法恢复文件。`SESSION_SECRET` 保护管理员认证、会话和在线密码凭据，不用于生成文件密钥。
+
+## 更新与旧分享
+
+正式 Worker 的生产部署先应用未完成的 D1 迁移，再发布 Worker，保留现有运行时变量、Secrets、D1 与 R2。资源标识、部署权限及失败恢复见[正式更新说明](docs/v3-deployment.md#正式-worker-的-git-自动部署)。
+
+旧版未加密 V3 分享不兼容，需保留原文件后重新上传，生成新的加密链接。`0004_e2ee.sql` 与 `0005_download_admissions.sql` 不会自动加密、删除或清空原有数据。新版密文不能交给旧 Go 服务或未加密 Worker 恢复下载；回滚须使用兼容的 Worker 与一致的 D1/R2 备份。
 
 ## 开发与验证
 
+V3 构建需要 Node 24 与 Bash；Windows 可使用 Git Bash 或 WSL。从仓库根目录执行：
+
 ```bash
-npm --prefix web run dev            # 另一个终端运行 Go 服务
-npm --prefix web run build
-go test -race ./...
-go vet ./...
-cd web && npx playwright install chromium firefox && npm run test:e2e
+./scripts/build-v3.sh
+npm run test:crypto
+npm run test:v3
+npm --prefix cloudflare run test:browser:v3
+PARCEL_LOGIN_WEB_DIR="$PWD/dist/v3-web" node --test web/tests/login-response.mjs
+npm run test:e2ee:https
 ```
 
-Go 的资源嵌入依赖 `web/dist`，首次运行 Go 测试/开发服务前需先构建前端。开发代理仅支持默认的 `127.0.0.1:8080` 后端和 `127.0.0.1:5173` 前端地址。
+真实 HTTPS 套件的 Linux 依赖、可选 8 GiB 验收和本地夹具范围见[协议验收说明](docs/e2ee-protocol.md#acceptance)。本地测试不能代替线上 R2 CORS、签名、CPU 和实际设备验收。
 
-生成 Linux ARM64、ARMv7、AMD64 产物与校验和：`./scripts/release.sh`。push/PR 自动运行 CI；推送正式 `vX.Y.Z` tag 会在测试通过后发布 GitHub Release。树莓派可直接安装预编译产物，无需 Go/Node。已安装升级工具后，使用 `sudo /usr/local/lib/parcel/update.py --version vX.Y.Z` 一键升级，支持校验、健康检查和失败回滚；可选启用每日补丁更新，详见[发布与升级说明](docs/operations.md#8-ci-发布与树莓派升级)。独立的大文件验收：`python3 scripts/acceptance.py`，默认生成真实 8 GiB 文件，需约 35 GiB 可用空间。实际磁盘写满与挂载丢失验收：`python3 scripts/storage-acceptance.py`，需要可使用 sudo 的测试环境。
+仓库保留独立 Go/SQLite 兼容代码及测试，使用原有协议，不提供当前 V3 的 TOTP 与文件 E2EE，不作为当前线上部署入口。维护这些代码时按 [Go 运维资料](docs/operations.md)构建 `web/dist/`，再运行 `go test -race ./...` 和 `go vet ./...`。历史[设计](docs/development-plan.md)、[v0.1 验收](docs/acceptance.md)及[局域网步骤](docs/lan-acceptance.md)均按各自版本范围阅读。
 
-## 文档
-
-- [设计与开发计划](docs/development-plan.md)
-- [安装、配置与运维](docs/operations.md)
-- [验收报告与未测项目](docs/acceptance.md)
-- [真实局域网设备验收步骤](docs/lan-acceptance.md)
-
-下载次数指首次准许传输消耗的下载资格；同一有效会话重试与续传不重复扣次，网络中断不退还资格。V3 分别显示密文接收与解密保存进度，最终保存结果仍须在浏览器下载列表或所选目录确认。Go 模式继续由原生下载列表显示保存进度。
-
-### 私有 R2 存储
-
-可选启用树莓派鉴权 + 私有 R2 预签名直传/直下载，新文件内容不经过 Tunnel。保留旧本地文件，所有文件统一使用 16 MiB Multipart 分块（最后一块按实际大小），更大文件二次确认并支持分块续传；默认 9 GB R2 存储保护，下载地址有效 5 分钟。配置和 schema 1 / 2 → 3 升级流程见 [docs/r2-storage.md](docs/r2-storage.md)。
-
-### Pages / Access 网关
-
-`./scripts/build-pages.sh` 生成 `dist/pages`，由 Cloudflare 承载页面和 API 初验；Go 在 Pi 保留 SQLite 与 R2 控制面。管理员使用 Access 登录，内部 Origin 使用 Service Auth 与 Go HMAC 验签。配置和切换步骤见 [docs/pages-deployment.md](docs/pages-deployment.md)。
+源码按 [MIT](LICENSE) 许可发布。

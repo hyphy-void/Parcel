@@ -8,16 +8,35 @@ with `VITE_ADMIN_AUTH=v3`.
 ## Trust boundary
 
 An honest Parcel client encrypts before upload and decrypts after download.
-Workers, D1 and R2 do not receive file keys, link secrets, original filenames,
+Workers, D1 and R2 do not receive plaintext file keys, link secrets, original filenames,
 MIME types, modification times or plaintext file hashes. The service can see
 file lengths, chunk layout, access rules, timing, counts, encrypted envelopes
 and network metadata. HTTPS and administrator authentication remain required.
+
+The file key is uploaded only inside the authenticated encrypted metadata
+envelope. Keeping that envelope in D1 does not give the service the plaintext
+key. The complete link and optional share password are used at the recipient
+to unwrap it locally.
 
 The application code delivered by the site, the browser, its extensions and
 the device must be trusted. A compromised operator that changes future
 JavaScript could steal keys when a user next opens that code. This custom
 format has automated integrity and transfer tests; it has not had an
 independent cryptographic audit.
+
+## Administrator authentication
+
+The current deployment guide uses administrator password + TOTP, with the
+required runtime setting `ADMIN_AUTH=totp`. First-time enrollment uses a
+temporary `ADMIN_SETUP_TOKEN`, a locally generated binding QR code or manual
+seed, and eight recovery codes. Remove the setup secret after enrollment.
+Normal login uses the password and a six-digit authenticator code.
+
+Administrator authentication and file decryption are separate. Resetting an
+administrator, recovering an authenticator, or possessing `SESSION_SECRET`
+cannot recover a missing file key. Follow the [deployment guide](v3-deployment.md)
+or the [English illustrated setup](https://parcelwiki.pages.dev/#totp) for the
+current enrollment and maintenance procedure.
 
 ## Keys and envelope
 
@@ -125,7 +144,7 @@ Build the V3 UI and Worker first. Focused commands:
 ```sh
 npm run test:crypto
 npm run test:v3
-node --test web/tests/login-response.mjs # isolated V3 login test build required
+PARCEL_LOGIN_WEB_DIR="$PWD/dist/v3-web" node --test web/tests/login-response.mjs
 npm run test:e2ee:https
 PARCEL_E2EE_LARGE=1 npm run test:e2ee:https
 ```
