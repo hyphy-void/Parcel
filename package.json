@@ -12,7 +12,8 @@
     "test:v3": "npm --prefix cloudflare run test:v3",
     "test:v3:r2-live": "node scripts/probe-v3-r2.mjs",
     "build:production": "node scripts/prepare-worker-build.mjs && ./scripts/build-v3.sh",
-    "deploy:production": "node scripts/deploy-production.mjs"
+    "deploy:production": "node scripts/deploy-production.mjs",
+    "admin:setup-token": "node scripts/admin-setup-token.mjs"
   },
   "cloudflare": {
     "bindings": {

@@ -7,5 +7,5 @@ if [[ "${1:-}" != '--skip-install' ]]; then
   npm --prefix web ci
   npm --prefix cloudflare ci
 fi
-VITE_ADMIN_AUTH=access npm --prefix web run build -- --outDir ../dist/v3-web --emptyOutDir
+VITE_ADMIN_AUTH=v3 npm --prefix web run build -- --outDir ../dist/v3-web --emptyOutDir
 node cloudflare/v3/build.mjs

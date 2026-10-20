@@ -42,14 +42,17 @@ export async function fixture(t, options = {}) {
     R2_SECRET_ACCESS_KEY: "test-secret",
     ...options.config,
   };
-  const jwt = await new SignJWT({ type: "app", email: "admin@example.com" })
-    .setProtectedHeader({ alg: "RS256", kid: jwk.kid })
-    .setSubject("admin-id")
-    .setIssuer(config.ACCESS_TEAM_DOMAIN)
-    .setAudience(config.ACCESS_AUD)
-    .setIssuedAt()
-    .setExpirationTime("1h")
-    .sign(privateKey);
+  const jwt =
+    config.ADMIN_AUTH === "totp"
+      ? ""
+      : await new SignJWT({ type: "app", email: "admin@example.com" })
+          .setProtectedHeader({ alg: "RS256", kid: jwk.kid })
+          .setSubject("admin-id")
+          .setIssuer(config.ACCESS_TEAM_DOMAIN)
+          .setAudience(config.ACCESS_AUD)
+          .setIssuedAt()
+          .setExpirationTime("1h")
+          .sign(privateKey);
   const dir = await mkdtemp(join(tmpdir(), "parcel-v3-"));
   const parts = new Map();
   let listFailures = 0;
@@ -151,8 +154,9 @@ export async function fixture(t, options = {}) {
       assert.equal(response.status, expected, await response.clone().text());
     return response;
   }
-  csrf = (await (await api("/api/v1/auth/session", { expected: 200 })).json())
-    .csrf;
+  if (config.ADMIN_AUTH !== "totp")
+    csrf = (await (await api("/api/v1/auth/session", { expected: 200 })).json())
+      .csrf;
   const created = [];
   async function create(size = 7, extra = {}, key = crypto.randomUUID()) {
     const response = await api("/api/v1/uploads", {

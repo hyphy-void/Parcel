@@ -26,11 +26,14 @@ const integer = (value, fallback, min, max) => {
   return n;
 };
 export function configuration(env) {
+  const adminAuth = env.ADMIN_AUTH || "access";
+  if (!["access", "totp"].includes(adminAuth))
+    throw new Error("Invalid administrator authentication mode");
   for (const key of [
     "PUBLIC_URL",
-    "ACCESS_TEAM_DOMAIN",
-    "ACCESS_AUD",
-    "ADMIN_EMAILS",
+    ...(adminAuth === "access"
+      ? ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "ADMIN_EMAILS"]
+      : []),
     "SESSION_SECRET",
     "R2_ENDPOINT",
     "R2_BUCKET_NAME",
@@ -39,7 +42,11 @@ export function configuration(env) {
   ])
     if (typeof env[key] !== "string" || !env[key] || /[\r\n]/.test(env[key]))
       throw new Error("Missing V3 configuration");
-  for (const key of ["PUBLIC_URL", "ACCESS_TEAM_DOMAIN", "R2_ENDPOINT"]) {
+  for (const key of [
+    "PUBLIC_URL",
+    "R2_ENDPOINT",
+    ...(adminAuth === "access" ? ["ACCESS_TEAM_DOMAIN"] : []),
+  ]) {
     const u = new URL(env[key]);
     if (
       u.protocol !== "https:" ||
@@ -51,9 +58,10 @@ export function configuration(env) {
       throw new Error("Invalid origin");
   }
   if (
-    !/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(
-      env.ACCESS_TEAM_DOMAIN,
-    ) ||
+    (adminAuth === "access" &&
+      !/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(
+        env.ACCESS_TEAM_DOMAIN,
+      )) ||
     !/^https:\/\/[a-z0-9.-]+\.r2\.cloudflarestorage\.com$/.test(
       env.R2_ENDPOINT,
     ) ||
@@ -63,12 +71,23 @@ export function configuration(env) {
     !env.FILES
   )
     throw new Error("Invalid V3 configuration");
-  const emails = env.ADMIN_EMAILS.split(",").map((s) => s.trim().toLowerCase());
+  if (
+    env.ADMIN_SETUP_TOKEN !== undefined &&
+    !/^[A-Za-z0-9_-]{32,128}$/.test(env.ADMIN_SETUP_TOKEN)
+  )
+    throw new Error(
+      "Administrator setup token must be a random secret of at least 32 URL-safe characters",
+    );
+  const emails =
+    adminAuth === "access"
+      ? env.ADMIN_EMAILS.split(",").map((s) => s.trim().toLowerCase())
+      : [];
   if (emails.some((s) => !/^\S+@[^\s@,]+$/.test(s)))
     throw new Error("Invalid allowlist");
   const maxTTL = integer(env.MAX_SHARE_TTL_SECONDS, 604800, 1, 31536000);
   return {
     ...env,
+    adminAuth,
     emails,
     quota: integer(
       env.STORAGE_QUOTA_BYTES,
@@ -133,6 +152,7 @@ export class Service {
     );
   }
   async csrf(identity) {
+    if (this.c.adminAuth === "totp") return identity.csrf;
     return hmac(
       this.c.SESSION_SECRET,
       `parcel-v3-csrf\n${identity.subject}\n${identity.email}`,
@@ -1028,6 +1048,18 @@ export class Service {
         "DELETE FROM rate_limits WHERE key IN (SELECT key FROM rate_limits WHERE expires<=? LIMIT 100)",
         now,
       ),
+      ...(this.c.adminAuth === "totp"
+        ? [
+            this.stmt(
+              "DELETE FROM admin_sessions WHERE token_hash IN (SELECT token_hash FROM admin_sessions WHERE expires<=? LIMIT 100)",
+              now,
+            ),
+            this.stmt(
+              "DELETE FROM admin_enrollments WHERE token_hash IN (SELECT token_hash FROM admin_enrollments WHERE expires<=? LIMIT 100)",
+              now,
+            ),
+          ]
+        : []),
       this.stmt(
         "DELETE FROM audit_events WHERE id IN (SELECT id FROM audit_events WHERE created<? LIMIT 100)",
         now - 30 * 86400,

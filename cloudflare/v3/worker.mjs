@@ -7,6 +7,7 @@ import {
 } from "../gateway.mjs";
 import { configuration, Service, Problem } from "./service.mjs";
 import { equal } from "./crypto.mjs";
+import { AdminAuth, authRoute } from "./admin-auth.mjs";
 
 export function createWorker(deps = {}) {
   return {
@@ -25,7 +26,9 @@ export function createWorker(deps = {}) {
         return respond(problem(403, "host_denied", "请使用正式访问地址"));
       if (url.href.length > 2048 || /%|\\|\/\//.test(url.pathname))
         return respond(problem(400, "invalid_path", "请求路径不正确"));
-      const apiRoute = route(url.pathname, request.method);
+      const apiRoute =
+        authRoute(url.pathname, request.method, config.adminAuth) ||
+        route(url.pathname, request.method);
       const adminPage =
         url.pathname === "/login" ||
         url.pathname === "/admin" ||
@@ -64,18 +67,31 @@ export function createWorker(deps = {}) {
             request.headers.get("Sec-Fetch-Site") === "cross-site"))
       )
         return respond(problem(403, "origin_denied", "请求来源不受信任"));
+      const service = new Service(config, ctx, deps);
+      const auth = new AdminAuth(service);
       let identity;
-      if (adminPage || apiRoute?.admin) {
+      if ((adminPage && config.adminAuth === "access") || apiRoute?.admin) {
         try {
-          identity = await (deps.verifyAccess || verifyAccess)(request, config);
+          identity =
+            config.adminAuth === "totp"
+              ? await auth.authenticate(request)
+              : await (deps.verifyAccess || verifyAccess)(request, config);
+          if (!identity)
+            return respond(problem(401, "unauthorized", "请先登录管理员账户"));
         } catch {
           return respond(
-            problem(401, "access_required", "请通过管理入口验证身份"),
+            config.adminAuth === "totp"
+              ? problem(
+                  503,
+                  "auth_unavailable",
+                  "登录服务暂时不可用，请稍后重试",
+                )
+              : problem(401, "access_required", "请通过管理入口验证身份"),
           );
         }
       }
       if (!apiRoute) {
-        if (url.pathname === "/login")
+        if (url.pathname === "/login" && config.adminAuth === "access")
           return respond(
             new Response(null, {
               status: 303,
@@ -91,9 +107,15 @@ export function createWorker(deps = {}) {
         if (!asset) response.headers.set("Cache-Control", "private, no-store");
         return response;
       }
-      if (!config.enabled)
+      if (
+        !config.enabled &&
+        !(
+          config.adminAuth === "totp" &&
+          (url.pathname === "/api/v1/auth-config" ||
+            url.pathname.startsWith("/api/v1/auth/"))
+        )
+      )
         return respond(problem(503, "maintenance", "服务正在维护，请稍后重试"));
-      const service = new Service(config, ctx, deps);
       try {
         if (
           identity &&
@@ -144,14 +166,21 @@ export function createWorker(deps = {}) {
             );
           }
         }
+        const authResponse =
+          url.pathname === "/api/v1/auth-config"
+            ? await auth.configuration()
+            : url.pathname.startsWith("/api/v1/auth/")
+              ? await auth.dispatch(url.pathname, data, identity, request)
+              : null;
         return respond(
-          await service.dispatch(
-            url.pathname,
-            request.method,
-            data,
-            identity,
-            request,
-          ),
+          authResponse ||
+            (await service.dispatch(
+              url.pathname,
+              request.method,
+              data,
+              identity,
+              request,
+            )),
         );
       } catch (e) {
         const result = problem(

@@ -41,13 +41,14 @@ import {
   type Upload,
 } from "./api";
 import { passwordBody, passwordSalt } from "./password";
+import { NativeAdminForm } from "./admin-auth";
 import "./style.css";
 import "./login.css";
 
 type Auth = {
   password_protocol?: string;
   csrf: string;
-  auth_mode?: "password" | "access";
+  auth_mode?: "password" | "access" | "totp";
   email?: string;
 };
 function desktopAutofocus() {
@@ -142,7 +143,10 @@ function Shell({
           </span>
         </a>
         {auth ? (
-          <nav aria-label="主导航">
+          <nav
+            aria-label="主导航"
+            className={auth.auth_mode === "totp" ? "totp-nav" : undefined}
+          >
             <a
               href="/admin"
               aria-current={location.pathname === "/admin" ? "page" : undefined}
@@ -157,6 +161,16 @@ function Shell({
             >
               上传文件
             </a>
+            {auth.auth_mode === "totp" && (
+              <a
+                href="/admin/security"
+                aria-current={
+                  location.pathname === "/admin/security" ? "page" : undefined
+                }
+              >
+                登录安全
+              </a>
+            )}
             <button
               className="text-button"
               onClick={logout}
@@ -500,6 +514,18 @@ function Login() {
     } finally {
       setBusy(false);
     }
+  }
+  if (import.meta.env.VITE_ADMIN_AUTH === "v3") {
+    return (
+      <Shell pageClass="login-app">
+        <div className="login-layout">
+          <LoginVisual ref={visual} focused={focused} busy={busy} />
+          <div className="auth-card">
+            <NativeAdminForm onBusy={setBusy} onFocus={setFocused} />
+          </div>
+        </div>
+      </Shell>
+    );
   }
   if (import.meta.env.VITE_ADMIN_AUTH === "access") {
     return (
@@ -2382,6 +2408,21 @@ function App() {
         <h1>暂时无法连接</h1>
         <p className="note">请刷新页面重试，或稍后再次打开。</p>
         <ErrorMessage message={error} />
+      </Shell>
+    );
+  if (auth?.auth_mode === "totp" && path === "/admin/security")
+    return (
+      <Shell auth={auth}>
+        <div className="auth-card auth-security">
+          <NativeAdminForm
+            csrf={auth.csrf}
+            security
+            onAuthenticated={(csrf) => setAuth({ ...auth, csrf })}
+          />
+          <a className="text-button auth-recover" href="/admin">
+            返回我的分享
+          </a>
+        </div>
       </Shell>
     );
   if (auth && path === "/admin/new") return <NewShare auth={auth} />;

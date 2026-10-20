@@ -9,6 +9,184 @@ import {
   expect,
 } from "../../../web/node_modules/@playwright/test/index.mjs";
 import { fixture } from "./fixture.mjs";
+import { totp } from "../totp.mjs";
+
+for (const [name, engine, viewport] of [
+  ["chromium", chromium, { width: 1440, height: 1000 }],
+  ["firefox", firefox, { width: 1440, height: 1000 }],
+  ["mobile", chromium, { width: 390, height: 844 }],
+]) {
+  test(
+    `native admin QR enrollment, login, recovery and logout (${name})`,
+    { timeout: 120000 },
+    async (t) => {
+      const setupToken = "browser-test-initialization-" + "x".repeat(32);
+      const f = await fixture(t, {
+        config: { ADMIN_AUTH: "totp", ADMIN_SETUP_TOKEN: setupToken },
+      });
+      const browser = await engine.launch({ headless: true });
+      t.after(() => browser.close());
+      const context = await browser.newContext({
+        viewport,
+        acceptDownloads: true,
+      });
+      const page = await context.newPage(),
+        errors = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await context.route("**/*", async (route) => {
+        const request = route.request();
+        assert.equal(
+          new URL(request.url()).origin,
+          f.config.PUBLIC_URL,
+          "authentication must stay on this origin",
+        );
+        const headers = {
+          ...request.headers(),
+          "CF-Connecting-IP": "198.51.100.22",
+        };
+        for (const key of [
+          "host",
+          "content-length",
+          "transfer-encoding",
+          "accept-encoding",
+          "connection",
+        ])
+          delete headers[key];
+        const body = request.postDataBuffer();
+        if (body && new URL(request.url()).pathname.startsWith("/api/v1/auth/"))
+          assert.ok(
+            !body.includes(Buffer.from("native-admin-password")),
+            "plaintext password must not leave the browser",
+          );
+        const response = await f.mf.dispatchFetch(request.url(), {
+          method: request.method(),
+          headers,
+          body: body || undefined,
+        });
+        const outputHeaders = Object.fromEntries(response.headers);
+        const setCookies = response.headers.getSetCookie();
+        if (setCookies.length)
+          outputHeaders["set-cookie"] = setCookies.join("\n");
+        await route.fulfill({
+          status: response.status,
+          headers: outputHeaders,
+          body: Buffer.from(await response.arrayBuffer()),
+        });
+      });
+      await page.goto(f.config.PUBLIC_URL + "/login");
+      await expect(
+        page.getByRole("heading", { name: "设置管理员登录" }),
+      ).toBeVisible();
+      await page.getByLabel("初始化密钥").fill(setupToken);
+      await page
+        .getByLabel("管理员密码", { exact: true })
+        .fill("native-admin-password");
+      await page.getByLabel("确认密码").fill("native-admin-password");
+      await page.getByRole("button", { name: "继续绑定认证器" }).click();
+      await expect(
+        page.getByRole("heading", { name: "扫码绑定认证器" }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("img", { name: "使用认证器扫描此二维码绑定 Parcel" }),
+      ).toBeVisible();
+      await page.getByText("无法扫码？手动输入密钥").click();
+      const secret = await page.locator(".totp-secret code").innerText();
+      assert.match(secret, /^[A-Z2-7]{32}$/);
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      );
+      await mkdir(resolve("../.parcel-v3/auth-previews"), { recursive: true });
+      await page.screenshot({
+        path: resolve(`../.parcel-v3/auth-previews/enrollment-${name}.png`),
+        fullPage: true,
+      });
+      // Accept the previous valid step so a fresh current code can log in next.
+      await page
+        .getByLabel("动态验证码", { exact: true })
+        .fill(await totp(secret, Math.floor(Date.now() / 30000) - 1));
+      await page.getByRole("button", { name: "确认绑定" }).click();
+      await expect(
+        page.getByRole("heading", { name: "保存恢复码" }),
+      ).toBeVisible();
+      const recovery = await page
+        .locator(".recovery-codes code")
+        .first()
+        .innerText();
+      await expect(page.locator(".recovery-codes li")).toHaveCount(8);
+      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "下载恢复码" }).click();
+      assert.equal(
+        (await downloadPromise).suggestedFilename(),
+        "parcel-recovery-codes.txt",
+      );
+      await page.getByLabel("我已安全保存恢复码").check();
+      await page.getByRole("button", { name: "进入管理页面" }).click();
+      await expect(page.getByRole("link", { name: "登录安全" })).toBeVisible();
+      await page.getByRole("button", { name: "退出登录" }).click();
+      await expect(
+        page.getByRole("heading", { name: "管理员登录", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: resolve(`../.parcel-v3/auth-previews/login-${name}.png`),
+        fullPage: true,
+      });
+      await page
+        .getByLabel("管理员密码", { exact: true })
+        .fill("native-admin-password");
+      await page
+        .getByLabel("动态验证码", { exact: true })
+        .fill(await totp(secret, Math.floor(Date.now() / 30000)));
+      await page.getByRole("button", { name: "登录 Parcel" }).click();
+      await expect(page.getByRole("link", { name: "登录安全" })).toBeVisible();
+      await page.getByRole("link", { name: "登录安全" }).click();
+      await expect(
+        page.getByRole("heading", { name: "更换认证器" }),
+      ).toBeVisible();
+      assert.ok(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+        "security page must fit mobile width",
+      );
+      await page.screenshot({
+        path: resolve(`../.parcel-v3/auth-previews/security-${name}.png`),
+        fullPage: true,
+      });
+      await page.getByRole("button", { name: "退出登录" }).click();
+      await page
+        .getByRole("button", { name: "无法使用认证器？使用恢复码" })
+        .click();
+      await page
+        .getByLabel("管理员密码", { exact: true })
+        .fill("native-admin-password");
+      await page.getByLabel("恢复码", { exact: true }).fill(recovery);
+      await page.getByRole("button", { name: "继续绑定认证器" }).click();
+      await expect(
+        page.getByRole("heading", { name: "扫码绑定认证器" }),
+      ).toBeVisible();
+      await f.db.prepare("DELETE FROM rate_limits").run();
+      await page.getByText("无法扫码？手动输入密钥").click();
+      const replacement = await page.locator(".totp-secret code").innerText();
+      assert.notEqual(replacement, secret);
+      await page
+        .getByLabel("动态验证码", { exact: true })
+        .fill(await totp(replacement, Math.floor(Date.now() / 30000)));
+      await page.getByRole("button", { name: "确认绑定" }).click();
+      await expect(
+        page.getByRole("heading", { name: "保存恢复码" }),
+      ).toBeVisible();
+      assert.equal(
+        (await context.storageState()).origins.length,
+        0,
+        "no credential in localStorage",
+      );
+      assert.deepEqual(errors, []);
+      assert.equal(f.unexpected, 0);
+    },
+  );
+}
 
 for (const [name, engine, viewport] of [
   ["chromium", chromium, { width: 1440, height: 1000 }],

@@ -6,6 +6,14 @@ import { legacyPassword, wrapLegacyPassword } from "../password.mjs";
 test("V3 actual workerd serves assets and verifies Access/CSRF, rejects origin bypass", async (t) => {
   const f = await fixture(t);
   assert.equal(
+    (
+      await (
+        await f.api("/api/v1/auth-config", { admin: false, expected: 200 })
+      ).json()
+    ).auth_mode,
+    "access",
+  );
+  assert.equal(
     (await f.mf.dispatchFetch(f.config.PUBLIC_URL + "/")).status,
     200,
   );

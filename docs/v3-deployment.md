@@ -13,6 +13,35 @@ flowchart LR
   Cron[Cron 每 5 分钟] --> Worker
 ```
 
+## 管理员密码 + TOTP 登录（替代邮箱验证码）
+
+V3 支持 `ADMIN_AUTH=totp`，由 Parcel 验证管理员密码与认证器动态码，无需管理员邮箱或 Access JWT。未设置该变量时继续使用原 Access 登录，已有实例升级后不会自动切换。此功能适用于 Workers + D1 的 V3；Go 和旧 Pages 网关保留原认证方式。前端 V3 构建使用 `VITE_ADMIN_AUTH=v3`，在运行时读取认证模式，无需为两种模式分别构建。
+
+现有正式实例在 Cloudflare Dashboard 中按以下顺序切换：
+
+1. 发布本次代码。正式 `deploy:production` 会先应用 `0003_admin_totp.sql`，新增管理员凭据、会话、绑定和恢复码表，不改动分享与 R2 数据。构建命令、D1/R2 bindings、域名、CORS 和现有存储配置无需调整。
+2. 本机执行 `npm run admin:setup-token`，生成 `.parcel-v3/admin-setup-token.txt`（忽略提交，拒绝覆盖）。在 Worker → Settings → Variables and Secrets 中新增 **Secret** `ADMIN_SETUP_TOKEN`，粘贴文件内容并去掉末尾换行；新增普通变量 **`ADMIN_AUTH=totp`**，保存并部署。不得替换原 `SESSION_SECRET`，它还保护已有密码分享与新的 TOTP 密钥。
+3. 打开正式 `/login`。首次设置需要初始化密钥、至少 12 位管理员密码及确认密码；扫码导入 Google Authenticator、Microsoft Authenticator、1Password 等支持 TOTP 的认证器，也可手动输入密钥。输入生成的 6 位动态码完成绑定，再下载并妥善保存 8 个恢复码。初始化密钥在管理员建立后不能再次初始化或登录；可从 Worker Secrets 删除 `ADMIN_SETUP_TOKEN`，常规登录和重新绑定不依赖它。
+4. 在 Zero Trust → Access controls → Applications 中找到**只保护 Parcel 管理入口的管理员应用**（例如 `parcel-admin`）。确认没有其他用途后移除该应用，或移除其中 Parcel 的七个管理路径：`/login`、`/admin`、`/admin/*`、`/api/v1/auth/*`、`/api/v1/admin/*`、`/api/v1/uploads`、`/api/v1/uploads/*`。如果另有更宽泛的 Access 应用覆盖同一域名，也须解除对这些管理路径的拦截。只修改 Parcel 管理员应用，保留其他服务及旧 Origin 的 Service Auth 应用。
+5. 使用新的无痕窗口验证：管理页面直接显示 Parcel 密码与动态码表单，不再跳转邮箱；匿名管理 API 返回 401；密码或动态码错误均不能登录；正确登录可上传、管理与退出；公开分享仍可正常下载。移除 Access 前，其已有邮箱认证仍会挡在 Parcel 登录页之前，因此可先在已验证的 Access 会话中完成绑定，再移除入口保护。
+
+部署仍保留原运行时变量与 Secrets。切换后 `ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`、`ADMIN_EMAILS` 不再参与 V3 认证，可保留以便切回 Access。后续使用正式 `build:production` / `deploy:production`，不要对既有正式实例重跑面向新 Access 资源的 `deploy:bootstrap`。
+
+正常登录使用“密码 + 动态码”。管理页“登录安全”支持验证密码与当前动态码后更换认证器。手机丢失时，在登录页选择“无法使用认证器？使用恢复码”，输入密码和一个未使用的恢复码，再绑定新认证器。恢复流程完成前不会获得管理员会话；确认后一次性消费旧恢复码，撤销所有旧会话和其余旧恢复码，生成一套新的恢复码。取消或超时不会消费恢复码，也不会更改当前认证器。初始绑定及重新绑定均须在 10 分钟内确认。
+
+TOTP 使用 [RFC 6238](https://www.rfc-editor.org/rfc/rfc6238) 的 SHA-1、6 位、30 秒时间步，容忍前后一个时间步；D1 原子记录已使用时间步，拒绝并发和重复使用。管理员密码沿用浏览器 Argon2id 与服务端加密校验，TOTP 密钥使用独立域派生的 AES-GCM 密钥加密。会话为 Secure / HttpOnly / SameSite=Strict 的主机 Cookie，12 小时到期，写操作校验 Origin 和每个会话独立的 CSRF。登录与绑定另有持久化的按 IP 和全局限流，不因 Worker 重启清空。二维码在浏览器本地生成，密钥不发往第三方服务。不要记录认证请求正文、二维码或恢复码。
+
+如果遗忘密码，或手机与所有恢复码均丢失，只能由有该实例 D1 管理权限的运维人员执行重置：先在 Cloudflare 配置一个新的 `ADMIN_SETUP_TOKEN`，再于目标 D1 Console 按顺序执行下面两条语句，随后重新打开 `/login` 初始化。该操作仅清除管理员认证，不动分享与对象；会立刻撤销所有管理员会话。
+
+```sql
+DELETE FROM admin_enrollments;
+DELETE FROM admin_credentials WHERE id=1;
+```
+
+`admin_sessions` 和 `admin_recovery_codes` 通过外键级联删除。不要在重置期间继续初始化或登录。数据库备份包含加密后的认证密钥和凭据，须与 `SESSION_SECRET` 分开妥善备份。
+
+回退时，先恢复覆盖全部管理路径的管理员 Access 应用及白名单，确认 Access 能正常验证，再把 `ADMIN_AUTH` 改回 `access` 并核对原三项 Access 变量。新增表可保留；切回 `totp` 会恢复原凭据，除非已执行重置。
+
 ## 构建和验证
 
 需要 Node 24。首次构建安装两个子项目的锁定依赖，后续可使用 `--skip-install`。

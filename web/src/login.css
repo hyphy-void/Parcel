@@ -102,6 +102,69 @@
 .login-app footer {
   background: var(--background);
 }
+.auth-card label:not(.auth-checkbox) {
+  display: block;
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+.totp-code {
+  letter-spacing: 0.28em;
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+}
+.totp-qr {
+  display: flex;
+  justify-content: center;
+  background: #fff;
+  min-height: 240px;
+  margin-bottom: 20px;
+}
+.totp-qr img {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+.totp-secret code {
+  display: block;
+  overflow-wrap: anywhere;
+  user-select: all;
+  padding-block: 8px;
+}
+.totp-secret summary {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.recovery-codes {
+  padding: 0;
+  list-style: none;
+  margin-block: 24px;
+}
+.recovery-codes li {
+  padding-block: 5px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.auth-card .auth-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+.auth-checkbox input {
+  width: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
+}
+.auth-recover {
+  margin-top: 24px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.auth-security {
+  padding: 0;
+  margin: 48px auto;
+}
 @media (min-width: 768px) and (max-width: 1100px) {
   .story-title {
     font-size: clamp(36px, 5vw, 54px);
@@ -114,6 +177,18 @@
   }
 }
 @media (max-width: 767px) {
+  .admin-app header > nav.totp-nav {
+    gap: 4px;
+    font-size: 14px;
+  }
+  nav.totp-nav > a,
+  nav.totp-nav .text-button {
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+  .auth-security {
+    margin-block: 24px;
+  }
   .login-layout {
     grid-template-columns: 1fr;
     min-height: 0;
