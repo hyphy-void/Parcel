@@ -442,6 +442,7 @@ type LoginVisualHandle = { pulse: () => void };
 const LoginVisual = React.memo(
   React.forwardRef<LoginVisualHandle, { focused: boolean; busy: boolean }>(
     function LoginVisual({ focused, busy }, ref) {
+      useLocale();
       const envelope = useRef<HTMLDivElement>(null);
       const pulseAnimation = useRef<Animation | undefined>(undefined);
       React.useImperativeHandle(

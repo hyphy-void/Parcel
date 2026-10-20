@@ -180,6 +180,19 @@ test("login fields survive switching and blocked storage still permits switching
     };
   });
   await page.goto("/login");
+  // Switch before focusing a field: memoized artwork must update independently
+  // of focus and busy props.
+  await english(page);
+  await expect(page.locator(".story-title")).toHaveText(
+    "Share a file.Leave the rest to us.",
+  );
+  await expect(page.locator(".story-copy")).toContainText(
+    "Expiry takes care of cleanup.",
+  );
+  await page.getByRole("button", { name: "切换到中文", exact: true }).click();
+  await expect(page.locator(".story-title")).toHaveText(
+    "分享一份文件，少一份牵挂。",
+  );
   await page
     .getByLabel("管理员密码", { exact: true })
     .fill("keep-login-password");
