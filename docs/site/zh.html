@@ -172,7 +172,7 @@
           文件内容、原始文件名、媒体类型和原文 SHA-256
           均被加密。服务端仍可见大小、分享
           ID、有效期、下载次数和请求元信息。端到端加密仅适用于 Cloudflare
-          V3；独立 Go 与连接 Origin 的 Pages 构建保留原有传输协议。
+          部署；独立 Go 与连接 Origin 的 Pages 构建保留原有传输协议。
         </p>
         <div class="password-explainer">
           <h3>链接密钥与分享密码</h3>
@@ -264,7 +264,7 @@
                   可能要求绑定付款方式；请自行完成套餐与付款设置。
                 </p>
                 <p>
-                  本教程适用于新实例。现有 Go、Pages 或 V3
+                  本教程适用于新实例。现有 Go、Pages 或旧 Worker
                   实例升级，请使用仓库的迁移与生产部署文档，避免两套服务管理同一桶。
                 </p>
                 <p>
@@ -294,9 +294,10 @@
                   <code translate="no">R2_BUCKET_NAME</code>。
                 </p>
                 <p>
-                  关闭“启用预览构建”，并在 Worker 的运行时变量中明确设置
+                  关闭“启用预览构建”。模板与部署命令固定设置
                   <code translate="no">ADMIN_AUTH=totp</code
-                  >。管理员使用密码与认证器动态码登录，公开分享页供接收者访问。
+                  >，省略该运行时变量也默认使用密码加
+                  TOTP。公开分享页供接收者访问。
                 </p>
                 <p>
                   首次保持
@@ -347,7 +348,7 @@
                   管理员使用 Parcel 自带的密码 + TOTP 登录。在 Worker
                   的运行时变量里设置
                   <code translate="no">ADMIN_AUTH=totp</code
-                  >；此项必填，代码更新不会自动补充控制台变量。按下面的步骤完成首次初始化。
+                  >；模板与部署命令会固定设置，省略该变量也默认使用此模式。按下面的步骤完成首次初始化。
                 </p>
                 <figure class="binding-figure">
                   <div class="binding-map">
@@ -644,8 +645,9 @@
                 <p>
                   创建者浏览器的网站数据中保存本机密钥，不能防住控制该浏览器的人。
                   清理网站数据或换设备前先备份；本机密钥、完整链接和备份全部丢失后，服务器无法恢复。
-                  旧版未加密 V3 分享不兼容，需重新上传；升级不会删除现有 D1 或
-                  R2 数据。 Go 与连接 Origin 的 Pages 仍是独立的非 E2EE 模式。
+                  旧版未加密 Worker 分享不兼容，需重新上传；升级不会删除现有 D1
+                  或 R2 数据。 Go 与连接 Origin 的 Pages 仍是独立的非 E2EE
+                  模式。
                 </p>
               </div>
             </article>
@@ -903,9 +905,11 @@
             <summary>可以只使用 CLI 吗？</summary>
             <p>
               可以。安装 Node 24 与 Bash，克隆仓库，用 deploy/v3.example.json
-              建立忽略目录中的配置，准备限定账户权限的管理 Token，再运行 npm run
-              deploy:bootstrap -- --config
-              .parcel-v3/deploy.json。完整准备、冻结迁移与回滚步骤见仓库文档。
+              建立忽略目录中的配置，准备限定账户权限的管理 Token 和私密的
+              ADMIN_SETUP_TOKEN，再运行 npm run deploy:bootstrap -- --config
+              .parcel-v3/deploy.json。在 /login 设置密码并绑定
+              TOTP，保存恢复码、移除初始化 Secret 后， 加 --activate
+              重跑；脚本确认已绑定才会开放服务。凭据准备、迁移与恢复步骤见仓库文档。
             </p>
           </details>
         </div>

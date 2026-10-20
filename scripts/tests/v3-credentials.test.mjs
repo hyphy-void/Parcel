@@ -69,6 +69,37 @@ test("CI overrides are in memory; R2 pairs cannot mix environment and file keys"
   );
 });
 
+test("temporary enrollment credentials stay private and invalid tokens never leak in diagnostics", async (t) => {
+  const root = await workspace(t);
+  const ADMIN_SETUP_TOKEN = "x".repeat(43);
+  await saveCredentials({ ...values, ADMIN_SETUP_TOKEN }, { root });
+  assert.equal(
+    (await loadCredentials({ root, env: {} })).ADMIN_SETUP_TOKEN,
+    ADMIN_SETUP_TOKEN,
+  );
+  const override = "y".repeat(43);
+  assert.equal(
+    (await loadCredentials({ root, env: { ADMIN_SETUP_TOKEN: override } }))
+      .ADMIN_SETUP_TOKEN,
+    override,
+  );
+  assert.equal(
+    JSON.parse(await readFile(credentialsPath(root), "utf8")).ADMIN_SETUP_TOKEN,
+    ADMIN_SETUP_TOKEN,
+  );
+  for (const token of [
+    "private-but-too-short",
+    "x".repeat(129),
+    "not-url-safe+".repeat(4),
+  ])
+    await assert.rejects(
+      saveCredentials({ ...values, ADMIN_SETUP_TOKEN: token }, { root }),
+      (e) =>
+        /Invalid credential field: ADMIN_SETUP_TOKEN/.test(e.message) &&
+        !e.message.includes(token),
+    );
+});
+
 test("environment-only CI needs no private file and never creates a secret copy", async (t) => {
   const root = await workspace(t);
   assert.deepEqual(

@@ -13,5 +13,5 @@ await build({
   minify: true,
 });
 console.log(
-  "Built V3 Worker. D1/R2 bindings and secrets are configured at deployment.",
+  "Built Parcel Worker. D1/R2 bindings and secrets are configured at deployment.",
 );

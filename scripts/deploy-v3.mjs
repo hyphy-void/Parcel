@@ -70,7 +70,6 @@ export function validate(input) {
     name: "parcel",
     databaseName: "parcel",
     bucketName: "parcel",
-    adminEmails: [],
     workersPaid: false,
     active: false,
     ...input,
@@ -80,14 +79,10 @@ export function validate(input) {
       throw new Error(`Invalid ${key}`);
   if (!/^[a-f0-9]{32}$/.test(c.accountId || ""))
     throw new Error("Set accountId in the deployment config");
-  if (
-    !Array.isArray(c.adminEmails) ||
-    !c.adminEmails.length ||
-    c.adminEmails.some(
-      (e) => typeof e !== "string" || !/^\S+@[^\s@,]+$/.test(e),
-    )
-  )
-    throw new Error("Set an explicit administrator email allowlist");
+  if (["adminEmails", "teamDomain", "accessAppId"].some((key) => key in c))
+    throw new Error(
+      "Remove obsolete administrator settings from the deployment JSON and use deploy/v3.example.json. Administrator login uses password + TOTP.",
+    );
   if (c.publicUrl) {
     const u = new URL(c.publicUrl);
     if (
@@ -99,11 +94,6 @@ export function validate(input) {
     )
       throw new Error("publicUrl must be an HTTPS origin");
   }
-  if (
-    c.teamDomain &&
-    !/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(c.teamDomain)
-  )
-    throw new Error("Invalid Access teamDomain");
   for (const key of [
     "workersPaid",
     "active",
@@ -163,24 +153,25 @@ export function plan(c) {
     database: c.databaseName,
     bucket: c.bucketName,
     publicUrl: c.publicUrl || "derived from existing Workers subdomain",
-    adminEmails: c.adminEmails,
+    adminAuth: "totp",
     active: c.active,
     requires: [
-      "Cloudflare account API token: Workers Scripts, D1, R2, Access Apps and Policies, Access Organizations/Identity Providers",
+      "Cloudflare account API token: Workers Scripts, D1 and R2",
       "Bucket-scoped R2 S3 credentials",
-      "Existing Zero Trust organization and Workers subdomain",
+      "Registered Workers subdomain",
+      "Temporary ADMIN_SETUP_TOKEN secret for first password + TOTP enrollment",
       "Workers Free or Paid; browser Argon2id with encrypted server verifiers",
     ],
     actions: [
       "Create/reuse D1",
       "Create private R2 bucket",
       "Merge managed CORS and multipart-abort lifecycle rules",
-      "Create isolated administrator Access application",
       "Apply D1 migrations",
       "Deploy maintenance Worker and upload secrets",
+      "Open /login to set an administrator password, bind TOTP and save recovery codes; remove ADMIN_SETUP_TOKEN afterward",
       c.active
-        ? "Activate and verify public API"
-        : "Keep maintenance until migration/cutover",
+        ? "Require completed TOTP enrollment before activating and verifying public API"
+        : "Keep maintenance until administrator enrollment and activation",
     ],
     preserves: [
       "Existing Pages/Origin deployment and domains",
@@ -199,17 +190,6 @@ export async function resources(c, api, state = {}, save = async () => {}) {
     throw new Error(
       "Initial automated deployment requires this Worker's isolated workers.dev URL; custom-domain cutover follows verified migration",
     );
-  const organization = await api.request("/access/organizations");
-  const teamDomain = c.teamDomain || `https://${organization.auth_domain}`;
-  if (!/^https:\/\/[a-z0-9-]+\.cloudflareaccess\.com$/.test(teamDomain))
-    throw new Error("Create a Zero Trust organization before bootstrap");
-  const idps = await api.list("/access/identity_providers");
-  if (!idps.length)
-    await api.request("/access/identity_providers", "POST", {
-      name: "Parcel email code",
-      type: "onetimepin",
-      config: {},
-    });
   const databases = await api.list("/d1/database");
   const matches = databases.filter((d) => d.name === c.databaseName);
   if (matches.length > 1) throw new Error("Ambiguous D1 database name");
@@ -248,7 +228,7 @@ export async function resources(c, api, state = {}, save = async () => {}) {
         allowed: {
           origins: [publicUrl],
           methods: ["GET", "HEAD", "PUT"],
-          headers: ["Content-Type", "Range"],
+          headers: ["Content-Type", "Range", "X-Amz-Meta-Parcel-Upload"],
         },
         exposeHeaders: [
           "ETag",
@@ -284,52 +264,102 @@ export async function resources(c, api, state = {}, save = async () => {}) {
     if (JSON.stringify(existing) !== JSON.stringify(next))
       await api.request(path, "PUT", next);
   }
-  const name = `${c.name} administrator`,
-    host = new URL(publicUrl).host;
-  const destinations = [
-    "/login",
-    "/admin",
-    "/admin/*",
-    "/api/v1/auth/*",
-    "/api/v1/admin/*",
-    "/api/v1/uploads",
-    "/api/v1/uploads/*",
-  ].map((path) => ({ type: "public", uri: host + path }));
-  const apps = await api.list("/access/apps"),
-    found = apps.filter((a) => a.name === name);
-  if (found.length > 1) throw new Error("Ambiguous managed Access application");
-  const existing = found[0];
-  if (existing && (state.accessAppId || c.accessAppId) !== existing.id)
-    throw new Error(
-      "Access application name already exists outside this bootstrap state; choose another Worker name",
-    );
-  const appBody = {
-    name,
-    type: "self_hosted",
-    destinations,
-    session_duration: "12h",
-    app_launcher_visible: false,
-    auto_redirect_to_identity: false,
-    policies: [
-      {
-        name: "Parcel administrators",
-        decision: "allow",
-        precedence: 1,
-        include: c.adminEmails.map((email) => ({ email: { email } })),
-      },
-    ],
-  };
-  const app = await api.request(
-    existing ? `/access/apps/${existing.id}` : "/access/apps",
-    existing ? "PUT" : "POST",
-    appBody,
-  );
-  if (!app.aud || !app.id)
-    throw new Error("Access application response is missing audience/id");
-  state.accessAppId = app.id;
   state.publicUrl = publicUrl;
   await save(state);
-  return { databaseId: db.uuid, publicUrl, teamDomain, accessAud: app.aud };
+  return { databaseId: db.uuid, publicUrl };
+}
+
+export function workerConfig(c, r, template, localPath) {
+  // Build from the maintained template, never from historical login settings.
+  const vars = { ...template.vars };
+  for (const key of [
+    "ACCESS_TEAM_DOMAIN",
+    "ACCESS_AUD",
+    "ADMIN_EMAILS",
+    "ADMIN_SETUP_TOKEN",
+  ])
+    delete vars[key];
+  return {
+    ...template,
+    name: c.name,
+    account_id: c.accountId,
+    main: localPath("cloudflare/v3/worker.mjs"),
+    assets: { ...template.assets, directory: localPath("dist/v3-web") },
+    d1_databases: [
+      {
+        binding: "DB",
+        database_name: c.databaseName,
+        database_id: r.databaseId,
+        migrations_dir: localPath("cloudflare/v3/migrations"),
+      },
+    ],
+    r2_buckets: [{ binding: "FILES", bucket_name: c.bucketName }],
+    ...(c.workersPaid ? { limits: { cpu_ms: 30000 } } : {}),
+    vars: {
+      ...vars,
+      ...c.vars,
+      PUBLIC_URL: r.publicUrl,
+      ADMIN_AUTH: "totp",
+      R2_ENDPOINT: `https://${c.accountId}.r2.cloudflarestorage.com`,
+      R2_BUCKET_NAME: c.bucketName,
+      WORKERS_PLAN: c.workersPaid ? "paid" : "free",
+      CLEANUP_BATCH_SIZE: String(
+        c.vars?.CLEANUP_BATCH_SIZE || (c.workersPaid ? 30 : 1),
+      ),
+      ACTIVE: "false",
+      MAINTENANCE_SINCE: String(Math.floor(Date.now() / 1000)),
+    },
+  };
+}
+
+export function workerSecrets(credentials, { deployed = false } = {}) {
+  const secrets = Object.fromEntries(
+    [
+      "SESSION_SECRET",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      ...(!deployed ? ["ADMIN_SETUP_TOKEN"] : []),
+    ]
+      .filter((key) => credentials[key])
+      .map((key) => [key, credentials[key]]),
+  );
+  if (!deployed && !secrets.ADMIN_SETUP_TOKEN)
+    throw new Error(
+      "First deployment requires ADMIN_SETUP_TOKEN. Run npm run admin:setup-token and provide the file contents through the private credentials JSON or environment; never put it in deployment vars.",
+    );
+  return secrets;
+}
+
+export async function verifyAdministrator(
+  publicUrl,
+  { activate = false, fetcher = fetch } = {},
+) {
+  const response = await fetcher(`${publicUrl}/api/v1/auth-config`, {
+    redirect: "manual",
+    signal: AbortSignal.timeout(20000),
+  });
+  let info;
+  try {
+    info = await response.json();
+  } catch {
+    throw new Error(
+      "Administrator enrollment probe failed; Worker remains in maintenance.",
+    );
+  }
+  if (
+    response.status !== 200 ||
+    info.auth_mode !== "totp" ||
+    typeof info.initialized !== "boolean" ||
+    (!info.initialized && info.setup_available !== true)
+  )
+    throw new Error(
+      "Password + TOTP login is not ready; Worker remains in maintenance.",
+    );
+  if (activate && !info.initialized)
+    throw new Error(
+      `Worker remains in maintenance. Open ${publicUrl}/login, set a password, bind TOTP, save recovery codes and remove ADMIN_SETUP_TOKEN, then rerun with --activate.`,
+    );
+  return info;
 }
 async function privateJSON(path, value) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
@@ -432,12 +462,9 @@ export async function main() {
     deployed: state.deployed,
   });
   const token = credentials.CLOUDFLARE_API_TOKEN;
-  // The account management token must never become a Worker runtime binding.
-  const secrets = Object.fromEntries(
-    ["SESSION_SECRET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].map(
-      (key) => [key, credentials[key]],
-    ),
-  );
+  // Only upload the enrollment token on first deployment; later updates must
+  // not restore a setup secret that the administrator has already removed.
+  const secrets = workerSecrets(credentials, { deployed: state.deployed });
   const hasR2 = Boolean(
     secrets.R2_ACCESS_KEY_ID && secrets.R2_SECRET_ACCESS_KEY,
   );
@@ -451,7 +478,7 @@ export async function main() {
       code === 0
         ? accept()
         : reject(
-            new Error("V3 build failed before Cloudflare resource changes"),
+            new Error("Parcel build failed before Cloudflare resource changes"),
           ),
     );
   });
@@ -460,39 +487,7 @@ export async function main() {
   const template = await readJSON(resolve(root, "wrangler.json"));
   const localPath = (path) =>
     relative(folder, resolve(root, path)).split(sep).join("/");
-  const config = {
-    ...template,
-    name: c.name,
-    account_id: c.accountId,
-    main: localPath("cloudflare/v3/worker.mjs"),
-    assets: { ...template.assets, directory: localPath("dist/v3-web") },
-    d1_databases: [
-      {
-        binding: "DB",
-        database_name: c.databaseName,
-        database_id: r.databaseId,
-        migrations_dir: localPath("cloudflare/v3/migrations"),
-      },
-    ],
-    r2_buckets: [{ binding: "FILES", bucket_name: c.bucketName }],
-    ...(c.workersPaid ? { limits: { cpu_ms: 30000 } } : {}),
-    vars: {
-      ...template.vars,
-      ...c.vars,
-      PUBLIC_URL: r.publicUrl,
-      ACCESS_TEAM_DOMAIN: r.teamDomain,
-      ACCESS_AUD: r.accessAud,
-      ADMIN_EMAILS: c.adminEmails.join(","),
-      R2_ENDPOINT: `https://${c.accountId}.r2.cloudflarestorage.com`,
-      R2_BUCKET_NAME: c.bucketName,
-      WORKERS_PLAN: c.workersPaid ? "paid" : "free",
-      CLEANUP_BATCH_SIZE: String(
-        c.vars?.CLEANUP_BATCH_SIZE || (c.workersPaid ? 30 : 1),
-      ),
-      ACTIVE: "false",
-      MAINTENANCE_SINCE: String(Math.floor(Date.now() / 1000)),
-    },
-  };
+  const config = workerConfig(c, r, template, localPath);
   const wrangle = (args, options = {}) =>
     runWrangler(args, {
       ...options,
@@ -502,7 +497,7 @@ export async function main() {
   await privateJSON(generated, config);
   if (!hasR2)
     throw new Error(
-      `Isolated D1/R2/Access resources are ready. Create an Object Read & Write S3 token scoped to bucket ${c.bucketName}, fill the local credentials JSON, then rerun the same deployment command. No Worker was deployed.`,
+      `Isolated D1/R2 resources are ready. Create an Object Read & Write S3 token scoped to bucket ${c.bucketName}, fill the local credentials JSON, then rerun the same deployment command. No Worker was deployed.`,
     );
   await wrangle([
     "d1",
@@ -514,10 +509,14 @@ export async function main() {
     generated,
   ]);
   await wrangle(["deploy", "--config", generated]);
-  state.deployed = true;
-  await privateJSON(statePath, state);
   await wrangle(["secret", "bulk", "--config", generated], {
     input: JSON.stringify(secrets),
+  });
+  state.deployed = true;
+  state.active = false;
+  await privateJSON(statePath, state);
+  const administrator = await verifyAdministrator(r.publicUrl, {
+    activate: c.active,
   });
   if (c.active) {
     config.vars.ACTIVE = "true";
@@ -540,7 +539,7 @@ export async function main() {
   state.active = c.active;
   await privateJSON(statePath, state);
   console.log(
-    `V3 deployed and public API verified: ${r.publicUrl}. Existing Pages/Go deployment remains in place.`,
+    `Parcel deployed and public API verified: ${r.publicUrl}. Administrator login: password + TOTP. ${administrator.initialized ? "Existing administrator enrollment retained." : "Open /login with your initialization secret to set a password and bind TOTP; save recovery codes and remove ADMIN_SETUP_TOKEN before activation."}`,
   );
 }
 if (

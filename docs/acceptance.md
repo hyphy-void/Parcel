@@ -1,6 +1,6 @@
 # Parcel v0.1 验收记录
 
-> 适用范围：本文件是独立 Go/SQLite 兼容程序的维护资料或历史记录，不描述当前 Cloudflare V3。当前密码 + TOTP、文件端到端加密及部署操作见 [V3 部署说明](v3-deployment.md)；不要据此推断 Go 已具备这些功能。
+> 适用范围：本文件是独立 Go/SQLite 兼容程序的维护资料或历史记录，不描述当前 Cloudflare 部署。当前密码 + TOTP、文件端到端加密及部署操作见 [Cloudflare 部署说明](v3-deployment.md)；不要据此推断 Go 已具备这些功能。
 
 验收日期：2026-10-07，Asia/Shanghai。功能已经实现并部署到 Pi；本记录区分已执行的验证与尚未取得的外部设备结果。
 

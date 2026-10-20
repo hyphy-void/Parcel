@@ -12,6 +12,42 @@ const config = {
   ACCESS_AUD: "",
   ADMIN_EMAILS: "",
 };
+
+test("an unconfigured authentication mode defaults to password + TOTP and can enroll during maintenance", async (t) => {
+  const f = await fixture(t, {
+    config: {
+      ADMIN_AUTH: undefined,
+      ACCESS_TEAM_DOMAIN: undefined,
+      ACCESS_AUD: undefined,
+      ADMIN_EMAILS: undefined,
+      ADMIN_SETUP_TOKEN: setupToken,
+      ACTIVE: "false",
+    },
+  });
+  assert.equal(
+    configuration({ ...f.config, DB: f.db, FILES: f.bucket }).adminAuth,
+    "totp",
+  );
+  const before = await (
+    await f.api("/api/v1/auth-config", { admin: false, expected: 200 })
+  ).json();
+  assert.equal(before.auth_mode, "totp");
+  assert.equal(before.initialized, false);
+  assert.equal(before.setup_available, true);
+  await f.api("/api/v1/admin/status", { admin: false, expected: 401 });
+  const admin = await initialize(f);
+  const after = await (
+    await f.api("/api/v1/auth-config", { admin: false, expected: 200 })
+  ).json();
+  assert.equal(after.initialized, true);
+  assert.equal(after.setup_available, false);
+  await f.api("/api/v1/auth/session", { cookie: admin.cookie, expected: 200 });
+  await f.api("/api/v1/admin/status", { cookie: admin.cookie, expected: 503 });
+  await f.api("/api/v1/shares/" + "a".repeat(32), {
+    admin: false,
+    expected: 503,
+  });
+});
 const step = () => Math.floor(Date.now() / 30000);
 export function cookies(response) {
   return response.headers

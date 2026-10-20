@@ -33,7 +33,7 @@ const integer = (value, fallback, min, max) => {
   return n;
 };
 export function configuration(env) {
-  const adminAuth = env.ADMIN_AUTH || "access";
+  const adminAuth = env.ADMIN_AUTH ?? "totp";
   if (!["access", "totp"].includes(adminAuth))
     throw new Error("Invalid administrator authentication mode");
   for (const key of [
@@ -48,7 +48,7 @@ export function configuration(env) {
     "R2_SECRET_ACCESS_KEY",
   ])
     if (typeof env[key] !== "string" || !env[key] || /[\r\n]/.test(env[key]))
-      throw new Error("Missing V3 configuration");
+      throw new Error("Missing Worker configuration");
   for (const key of [
     "PUBLIC_URL",
     "R2_ENDPOINT",
@@ -77,7 +77,7 @@ export function configuration(env) {
     !env.DB ||
     !env.FILES
   )
-    throw new Error("Invalid V3 configuration");
+    throw new Error("Invalid Worker configuration");
   if (
     env.ADMIN_SETUP_TOKEN !== undefined &&
     !/^[A-Za-z0-9_-]{32,128}$/.test(env.ADMIN_SETUP_TOKEN)

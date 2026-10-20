@@ -48,11 +48,11 @@ web/index.html: ✓ pass
 
 - TypeScript、两种鉴权模式的生产构建与 Prettier 检查通过。
 - Go `go test -race ./...`、`go vet ./...` 通过；在 WSL 使用 go.mod 的 Go 1.26.8，Windows 无法构建项目使用的 Unix 文件锁接口。
-- Cloudflare V3 后端测试 30 项通过；部署与凭据工具测试 13 项在 Linux 通过。
+- Cloudflare 部署后端测试 30 项通过；部署与凭据工具测试 13 项在 Linux 通过。
 - 浏览器覆盖 Chromium、Firefox 和手机 Chromium；完整运行发现的问题修复后重跑受影响测试。公网 93 MB 上传测试继续按既有环境变量显式启用。
 - 实际 workerd / D1 / R2 浏览器闭环覆盖上传、密码、下载和撤销；Firefox 在 Linux 运行，避免 Windows Firefox 启动限制。
 - axe-core 对 12 种页面状态 × 2 种主题 × 4 个宽度（1440、768、390、320）检查，共 96 组，0 违规、0 横向溢出。规则包含 WCAG 2 A/AA、2.1 AA 与 best-practice。
 - 96 组截图和原始检查报告位于忽略目录 `.taste-skill/app-review/`；原始三宽度 inspector 输出位于 `.taste-skill/app-final/`。
 
-本记录描述 2026-10-19 的界面调整。当前生产验收应核对 main 分支构建结果、正式资源、加密接收 API 与管理员密码 + TOTP 登录；传输、运行时配置和数据库迁移以 [V3 部署说明](v3-deployment.md)为准。
+本记录描述 2026-10-19 的界面调整。当前生产验收应核对 main 分支构建结果、正式资源、加密接收 API 与管理员密码 + TOTP 登录；传输、运行时配置和数据库迁移以 [Cloudflare 部署说明](v3-deployment.md)为准。
 

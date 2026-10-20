@@ -43,7 +43,8 @@ test("both languages explain the actual file and password protection and native 
       source,
       /It is not end-to-end encryption|这不是端到端加密/,
     );
-    assert.match(source, /Cloudflare V3/);
+    assert.match(source, /Cloudflare/);
+    assert.doesNotMatch(source, /\bV3\b/);
     assert.match(source, /16 MiB/);
     assert.match(source, /HKDF/);
     assert.match(source, /32-byte|32 字节/);

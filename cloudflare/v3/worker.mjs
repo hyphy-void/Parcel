@@ -17,7 +17,7 @@ export function createWorker(deps = {}) {
         config = configuration(env);
       } catch {
         return security(
-          problem(503, "serverless_unconfigured", "V3 服务配置尚未完成"),
+          problem(503, "serverless_unconfigured", "服务配置尚未完成"),
         );
       }
       const respond = (response, api = true) => security(response, config, api);

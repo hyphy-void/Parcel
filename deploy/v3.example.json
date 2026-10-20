@@ -3,12 +3,11 @@
   "name": "parcel",
   "databaseName": "parcel",
   "bucketName": "parcel",
-  "adminEmails": ["admin@example.com"],
   "workersPaid": false,
   "active": false,
   "allowExistingBucket": false,
   "vars": {
-    "STORAGE_QUOTA_BYTES": "21474836480",
+    "STORAGE_QUOTA_BYTES": "9000000000",
     "MAX_FILE_BYTES": "8589934592"
   }
 }

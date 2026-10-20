@@ -30,7 +30,7 @@ jobs:
           VITE_ADMIN_AUTH=access npm --prefix web run build -- --outDir ../dist/pages-web --emptyOutDir
           npm --prefix cloudflare run build
           npm --prefix cloudflare run test:runtime
-      - name: Verify V3 Worker, real D1/R2 and deployment/migration tools
+      - name: Verify Parcel Worker, real D1/R2 and deployment/migration tools
         run: |
           ./scripts/build-v3.sh --skip-install
           npm run test:crypto

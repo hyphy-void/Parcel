@@ -23,25 +23,22 @@
         "description": "Parcel 的状态数据库，保存分享、上传任务和下载会话。"
       },
       "FILES": {
-        "description": "私有 R2 存储；V3 浏览器分块加密后直传，接收端本机解密。"
+        "description": "私有 R2 存储；浏览器分块加密后直传，接收端本机解密。"
       },
       "PUBLIC_URL": {
-        "description": "正式 HTTPS 地址，无结尾斜杠；为此地址配置 R2 CORS，选择原生 TOTP 或 Access 管理员登录。"
+        "description": "正式 HTTPS 地址，无结尾斜杠；为此地址配置 R2 CORS，管理员使用密码加 TOTP 登录。"
       },
-      "ACCESS_TEAM_DOMAIN": {
-        "description": "Zero Trust 组织的 https://your-team.cloudflareaccess.com 地址；见图文部署手册。"
+      "ADMIN_AUTH": {
+        "description": "固定为 totp：管理员密码加认证器动态码，支持扫码绑定与恢复码。"
       },
-      "ACCESS_AUD": {
-        "description": "只覆盖管理员路径的 Access 应用 AUD；须同时保护 /api/v1/auth/*。"
-      },
-      "ADMIN_EMAILS": {
-        "description": "显式管理员邮箱白名单，逗号分隔，与 Access Allow 策略保持一致。"
+      "ADMIN_SETUP_TOKEN": {
+        "description": "临时 Worker Secret；本机运行 npm run admin:setup-token 生成，用于首次设置密码与扫码绑定，保存恢复码后移除。"
       },
       "R2_ENDPOINT": {
         "description": "R2 的账户 S3 API 地址，不带桶名或尾部斜杠。"
       },
       "ACTIVE": {
-        "description": "首次保持 false，完成 Access、密钥、CORS 与访问地址配置后再改为 true。"
+        "description": "首次保持 false，完成密码与 TOTP 绑定、密钥、CORS 与访问地址配置后再改为 true。"
       },
       "SESSION_SECRET": {
         "description": "64 位十六进制随机密钥；CLI 首次部署自动生成，重复部署保持不变。"

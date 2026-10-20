@@ -58,6 +58,8 @@ export async function fixture(t, options = {}) {
   const jwk = await exportJWK(publicKey);
   jwk.kid = "v3-test";
   const config = {
+    // Explicit compatibility mode for existing JWT tests; runtime defaults to TOTP.
+    ADMIN_AUTH: "access",
     PUBLIC_URL: "https://parcel.example.com",
     ACCESS_TEAM_DOMAIN: "https://parcel-test.cloudflareaccess.com",
     ACCESS_AUD: "v3-admin",
@@ -69,17 +71,19 @@ export async function fixture(t, options = {}) {
     R2_SECRET_ACCESS_KEY: "test-secret",
     ...options.config,
   };
-  const jwt =
-    config.ADMIN_AUTH === "totp"
-      ? ""
-      : await new SignJWT({ type: "app", email: "admin@example.com" })
-          .setProtectedHeader({ alg: "RS256", kid: jwk.kid })
-          .setSubject("admin-id")
-          .setIssuer(config.ACCESS_TEAM_DOMAIN)
-          .setAudience(config.ACCESS_AUD)
-          .setIssuedAt()
-          .setExpirationTime("1h")
-          .sign(privateKey);
+  for (const key of Object.keys(config))
+    if (config[key] === undefined) delete config[key];
+  const legacyAuth = config.ADMIN_AUTH === "access";
+  const jwt = legacyAuth
+    ? await new SignJWT({ type: "app", email: "admin@example.com" })
+        .setProtectedHeader({ alg: "RS256", kid: jwk.kid })
+        .setSubject("admin-id")
+        .setIssuer(config.ACCESS_TEAM_DOMAIN)
+        .setAudience(config.ACCESS_AUD)
+        .setIssuedAt()
+        .setExpirationTime("1h")
+        .sign(privateKey)
+    : "";
   const dir = await mkdtemp(join(tmpdir(), "parcel-v3-"));
   const parts = new Map();
   let listFailures = 0;
@@ -185,7 +189,7 @@ export async function fixture(t, options = {}) {
       assert.equal(response.status, expected, await response.clone().text());
     return response;
   }
-  if (config.ADMIN_AUTH !== "totp")
+  if (legacyAuth)
     csrf = (await (await api("/api/v1/auth/session", { expected: 200 })).json())
       .csrf;
   const created = [];

@@ -30,9 +30,7 @@
   },
   "vars": {
     "PUBLIC_URL": "https://parcel.example.com",
-    "ACCESS_TEAM_DOMAIN": "https://your-team.cloudflareaccess.com",
-    "ACCESS_AUD": "configure-administrator-application-audience",
-    "ADMIN_EMAILS": "admin@example.com",
+    "ADMIN_AUTH": "totp",
     "R2_ENDPOINT": "https://your-account.r2.cloudflarestorage.com",
     "R2_BUCKET_NAME": "parcel",
     "STORAGE_QUOTA_BYTES": "9000000000",

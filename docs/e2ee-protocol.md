@@ -1,8 +1,8 @@
-# Cloudflare V3 encrypted file protocol, version 1
+# Parcel encrypted file protocol, version 1
 
-This format belongs to the Cloudflare V3 browser application. The independent
+This format belongs to the Cloudflare deployment browser application. The independent
 Go/origin application uses its existing protocol and does not gain E2EE from
-this change. The frontend entry chooses the V3 application only when built
+this change. The frontend entry chooses the Cloudflare deployment application only when built
 with `VITE_ADMIN_AUTH=v3`.
 
 ## Trust boundary
@@ -132,14 +132,14 @@ cannot restore a missing local context. Lost link keys/contexts without a
 usable backup cannot be recovered by the server.
 
 Migrations `0004_e2ee.sql` and `0005_download_admissions.sql` are additive. They
-do not encrypt or delete old objects. Retired V3 shares cannot be downloaded
+do not encrypt or delete old objects. Retired Cloudflare deployment shares cannot be downloaded
 with the new application; reupload from the original file. Historical rows
 remain available for normal cleanup and administrative revocation. Go rollback
 export refuses encrypted rows: retain a compatible E2EE Worker and D1/R2 backups.
 
 ## Acceptance
 
-Build the V3 UI and Worker first. Focused commands:
+Build the Cloudflare deployment UI and Worker first. Focused commands:
 
 ```sh
 npm run test:crypto

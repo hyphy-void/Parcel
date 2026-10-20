@@ -5,14 +5,16 @@ import {
   resources,
   validate,
   plan,
+  workerConfig,
+  workerSecrets,
+  verifyAdministrator,
 } from "../../../scripts/deploy-v3.mjs";
+import { readFile } from "node:fs/promises";
 
 function mock() {
   const data = {
     db: [],
     bucket: null,
-    apps: [],
-    idps: [{ type: "onetimepin" }],
     cors: {
       rules: [
         {
@@ -36,9 +38,6 @@ function mock() {
     const key = path.split("?")[0];
     calls.push({ key, method, body });
     if (key === "/workers/subdomain") return { subdomain: "example" };
-    if (key === "/access/organizations")
-      return { auth_domain: "example.cloudflareaccess.com" };
-    if (key === "/access/identity_providers") return data.idps;
     if (key === "/d1/database") {
       if (method === "POST") {
         data.db.push({ name: body.name, uuid: "test-db" });
@@ -56,14 +55,6 @@ function mock() {
       if (method === "PUT") data[type] = body;
       return data[type];
     }
-    if (key.startsWith("/access/apps")) {
-      if (method !== "GET") {
-        const app = { ...body, id: "test-app", aud: "test-aud" };
-        data.apps = [app];
-        return app;
-      }
-      return data.apps;
-    }
     throw new Error("unexpected request");
   };
   return { data, calls, api: { request, list: (path) => request(path) } };
@@ -71,13 +62,12 @@ function mock() {
 const config = () =>
   validate({
     accountId: "a".repeat(32),
-    adminEmails: ["admin@example.com"],
     workersPaid: true,
   });
-test("bootstrap retries reuse D1/R2, preserve other rules, only protect administrator routes", async () => {
+test("bootstrap retries reuse D1/R2 and preserve other rules without calling any Access API", async () => {
   const m = mock(),
     c = config(),
-    state = {};
+    state = { accessAppId: "historical-state-is-never-used" };
   let saves = 0;
   const first = await resources(c, m.api, state, async () => saves++);
   const before = m.calls.length;
@@ -107,15 +97,115 @@ test("bootstrap retries reuse D1/R2, preserve other rules, only protect administ
   );
   assert.equal(abort.conditions.prefix, "parcel/v3/");
   assert.equal(abort.deleteObjectsTransition, undefined);
-  const app = m.data.apps[0];
-  assert.ok(
-    app.destinations.every(
-      (d) => !d.uri.includes("/s/") && !d.uri.endsWith("example.workers.dev/*"),
-    ),
-  );
-  assert.deepEqual(app.policies[0].include, [
-    { email: { email: "admin@example.com" } },
+  assert.ok(m.calls.every((c) => !c.key.startsWith("/access/")));
+  assert.deepEqual(m.data.cors.rules[1].allowed.headers, [
+    "Content-Type",
+    "Range",
+    "X-Amz-Meta-Parcel-Upload",
   ]);
+  assert.deepEqual(first, {
+    databaseId: "test-db",
+    publicUrl: "https://parcel.example.workers.dev",
+  });
+});
+
+test("new deployment plans need no email or organization and reject obsolete login settings", () => {
+  const c = config();
+  const p = plan(c);
+  assert.equal(p.adminAuth, "totp");
+  assert.doesNotMatch(
+    JSON.stringify(p),
+    /Access|Zero Trust|adminEmails|teamDomain|email/,
+  );
+  for (const key of ["adminEmails", "teamDomain", "accessAppId"])
+    assert.throws(
+      () => validate({ ...c, [key]: "obsolete" }),
+      /obsolete administrator settings/,
+    );
+  for (const key of ["ADMIN_AUTH", "ADMIN_EMAILS", "ADMIN_SETUP_TOKEN"])
+    assert.throws(
+      () => validate({ ...c, vars: { [key]: "private" } }),
+      /numeric limits/,
+    );
+});
+
+test("generated Worker configuration forces TOTP and keeps initialization secrets out of vars", async () => {
+  const template = JSON.parse(
+    await readFile(new URL("../../../wrangler.json", import.meta.url), "utf8"),
+  );
+  Object.assign(template.vars, {
+    ADMIN_AUTH: "access",
+    ACCESS_TEAM_DOMAIN: "obsolete",
+    ACCESS_AUD: "obsolete",
+    ADMIN_EMAILS: "obsolete",
+    ADMIN_SETUP_TOKEN: "do-not-publish",
+  });
+  const generated = workerConfig(
+    config(),
+    { databaseId: "test-db", publicUrl: "https://parcel.example.workers.dev" },
+    template,
+    (p) => p,
+  );
+  assert.equal(generated.vars.ADMIN_AUTH, "totp");
+  assert.equal(generated.vars.ACTIVE, "false");
+  assert.equal(generated.vars.R2_BUCKET_NAME, "parcel");
+  assert.doesNotMatch(
+    JSON.stringify(generated),
+    /ACCESS_TEAM_DOMAIN|ACCESS_AUD|ADMIN_EMAILS|ADMIN_SETUP_TOKEN|do-not-publish/,
+  );
+});
+
+test("first bootstrap requires a private setup token and repeat deploys never restore it", () => {
+  const credentials = {
+    CLOUDFLARE_API_TOKEN: "do-not-deploy",
+    SESSION_SECRET: "ab".repeat(32),
+    R2_ACCESS_KEY_ID: "id",
+    R2_SECRET_ACCESS_KEY: "secret",
+  };
+  assert.throws(() => workerSecrets(credentials), /ADMIN_SETUP_TOKEN/);
+  credentials.ADMIN_SETUP_TOKEN = "x".repeat(43);
+  const first = workerSecrets(credentials);
+  assert.equal(first.ADMIN_SETUP_TOKEN, credentials.ADMIN_SETUP_TOKEN);
+  assert.equal(first.CLOUDFLARE_API_TOKEN, undefined);
+  const repeated = workerSecrets(credentials, { deployed: true });
+  assert.equal(repeated.ADMIN_SETUP_TOKEN, undefined);
+  assert.equal(repeated.SESSION_SECRET, first.SESSION_SECRET);
+});
+
+test("activation requires initialized TOTP; maintenance permits protected first enrollment", async () => {
+  const publicUrl = "https://parcel.example.workers.dev";
+  const check = (info, activate = false, status = 200) =>
+    verifyAdministrator(publicUrl, {
+      activate,
+      fetcher: async (url, options) => {
+        assert.equal(url, publicUrl + "/api/v1/auth-config");
+        assert.equal(options.redirect, "manual");
+        return Response.json(info, { status });
+      },
+    });
+  const fresh = {
+    auth_mode: "totp",
+    initialized: false,
+    setup_available: true,
+  };
+  assert.deepEqual(await check(fresh), fresh);
+  await assert.rejects(check(fresh, true), /remains in maintenance/);
+  await check(
+    { auth_mode: "totp", initialized: true, setup_available: false },
+    true,
+  );
+  for (const info of [
+    { auth_mode: "access" },
+    { auth_mode: "totp", initialized: false, setup_available: false },
+  ])
+    await assert.rejects(check(info), /not ready/);
+  await assert.rejects(check(fresh, true, 503), /not ready/);
+  await assert.rejects(
+    verifyAdministrator(publicUrl, {
+      fetcher: async () => new Response("redirect", { status: 302 }),
+    }),
+    /probe failed/,
+  );
 });
 test("bootstrap refuses unmanaged existing resources and never enables paid billing", async () => {
   const m = mock();

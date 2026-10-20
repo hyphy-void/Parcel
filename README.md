@@ -2,7 +2,7 @@
 
 **Upload. Share. Disappear.**
 
-自托管的临时文件中转站。当前 Cloudflare V3 在发送者浏览器加密文件，私有 R2 保存密文，接收者在浏览器解密并流式保存。分享可设置密码、有效期和下载次数，失效后自动清理。
+自托管的临时文件中转站。当前 Cloudflare 部署在发送者浏览器加密文件，私有 R2 保存密文，接收者在浏览器解密并流式保存。分享可设置密码、有效期和下载次数，失效后自动清理。
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https%3A%2F%2Fgithub.com%2Fhyphy-void%2FParcel)
 
@@ -16,12 +16,12 @@
 ## 部署与首次登录
 
 1. 点击部署按钮，创建自己的 Worker、D1 和私有 R2。使用 Node 24、根目录 `/`，构建命令 `npm run build`，部署命令 `npm run deploy`。脚本应用 D1 迁移，首次保持 `ACTIVE=false`。
-2. 按[配置工具](https://parcelwiki.pages.dev/zh#config)填写 `PUBLIC_URL`、**`ADMIN_AUTH=totp`**、R2 地址与桶名。此认证变量必须明确设置，更新代码不会自动补充控制台变量。新模板默认应用配额为 9 GB、单文件上限为 8 GiB；账户免费额度与账单另行计算。
+2. 按[配置工具](https://parcelwiki.pages.dev/zh#config)填写 `PUBLIC_URL`、R2 地址与桶名。模板和部署命令统一设置 **`ADMIN_AUTH=totp`**，省略该运行时变量也默认使用密码加 TOTP。新模板默认应用配额为 9 GB、单文件上限为 8 GiB；账户免费额度与账单另行计算。
 3. 保存三项长期 Secret：`SESSION_SECRET`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`，配置 R2 CORS。`SESSION_SECRET` 是独立的 64 位十六进制随机值，后续部署保持不变。
 4. 本机克隆仓库，执行 `npm run admin:setup-token`，把忽略文件 `.parcel-v3/admin-setup-token.txt` 的内容保存为临时 Secret `ADMIN_SETUP_TOKEN`。打开应用 `/login`，设置至少 12 位管理员密码，扫码或手动绑定 TOTP，输入 6 位动态码确认。
-5. 单独保存 8 个恢复码，移除 `ADMIN_SETUP_TOKEN`。日常使用密码和认证器动态码；认证器丢失时，用密码与一个未使用的恢复码重新绑定。完成加密上传、解密下载和撤销验收后，再设 `ACTIVE=true` 并部署。
+5. 单独保存 8 个恢复码，移除 `ADMIN_SETUP_TOKEN`。用新窗口验证密码和动态码登录后，设 `ACTIVE=true` 并部署，再完成加密上传、解密下载和撤销验收。维护状态允许管理员绑定和登录，但不允许文件传输。
 
-新实例按按钮流程准备资源；已有正式实例使用 `npm run build:production` / `npm run deploy:production` 更新。变量、CORS、备份及恢复的完整步骤见[部署文档](docs/v3-deployment.md)。
+新实例也可使用 `npm run deploy:bootstrap -- --config .parcel-v3/deploy.json`，先在维护状态部署并绑定管理员，再加 `--activate` 激活。脚本只准备 Worker、D1 和私有 R2，并配置完整 CORS。已有正式实例使用 `npm run build:production` / `npm run deploy:production` 更新；这两个入口保留管理员绑定和长期 Secrets。凭据准备、变量、CORS、备份及恢复的完整步骤见[部署文档](docs/v3-deployment.md)。
 
 ## 使用加密分享
 
@@ -56,11 +56,11 @@ flowchart LR
 
 正式 Worker 的生产部署先应用未完成的 D1 迁移，再发布 Worker，保留现有运行时变量、Secrets、D1 与 R2。资源标识、部署权限及失败恢复见[正式更新说明](docs/v3-deployment.md#正式-worker-的-git-自动部署)。
 
-旧版未加密 V3 分享不兼容，需保留原文件后重新上传，生成新的加密链接。`0004_e2ee.sql` 与 `0005_download_admissions.sql` 不会自动加密、删除或清空原有数据。新版密文不能交给旧 Go 服务或未加密 Worker 恢复下载；回滚须使用兼容的 Worker 与一致的 D1/R2 备份。
+旧版未加密 Worker 分享不兼容，需保留原文件后重新上传，生成新的加密链接。`0004_e2ee.sql` 与 `0005_download_admissions.sql` 不会自动加密、删除或清空原有数据。新版密文不能交给旧 Go 服务或未加密 Worker 恢复下载；回滚须使用兼容的 Worker 与一致的 D1/R2 备份。
 
 ## 开发与验证
 
-V3 构建需要 Node 24 与 Bash；Windows 可使用 Git Bash 或 WSL。从仓库根目录执行：
+Cloudflare 部署构建需要 Node 24 与 Bash；Windows 可使用 Git Bash 或 WSL。从仓库根目录执行：
 
 ```bash
 ./scripts/build-v3.sh
@@ -73,6 +73,6 @@ npm run test:e2ee:https
 
 真实 HTTPS 套件的 Linux 依赖、可选 8 GiB 验收和本地夹具范围见[协议验收说明](docs/e2ee-protocol.md#acceptance)。本地测试不能代替线上 R2 CORS、签名、CPU 和实际设备验收。
 
-仓库保留独立 Go/SQLite 兼容代码及测试，使用原有协议，不提供当前 V3 的 TOTP 与文件 E2EE，不作为当前线上部署入口。维护这些代码时按 [Go 运维资料](docs/operations.md)构建 `web/dist/`，再运行 `go test -race ./...` 和 `go vet ./...`。历史[设计](docs/development-plan.md)、[v0.1 验收](docs/acceptance.md)及[局域网步骤](docs/lan-acceptance.md)均按各自版本范围阅读。
+仓库保留独立 Go/SQLite 兼容代码及测试，使用原有协议，不提供当前 Cloudflare 部署的 TOTP 与文件 E2EE，不作为当前线上部署入口。维护这些代码时按 [Go 运维资料](docs/operations.md)构建 `web/dist/`，再运行 `go test -race ./...` 和 `go vet ./...`。历史[设计](docs/development-plan.md)、[v0.1 验收](docs/acceptance.md)及[局域网步骤](docs/lan-acceptance.md)均按各自版本范围阅读。
 
 源码按 [MIT](LICENSE) 许可发布。

@@ -180,8 +180,8 @@
           File contents, original filenames, media types, and the plaintext
           SHA-256 are encrypted. The server still sees file sizes, share IDs,
           expiry, download counts, and request metadata. This end-to-end
-          encryption applies to Cloudflare V3; the separate Go and origin-backed
-          Pages builds retain their earlier transfer protocol.
+          encryption applies to the Cloudflare deployment; the separate Go and
+          origin-backed Pages builds retain their earlier transfer protocol.
         </p>
         <div class="password-explainer">
           <h3>A link key, plus your password</h3>
@@ -284,9 +284,9 @@
                 </p>
                 <p>
                   This guide is for new instances. To upgrade an existing Go,
-                  Pages, or V3 instance, use the repository’s migration and
-                  production deployment docs so that two services do not manage
-                  the same bucket.
+                  Pages, or earlier Worker instance, use the repository’s
+                  migration and production deployment docs so that two services
+                  do not manage the same bucket.
                 </p>
                 <p>
                   The app defaults to a 9&nbsp;GB storage quota and an
@@ -318,8 +318,10 @@
                   <code translate="no">R2_BUCKET_NAME</code>.
                 </p>
                 <p>
-                  Disable preview builds and explicitly set the Worker runtime
-                  variable <code translate="no">ADMIN_AUTH=totp</code>.
+                  Disable preview builds. The template and deployment commands
+                  set
+                  <code translate="no">ADMIN_AUTH=totp</code>; omitting this
+                  runtime variable also defaults to password + TOTP.
                   Administrators sign in with a password and authenticator code;
                   public share pages remain available to recipients.
                 </p>
@@ -372,10 +374,10 @@
               <div class="answer">
                 <p>
                   Administrators sign in with a Parcel password and TOTP code.
-                  Set the Worker runtime variable
-                  <code translate="no">ADMIN_AUTH=totp</code>; it is required
-                  and code updates do not add dashboard variables automatically.
-                  Complete the first-time enrollment below.
+                  The template and deployment commands set
+                  <code translate="no">ADMIN_AUTH=totp</code>; omitting this
+                  runtime variable also defaults to this login mode. Complete
+                  the first-time enrollment below.
                 </p>
                 <figure class="binding-figure">
                   <div class="binding-map">
@@ -693,9 +695,9 @@
                   against someone who controls that browser. Back them up before
                   clearing site data or changing devices. Losing all local keys,
                   complete links, and backups is unrecoverable by the server.
-                  Earlier unencrypted V3 shares are not compatible and must be
-                  uploaded again; the upgrade does not delete existing D1 or R2
-                  data. Go and origin-backed Pages remain separate, non-E2EE
+                  Earlier unencrypted Worker shares are not compatible and must
+                  be uploaded again; the upgrade does not delete existing D1 or
+                  R2 data. Go and origin-backed Pages remain separate, non-E2EE
                   modes.
                 </p>
               </div>
@@ -983,9 +985,13 @@
             <p>
               Yes. Install Node 24 and Bash, clone the repository, and use
               deploy/v3.example.json to create a config in an ignored directory.
-              Prepare an account-scoped management token, then run npm run
-              deploy:bootstrap -- --config .parcel-v3/deploy.json. See the
-              repository docs for preparation, frozen migration, and rollback.
+              Prepare an account-scoped management token and a private
+              ADMIN_SETUP_TOKEN, then run npm run deploy:bootstrap -- --config
+              .parcel-v3/deploy.json. Set your password and bind TOTP at /login,
+              save recovery codes and remove the setup secret, then rerun with
+              --activate. The script verifies enrollment before opening the
+              service. See the repository docs for credentials, migration, and
+              recovery.
             </p>
           </details>
         </div>

@@ -15,6 +15,7 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CREDENTIAL_FIELDS = [
   "CLOUDFLARE_API_TOKEN",
   "SESSION_SECRET",
+  "ADMIN_SETUP_TOKEN",
   "R2_ACCESS_KEY_ID",
   "R2_SECRET_ACCESS_KEY",
 ];
@@ -34,7 +35,8 @@ function validate(values) {
       !value ||
       value.length > 256 ||
       /\s/.test(value) ||
-      (key === "SESSION_SECRET" && !/^[a-fA-F0-9]{64}$/.test(value))
+      (key === "SESSION_SECRET" && !/^[a-fA-F0-9]{64}$/.test(value)) ||
+      (key === "ADMIN_SETUP_TOKEN" && !/^[A-Za-z0-9_-]{32,128}$/.test(value))
     )
       throw new Error(`Invalid credential field: ${key}`);
     result[key] = value;

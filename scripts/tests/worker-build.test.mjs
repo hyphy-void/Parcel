@@ -90,6 +90,8 @@ test("production deploy migrates the existing DB before publishing and retains r
       "--config",
       ".parcel-v3/wrangler.builds.json",
       "--keep-vars",
+      "--var",
+      "ADMIN_AUTH:totp",
       "--no-x-auto-create",
     ],
   ]);

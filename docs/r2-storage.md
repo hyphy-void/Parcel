@@ -1,6 +1,6 @@
 # 私有 R2 直传与下载
 
-> 适用范围：本文件是独立 Go/SQLite 兼容程序的维护资料或历史记录，不描述当前 Cloudflare V3。当前密码 + TOTP、文件端到端加密及部署操作见 [V3 部署说明](v3-deployment.md)；不要据此推断 Go 已具备这些功能。
+> 适用范围：本文件是独立 Go/SQLite 兼容程序的维护资料或历史记录，不描述当前 Cloudflare 部署。当前密码 + TOTP、文件端到端加密及部署操作见 [Cloudflare 部署说明](v3-deployment.md)；不要据此推断 Go 已具备这些功能。
 
 Parcel 使用树莓派鉴权、SQLite 元数据和私有 R2 对象存储。网页与 API 仍走 Cloudflare Tunnel → Caddy → Parcel；文件字节通过 R2 S3 API 预签名地址在浏览器和 R2 之间传输，不经过 Pi，不需要 Worker、公开桶、r2.dev 或自定义下载域名。
 

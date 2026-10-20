@@ -34,6 +34,8 @@ export function templateDeployment(config) {
       "wrangler.json",
       "--keep-vars",
       "--var",
+      "ADMIN_AUTH:totp",
+      "--var",
       `R2_BUCKET_NAME:${bucket.bucket_name}`,
     ],
   ];
@@ -76,7 +78,7 @@ if (
       );
       for (const command of templateDeployment(config)) await run(command);
       console.log(
-        "Worker deployed. Complete Access, secrets, PUBLIC_URL and R2 CORS, then set ACTIVE=true. See the deployment guide.",
+        "Worker deployed with password + TOTP login. Configure secrets, PUBLIC_URL and R2 CORS; use npm run admin:setup-token to create the temporary ADMIN_SETUP_TOKEN secret, open /login to set a password and bind your authenticator, save recovery codes and remove the setup secret, then set ACTIVE=true. See the deployment guide.",
       );
     }
   } catch (error) {
