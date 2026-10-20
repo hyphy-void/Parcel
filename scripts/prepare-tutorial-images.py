@@ -27,7 +27,7 @@ REVIEWED = {
         ((306, 410, 809, 451), 'https://parcel.example.com', 26),
     ]),
     'r2-token': ((2327, 2345), (2327, 2345), []),
-    'template-build': ((2453, 1341), (2453, 1341), []),
+    'template-build': ((2452, 1127), (2452, 1127), []),
     'variables': ((1750, 1859), (1536, 1631), [
         ((706, 194, 1340, 243), 'YOUR_ACCESS_AUD', 24),
         ((706, 289, 1340, 338), 'https://YOUR_TEAM.cloudflareaccess.com', 24),
@@ -57,6 +57,7 @@ REFRESHED = {
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
+    parser.add_argument('--only', nargs='+', choices=sorted(REVIEWED), help='Encode only the selected reviewed captures')
     parser.add_argument('--refresh', action='store_true', help='Encode the reviewed 2026-10-20 variables and CORS captures only')
     parser.add_argument('--cors-complete', type=Path, help='Use the reviewed 1396x719 native dashboard capture after saving the complete CORS policy')
     default_font = 'C:/Windows/Fonts/segoeui.ttf'
@@ -64,7 +65,12 @@ def main():
     args = parser.parse_args()
     target = ROOT / 'docs/site/images'
     target.mkdir(parents=True, exist_ok=True)
-    for name, (expected, review, labels) in (REFRESHED if args.refresh else REVIEWED).items():
+    captures = REFRESHED if args.refresh else REVIEWED
+    if args.only:
+        if any(name not in captures for name in args.only):
+            parser.error('--only must name a capture available in the selected refresh')
+        captures = {name: captures[name] for name in args.only}
+    for name, (expected, review, labels) in captures.items():
         with Image.open(args.source / f'{name}.png') as source:
             if source.size != expected:
                 raise ValueError(f'{name}: review changed dimensions {source.size} before redacting')
